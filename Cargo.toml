@@ -1,0 +1,127 @@
+[package]
+name        = "kubuno-mail"
+version     = "0.1.0"
+edition     = "2021"
+description = "Kubuno Mail — module de messagerie IMAP/SMTP"
+license     = "AGPL-3.0"
+repository  = "https://github.com/kubuno/mail"
+
+[[bin]]
+name = "kubuno-mail"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace
+tokio          = { workspace = true }
+axum           = { workspace = true }
+tower          = { workspace = true }
+tower-http     = { workspace = true }
+async-trait    = { workspace = true }
+sqlx           = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+reqwest        = { workspace = true }
+config         = { workspace = true }
+dotenvy        = { workspace = true }
+validator      = { workspace = true }
+tracing        = { workspace = true }
+tracing-subscriber = { workspace = true }
+kubuno-seccomp     = { workspace = true }
+thiserror      = { workspace = true }
+anyhow         = { workspace = true }
+uuid           = { workspace = true }
+chrono         = { workspace = true }
+bytes          = { workspace = true }
+futures        = { workspace = true }
+tokio-util     = { workspace = true }
+rand           = { workspace = true }
+base64         = { workspace = true }
+aes-gcm        = { workspace = true }
+sha2           = { workspace = true }
+hex            = { workspace = true }
+toml           = { workspace = true }
+clap           = { workspace = true }
+
+# Spécifique au module mail
+async-imap       = { version = "0.9", default-features = false, features = ["runtime-tokio"] }
+tokio-native-tls = "0.3"
+native-tls       = "0.2"
+lettre           = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-native-tls", "smtp-transport", "builder", "hostname"] }
+mail-parser      = "0.9"
+ammonia          = "4"
+html2text        = "0.12"
+
+# ─── Workspace mono-crate (deps tierces recopiées du monorepo kubuno/core ;
+#     crates partagées consommées via dépendances git taguées) ───
+[workspace]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2021"
+authors      = ["Kubuno Contributors"]
+license      = "AGPL-3.0"
+repository   = "https://github.com/kubuno/kubuno"
+rust-version = "1.82"
+
+[workspace.dependencies]
+# Async
+tokio       = { version = "1",    features = ["full"] }
+# CRDT Yjs côté serveur (consolidation GC des snapshots collab)
+yrs         = "0.23"
+axum        = { version = "0.7",  features = ["macros", "ws", "multipart"] }
+tower       = { version = "0.5",  features = ["full"] }
+tower-http  = { version = "0.6",  features = ["cors", "compression-gzip", "trace", "limit", "fs", "set-header", "timeout"] }
+async-trait = "0.1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "migrate", "tls-rustls", "bigdecimal"] }
+
+# Sérialisation
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth & Crypto
+jsonwebtoken = "9"
+argon2       = "0.5"
+aes-gcm      = "0.10"
+rand         = "0.8"
+sha2         = "0.10"
+base64       = "0.22"
+
+# HTTP Client (pour proxy modules + CLI upload)
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+
+# Config & Env
+config  = "0.14"
+dotenvy = "0.15"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Logging & Tracing
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender   = "0.2"
+tokio-util         = { version = "0.7", features = ["io"] }
+kubuno-storage     = { git = "https://github.com/kubuno/core", tag = "storage-v0.1.0", package = "kubuno-storage" }
+kubuno-seccomp     = { git = "https://github.com/kubuno/core", tag = "seccomp-v0.1.0", package = "kubuno-seccomp" }
+
+# Erreurs
+thiserror = "1"
+anyhow    = "1"
+
+# Utils
+uuid   = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+bytes   = "1"
+futures = "0.3"
+hex     = "0.4"
+toml    = "0.8"
+clap    = { version = "4", features = ["color", "wrap_help", "derive", "env"] }
+url                 = "2"
+urlencoding         = "2"
+tokio-tungstenite   = { version = "0.24", features = ["native-tls"] }
+async-stream        = "0.3"
+totp-rs             = { version = "5", features = ["gen_secret", "otpauth"] }
+zip                 = "2"
+quick-xml           = { version = "0.37", features = ["serialize"] }

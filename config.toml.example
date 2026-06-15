@@ -1,0 +1,32 @@
+# ─── Kubuno Mail — Configuration ───────────────────────────────────────────────
+# Copiez ce fichier en config.toml et adaptez les valeurs.
+# Les variables d'environnement préfixées KM__ surchargent ce fichier.
+# Exemple : KM__SERVER__PORT=3111
+
+[server]
+host = "127.0.0.1"
+port = 3111
+
+[core]
+# URL du core Kubuno (pour l'enregistrement du module)
+url             = "http://127.0.0.1:8080"
+# Secret partagé — doit correspondre à server.internal_secret dans le core
+internal_secret = "change_me"
+
+# ── Base de données ───────────────────────────────────────────────────────────
+# Les paramètres de connexion sont injectés par le superviseur Kubuno via
+# KUBUNO_DB_HOST / KUBUNO_DB_PORT / KUBUNO_DB_USER / KUBUNO_DB_PASSWORD / KUBUNO_DB_NAME.
+# Pour un démarrage hors superviseur, exporter ces variables manuellement.
+
+[mail]
+# Clé AES-256-GCM pour le chiffrement des mots de passe IMAP/SMTP en base (32 octets en hex)
+# Générer avec: openssl rand -hex 32
+encryption_key = "change_me_to_32_bytes_hex_encoded_key_here_000000000000000000"
+# Délai entre deux synchronisations IMAP (secondes)
+sync_interval_secs = 300
+# Nombre maximum de mails à fetcher par cycle de sync
+max_fetch_per_sync = 200
+
+[logging]
+level  = "info"
+format = "pretty"

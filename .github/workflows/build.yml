@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Backend (Rust) ──
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build
+        env:
+          SQLX_OFFLINE: "true"   # requêtes runtime : pas de DB requise (cache .sqlx si présent)
+        run: cargo build --release --bin kubuno-mail
+
+      # ── Frontend (bundle du module) ──
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      # ── Paquet Debian ──
+      - name: build .deb
+        run: bash build_deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubuno-mail-deb
+          path: dist/*.deb
+
+      # ── Release (sur tag) ──
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
