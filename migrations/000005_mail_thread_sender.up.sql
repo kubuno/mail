@@ -1,0 +1,3 @@
+ALTER TABLE mail.threads
+  ADD COLUMN IF NOT EXISTS last_sender_name  VARCHAR(500),
+  ADD COLUMN IF NOT EXISTS last_sender_email VARCHAR(500) NOT NULL DEFAULT '';

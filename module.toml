@@ -1,0 +1,77 @@
+[module]
+id           = "mail"
+display_name = "Mail"
+version      = "0.1.0"
+description  = "Messagerie email IMAP/SMTP multi-comptes"
+author       = "Kubuno Contributors"
+license      = "AGPL-3.0"
+runtime      = "rust"
+settings_path = "/mail/settings"
+
+[process]
+entrypoint = "kubuno-mail"
+args       = []
+
+[server]
+host = "127.0.0.1"
+port = 3111
+
+[routes]
+patterns = [
+    { method = "*", path = "/*" },
+]
+
+[[sidebar_items]]
+id       = "mail-inbox"
+label    = "Boîte de réception"
+icon     = "Inbox"
+path     = "/mail"
+position = 30
+section  = "main"
+
+[[sidebar_items]]
+id       = "mail-sent"
+label    = "Envoyés"
+icon     = "Send"
+path     = "/mail/sent"
+position = 31
+section  = "main"
+
+[[sidebar_items]]
+id       = "mail-drafts"
+label    = "Brouillons"
+icon     = "FileText"
+path     = "/mail/drafts"
+position = 32
+section  = "main"
+
+[[sidebar_items]]
+id       = "mail-starred"
+label    = "Suivis"
+icon     = "Star"
+path     = "/mail/starred"
+position = 33
+section  = "main"
+
+[[sidebar_items]]
+id       = "mail-spam"
+label    = "Spam"
+icon     = "ShieldAlert"
+path     = "/mail/spam"
+position = 34
+section  = "main"
+
+[[sidebar_items]]
+id       = "mail-trash"
+label    = "Corbeille"
+icon     = "Trash2"
+path     = "/mail/trash"
+position = 35
+section  = "main"
+
+[events]
+subscribed = [
+    "UserDeleted",
+    "ContactUpdated",
+]
+publishes = []
