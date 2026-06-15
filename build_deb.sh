@@ -14,6 +14,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 cd "$(dirname "$0")"
+export SQLX_OFFLINE=true   # utilise le cache .sqlx (pas de DB au build)
 
 MODULE="mail"
 PACKAGE="kubuno-${MODULE}"
