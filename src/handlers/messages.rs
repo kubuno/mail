@@ -28,7 +28,7 @@ pub async fn get_message(
                   to_addresses, cc_addresses, bcc_addresses, reply_to,
                   subject, body_text, body_html, attachments,
                   is_read, is_starred, is_deleted, folder, label_ids,
-                  sent_at, received_at, created_at
+                  sent_at, received_at, created_at, spam_score
            FROM mail.messages WHERE id = $1 AND user_id = $2"#,
     )
     .bind(msg_id)
