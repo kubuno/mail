@@ -5,7 +5,7 @@ use axum::{
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::{
-    handlers::{accounts, drafts, filters, labels, messages, threads},
+    handlers::{accounts, drafts, filters, labels, messages, spam, threads},
     state::AppState,
 };
 
@@ -53,6 +53,10 @@ pub fn build(state: AppState) -> Router {
         // Adresses bloquées
         .route("/blocked",               get(filters::list_blocked).post(filters::block_sender))
         .route("/blocked/:id",           delete(filters::unblock_sender))
+        // Anti-spam bayésien
+        .route("/spam/stats",            get(spam::stats))
+        .route("/spam/settings",         patch(spam::update_settings))
+        .route("/spam/train",            post(spam::train))
         // Settings (renvoie vers la page settings du frontend)
         .route("/settings",              get(|| async { axum::Json(serde_json::json!({ "module": "mail" })) }))
         .layer(cors)

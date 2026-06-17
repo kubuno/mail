@@ -108,6 +108,7 @@ pub struct EmailMessage {
     pub sent_at:        Option<DateTime<Utc>>,
     pub received_at:    DateTime<Utc>,
     pub created_at:     DateTime<Utc>,
+    pub spam_score:     Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]

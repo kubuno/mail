@@ -13,6 +13,11 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 
+/// Row shape for Bayesian spam training over a thread's messages.
+type SpamTrainRow = (Uuid, String, Option<String>, String, Option<i16>);
+/// Row shape for the subscriptions aggregation query.
+type SubscriptionRow = (String, Option<String>, Option<String>, i64, DateTime<Utc>);
+
 pub async fn list_threads(
     State(state): State<AppState>,
     user: AuthUser,
@@ -225,7 +230,7 @@ pub async fn get_thread(
                   to_addresses, cc_addresses, bcc_addresses, reply_to,
                   subject, body_text, body_html, attachments,
                   is_read, is_starred, is_deleted, folder, label_ids,
-                  sent_at, received_at, created_at
+                  sent_at, received_at, created_at, spam_score
            FROM mail.messages
            WHERE thread_id = $1 AND is_deleted = FALSE
            ORDER BY received_at ASC"#,
@@ -290,6 +295,33 @@ pub async fn move_thread(
         .bind(user.id)
         .execute(&state.db)
         .await?;
+
+    // Feedback bayésien : marquer comme spam (folder='spam') ou « pas spam »
+    // (folder='inbox') entraîne le classifieur sur les messages du fil.
+    if folder == "spam" || folder == "inbox" {
+        let is_spam = folder == "spam";
+        let msgs: Vec<SpamTrainRow> = sqlx::query_as(
+            "SELECT id, subject, body_text, from_email, spam_trained
+             FROM mail.messages WHERE thread_id = $1 AND user_id = $2",
+        )
+        .bind(thread_id)
+        .bind(user.id)
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+        for (id, subject, body, from_email, prev) in msgs {
+            match crate::services::spam_classifier::learn_message(
+                &state.db, user.id, &subject, body.as_deref(), &from_email, is_spam, prev,
+            ).await {
+                Ok(guard) => {
+                    let _ = sqlx::query("UPDATE mail.messages SET spam_trained = $1, spam_score = NULL WHERE id = $2")
+                        .bind(guard).bind(id).execute(&state.db).await;
+                }
+                Err(e) => tracing::warn!(error = %e, "Entraînement spam (feedback) échoué"),
+            }
+        }
+    }
 
     Ok(Json(serde_json::json!({ "message": "Thread déplacé" })))
 }
@@ -399,7 +431,7 @@ pub async fn subscriptions(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let rows: Vec<(String, Option<String>, Option<String>, i64, DateTime<Utc>)> = sqlx::query_as(
+    let rows: Vec<SubscriptionRow> = sqlx::query_as(
         r#"SELECT m.from_email,
                   MAX(m.from_name)                                                      AS from_name,
                   (ARRAY_AGG(m.list_unsubscribe ORDER BY m.received_at DESC))[1]         AS list_unsubscribe,
