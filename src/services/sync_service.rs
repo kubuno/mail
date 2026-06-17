@@ -254,6 +254,48 @@ async fn store_message(
                               &f_from, f_name.as_deref(), &f_subject, f_body.as_deref(), &f_to).await;
     }
 
+    // Classifieur bayésien anti-spam.
+    if inserted.rows_affected() > 0 {
+        if folder_name == "spam" {
+            // Message déjà classé spam côté serveur (dossier IMAP « Spam ») :
+            // exemple d'entraînement fiable, on l'apprend comme spam.
+            match crate::services::spam_classifier::learn_message(
+                db, account.user_id, &f_subject, f_body.as_deref(), &f_from, true, None,
+            ).await {
+                Ok(guard) => {
+                    let _ = sqlx::query("UPDATE mail.messages SET spam_trained = $1 WHERE id = $2")
+                        .bind(guard).bind(msg_id).execute(db).await;
+                }
+                Err(e) => tracing::warn!(error = %e, "Entraînement spam (dossier IMAP) échoué"),
+            }
+        } else if folder_name == "inbox" {
+            // Le message a pu être déplacé entre-temps (expéditeur bloqué / filtre).
+            // On ne score que s'il est TOUJOURS dans la boîte de réception.
+            let still_inbox: bool = sqlx::query_scalar(
+                "SELECT folder = 'inbox' FROM mail.messages WHERE id = $1",
+            )
+            .bind(msg_id).fetch_one(db).await.unwrap_or(false);
+            if still_inbox {
+                match crate::services::spam_classifier::classify_incoming(
+                    db, account.user_id, &f_subject, f_body.as_deref(), &f_from,
+                ).await {
+                    Ok(v) => {
+                        if let Some(score) = v.score {
+                            let _ = sqlx::query("UPDATE mail.messages SET spam_score = $1 WHERE id = $2")
+                                .bind(score as f32).bind(msg_id).execute(db).await;
+                        }
+                        if v.move_to_spam {
+                            let _ = sqlx::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1")
+                                .bind(msg_id).execute(db).await;
+                            tracing::info!(msg = %msg_id, score = ?v.score, "Message déplacé vers spam (bayésien)");
+                        }
+                    }
+                    Err(e) => tracing::warn!(error = %e, "Classification spam échouée"),
+                }
+            }
+        }
+    }
+
     sqlx::query(
         "UPDATE mail.threads
          SET message_count     = message_count + 1,

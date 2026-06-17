@@ -130,7 +130,7 @@ where
         }
     };
 
-    result.sort_by(|a, b| b.uid.cmp(&a.uid));
+    result.sort_by_key(|m| std::cmp::Reverse(m.uid));
     result.truncate(max_count as usize);
     Ok(result)
 }

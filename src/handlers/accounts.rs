@@ -8,7 +8,7 @@ use crate::{
     errors::MailError,
     middleware::AuthUser,
     models::{CreateAccountDto, EmailAccount, TestConnectionDto, UpdateAccountDto},
-    services::{crypto::MailCrypto, imap_service::{self, ImapConfig}, smtp_service::SmtpConfig},
+    services::{crypto::MailCrypto, imap_service::{self, ImapConfig}},
     state::AppState,
 };
 
@@ -432,7 +432,7 @@ async fn test_tcp_connect(host: &str, port: u16) -> (bool, Option<String>) {
 // ── Main test dispatcher ─────────────────────────────────────────────────────
 
 async fn run_connection_test(dto: TestConnectionDto) -> Result<Json<serde_json::Value>, MailError> {
-    use lettre::{transport::smtp::authentication::Credentials, AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
+    use lettre::{transport::smtp::authentication::Credentials, AsyncSmtpTransport, Tokio1Executor};
     let timeout = std::time::Duration::from_secs(10);
 
     let protocol      = dto.incoming_protocol.as_deref().unwrap_or("imap");

@@ -7,7 +7,7 @@ import {
   RefreshCw, ChevronLeft, ChevronRight, ChevronDown,
   Reply, Forward, Loader2, Mail as MailIcon, MailOpen, Star, Trash2,
   Paperclip, Download, FileText, MoreVertical, Smile, Send, X,
-  AlertCircle, ShieldAlert, Flag, Filter, Languages, Printer, Code2,
+  AlertCircle, ShieldAlert, ShieldCheck, Flag, Filter, Languages, Printer, Code2,
   Archive, Clock, ExternalLink, Settings2, Bookmark, Ban,
   Columns2, Rows2, Square, BellOff, AlignJustify,
   Undo2, Redo2, Bold, Italic, Underline, Strikethrough,
@@ -1315,7 +1315,7 @@ function MessageCard({
 
 function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) => void }) {
   const { t } = useTranslation('mail')
-  const { selectedThread, setSelectedThread } = useMailStore()
+  const { selectedThread, setSelectedThread, currentFolder } = useMailStore()
   const qc = useQueryClient()
   const [inlineMode, setInlineMode] = useState<'reply' | 'forward' | null>(null)
   const [inlineMsg,  setInlineMsg]  = useState<EmailMessage | null>(null)
@@ -1367,6 +1367,17 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
     },
   })
   const [snoozeOpen, setSnoozeOpen] = useState(false)
+
+  // Marquer comme spam (folder='spam') ou « pas spam » (folder='inbox') :
+  // déplace le fil ET entraîne le classifieur bayésien côté backend.
+  const spamMut = useMutation({
+    mutationFn: ({ id, folder }: { id: string; folder: 'spam' | 'inbox' }) => mailApi.moveThread(id, folder),
+    onSuccess:  () => {
+      setSelectedThread(null)
+      qc.invalidateQueries({ queryKey: ['mail-threads'] })
+      qc.invalidateQueries({ queryKey: ['mail-counts'] })
+    },
+  })
 
   const muteMut = useMutation({
     mutationFn: (id: string) => mailApi.muteThread(id),
@@ -1447,7 +1458,13 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
 
         {/* Actions */}
         <TBtn title={t('archive')}><Archive size={18} /></TBtn>
-        <TBtn title={t('spam_report')}><ShieldAlert size={18} /></TBtn>
+        {currentFolder === 'spam'
+          ? <TBtn title={t('not_spam', { defaultValue: 'Pas un spam' })} onClick={() => spamMut.mutate({ id: thread.id, folder: 'inbox' })}>
+              <ShieldCheck size={18} />
+            </TBtn>
+          : <TBtn title={t('spam_report')} onClick={() => spamMut.mutate({ id: thread.id, folder: 'spam' })}>
+              <ShieldAlert size={18} />
+            </TBtn>}
         <TBtn title={t('delete')} danger onClick={() => deleteMut.mutate(thread.id)}>
           <Trash2 size={18} />
         </TBtn>
@@ -1516,6 +1533,20 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
             </div>
           </div>
 
+          {/* Avertissement bayésien : message resté en boîte mais jugé douteux. */}
+          {currentFolder === 'inbox' && messages.some(m => (m.spam_score ?? 0) >= 0.7) && (
+            <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[13px] text-amber-800">
+              <ShieldAlert size={16} className="flex-shrink-0 text-amber-500" />
+              <span className="flex-1">{t('spam_suspected', { defaultValue: 'Ce message ressemble à un indésirable.' })}</span>
+              <button
+                onClick={() => spamMut.mutate({ id: thread.id, folder: 'spam' })}
+                className="px-2.5 py-1 rounded-md bg-amber-500 text-white text-xs font-medium hover:bg-amber-600"
+              >
+                {t('spam_report')}
+              </button>
+            </div>
+          )}
+
           {/* ── Messages ──────────────────────────────────────────────────── */}
           {messages.map((msg, i) => (
             <MessageCard
@@ -1544,6 +1575,44 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
 
           <div className="h-8" />
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Toast décompte « Annuler l'envoi » ────────────────────────────────────────
+// Reprend la mécanique du décompte de suppression de drive (carte + barre de
+// progression qui se vide en `duration` ms), réadaptée aux couleurs du mail
+// (accent bleu primaire, action positive « envoyé » plutôt que destructive).
+
+function UndoSendToast({ label, undoLabel, onCancel }: {
+  label: string; undoLabel: string; onCancel: () => void
+}) {
+  const duration = useUndoSendStore(s => s.duration)
+  // Barre qui se vide de 100 % → 0 % en `duration` ms (transition CSS linéaire).
+  const [width, setWidth] = useState(100)
+  useEffect(() => {
+    const r = requestAnimationFrame(() => setWidth(0))
+    return () => cancelAnimationFrame(r)
+  }, [])
+
+  return (
+    <div className="fixed bottom-6 left-6 z-[100] w-80 rounded-xl border border-primary-light bg-surface-0 shadow-lg overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Send size={18} className="text-primary" />
+        <span className="flex-1 text-sm text-text-primary truncate">{label}</span>
+        <button
+          onClick={onCancel}
+          className="flex items-center gap-1 text-sm font-medium text-primary hover:underline shrink-0"
+        >
+          <Undo2 size={14} /> {undoLabel}
+        </button>
+      </div>
+      <div className="h-1 bg-surface-2">
+        <div
+          className="h-full bg-primary"
+          style={{ width: `${width}%`, transition: `width ${duration}ms linear` }}
+        />
       </div>
     </div>
   )
@@ -1645,23 +1714,20 @@ export default function MailApp() {
 
       {composeOpen && <ComposeWindow />}
 
-      {/* Toast « Annuler l'envoi » (façon Gmail) */}
+      {/* Toast décompte « Annuler l'envoi » (même mécanique que le décompte de
+          suppression de drive : carte + barre de progression qui se vide). */}
       {undoPayload && (
-        <div className="fixed bottom-6 left-6 z-[100] flex items-center gap-5 bg-[#323232] text-white text-sm rounded-lg shadow-xl px-4 py-3">
-          <span>{t('undo_sent', { defaultValue: 'Message envoyé' })}</span>
-          <button
-            onClick={() => {
-              const p = cancelUndo()
-              if (p) {
-                setComposeInitial({ to: p.to_addresses, cc: p.cc_addresses ?? [], subject: p.subject, bodyHtml: p.body_html })
-                setComposeOpen(true)
-              }
-            }}
-            className="text-[#8ab4f8] font-medium hover:underline"
-          >
-            {t('undo_cancel', { defaultValue: 'Annuler' })}
-          </button>
-        </div>
+        <UndoSendToast
+          label={t('undo_sent', { defaultValue: 'Message envoyé' })}
+          undoLabel={t('undo_cancel', { defaultValue: 'Annuler' })}
+          onCancel={() => {
+            const p = cancelUndo()
+            if (p) {
+              setComposeInitial({ to: p.to_addresses, cc: p.cc_addresses ?? [], subject: p.subject, bodyHtml: p.body_html })
+              setComposeOpen(true)
+            }
+          }}
+        />
       )}
       {pdfUrl && (
         <PdfViewerModal url={pdfUrl} filename={pdfName} onClose={() => setPdfUrl(null)} />

@@ -80,6 +80,15 @@ export interface EmailMessage {
   folder:        string
   sent_at:       string | null
   received_at:   string
+  spam_score?:   number | null
+}
+
+export interface SpamStats {
+  spam_messages:   number
+  ham_messages:    number
+  distinct_tokens: number
+  auto_classify:   boolean
+  threshold:       number
 }
 
 export interface Attachment {
@@ -362,4 +371,15 @@ export const mailApi = {
 
   unblockSender: (id: string) =>
     api.delete(`/mail/blocked/${id}`).then(r => r.data),
+
+  // Anti-spam bayésien
+  getSpamStats: () =>
+    api.get<SpamStats>('/mail/spam/stats').then(r => r.data),
+
+  updateSpamSettings: (dto: { auto_classify?: boolean; threshold?: number }) =>
+    api.patch('/mail/spam/settings', dto).then(r => r.data),
+
+  trainSpam: () =>
+    api.post<{ spam_messages: number; ham_messages: number; capped: boolean }>('/mail/spam/train')
+      .then(r => r.data),
 }
