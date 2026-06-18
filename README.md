@@ -23,7 +23,7 @@ A standalone Rust process that registers with the [core](https://github.com/kubu
 
 ## Build
 
-**Requirements:** Rust ≥ 1.82, Node.js ≥ 20, PostgreSQL 16.
+**Requirements:** Rust ≥ 1.82, Node.js ≥ 24, PostgreSQL 16.
 
 ```bash
 cargo build --release                     # → target/release/kubuno-mail
