@@ -1,4 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
+import { isCoarsePointer } from './openable'
+import { useSwipeActions } from './useSwipe'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { useLocation } from 'react-router-dom'
@@ -735,7 +737,10 @@ function ThreadList() {
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-w-0">
 
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-[#f0f0f0] min-h-[44px]">
+      {/* flex-wrap : sur mobile la barre passe à la ligne au lieu de déborder
+          (pas d'overflow → les menus déroulants `absolute` restent visibles) ;
+          desktop inchangé (tout tient sur une ligne). */}
+      <div className="flex items-center flex-wrap gap-1 px-4 py-2 border-b border-[#f0f0f0] min-h-[44px] no-print">
         {/* Case + menu de sélection (Tout / Aucun / Lus / Non lus / Suivis) */}
         <div className="relative flex items-center">
           <input
@@ -804,7 +809,7 @@ function ThreadList() {
         )}
         {/* Pagination façon Gmail : « 1–50 sur N » + ‹ › */}
         <div className="flex items-center gap-0.5 text-xs text-text-secondary flex-shrink-0">
-          <span className="mr-1 tabular-nums">
+          <span className="mr-1 tabular-nums hidden sm:inline">
             {total != null
               ? t('mail_range_of', { start: rangeStart, end: rangeEnd, total, defaultValue: `${rangeStart}–${rangeEnd} sur ${total}` })
               : `${rangeStart}–${rangeEnd}`}
@@ -820,16 +825,16 @@ function ThreadList() {
             <ChevronRight size={16} />
           </button>
 
-          {/* Densité d'affichage (normale / compacte) */}
+          {/* Densité d'affichage (normale / compacte) — desktop only */}
           <button
             onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
             title={t('density_toggle', { defaultValue: density === 'compact' ? 'Affichage normal' : 'Affichage compact' })}
-            className={`p-1.5 rounded hover:bg-surface-2 transition-colors ${density === 'compact' ? 'text-primary' : ''}`}>
+            className={`hidden lg:block p-1.5 rounded hover:bg-surface-2 transition-colors ${density === 'compact' ? 'text-primary' : ''}`}>
             <AlignJustify size={16} />
           </button>
 
-          {/* Mode Volet Double (aucune / verticale / horizontale) */}
-          <div className="ml-1">
+          {/* Mode Volet Double — masqué sur mobile (pas de place pour des volets) */}
+          <div className="ml-1 hidden lg:block">
             <button onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setSplitMenuPos(p => p ? null : { top: r.bottom + 4, left: r.right - 224 }) }}
               title={t('split_toggle', { defaultValue: 'Mode Volet Double' })}
               className={`flex items-center p-1.5 rounded hover:bg-surface-2 transition-colors ${splitMode !== 'none' ? 'text-primary' : ''}`}>
@@ -946,6 +951,9 @@ function ThreadItem({
 
   // Debounce : le clic simple n'agit que si aucun double-clic ne suit dans 220ms
   function handleClick() {
+    // Touch UIs have no double-click: a single tap opens the thread directly
+    // (otherwise, with no split panel, a tap would only highlight it).
+    if (isCoarsePointer()) { onDoubleClick(); return }
     if (clickTimer.current) clearTimeout(clickTimer.current)
     clickTimer.current = setTimeout(() => {
       clickTimer.current = null
@@ -957,6 +965,8 @@ function ThreadItem({
     onDoubleClick()
   }
 
+  const swipe = useSwipeActions({ onRight: onArchive, onLeft: onDelete })
+
   return (
     <div
       role="button"
@@ -966,9 +976,12 @@ function ThreadItem({
       onKeyDown={e => { if (e.key === 'Enter') handleDoubleClick() }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`flex items-center ${density === 'compact' ? 'h-[36px]' : 'h-[52px]'} px-3 gap-2 cursor-pointer select-none
+      {...swipe.handlers}
+      style={swipe.dx !== 0 ? { transform: `translateX(${swipe.dx}px)`, transition: swipe.swiping ? 'none' : 'transform 0.2s ease', touchAction: 'pan-y' } : { touchAction: 'pan-y' }}
+      className={`relative flex items-center ${density === 'compact' ? 'h-[36px]' : 'h-[52px]'} px-3 gap-2 cursor-pointer select-none
         border-b border-[#f0f0f0] group
-        ${opened      ? 'bg-blue-50 shadow-[inset_3px_0_0_#1a73e8]' :
+        ${swipe.dx > 0 ? 'bg-[#1e8e3e]' : swipe.dx < 0 ? 'bg-[#d93025]' :
+          opened      ? 'bg-blue-50 shadow-[inset_3px_0_0_#1a73e8]' :
           highlighted ? 'bg-[#e8f0fe]' :
           checked     ? 'bg-yellow-50' :
           hovered     ? 'shadow-[0_1px_3px_rgba(0,0,0,0.16)] z-10 relative' : 'bg-white'}`}
@@ -1447,7 +1460,9 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white">
 
       {/* ══ Toolbar ══════════════════════════════════════════════════════════ */}
-      <div className="flex items-center gap-0.5 px-2 h-[48px] border-b border-[#e0e0e0] flex-shrink-0">
+      {/* flex-wrap + min-h : la barre d'actions (nombreux boutons) passe à la ligne
+          sur mobile sans déborder ni clipper les menus ; desktop = une seule ligne. */}
+      <div className="flex items-center flex-wrap gap-0.5 px-2 min-h-[48px] py-1 border-b border-[#e0e0e0] flex-shrink-0 no-print">
 
         {/* Retour à la liste */}
         <TBtn onClick={() => setSelectedThread(null)} title={t('back')}>
@@ -1680,8 +1695,11 @@ export default function MailApp() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* ── Navigation dossiers (intégrée, remplace AppSidebar) ─────────── */}
-      <div className="w-64 flex-shrink-0 flex flex-col overflow-hidden border-r border-[#e0e0e0] bg-white py-2">
+      {/* ── Navigation dossiers (intégrée, remplace AppSidebar) ───────────
+          Masquée sur mobile : elle écraserait la liste des fils. Les dossiers
+          restent accessibles via le tiroir du core (hamburger), où
+          MailSidebarBody est aussi enregistré (cf. entry.ts). */}
+      <div className="hidden lg:flex w-64 flex-shrink-0 flex-col overflow-hidden border-r border-[#e0e0e0] bg-white py-2">
         <MailSidebarBody />
       </div>
 
