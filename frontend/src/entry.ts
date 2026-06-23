@@ -1,13 +1,12 @@
 /** Bundle MODULE mail — chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
-import { RouteRegistry, WaffleAppRegistry, SlotRegistry, FaviconRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
+import { RouteRegistry, WaffleAppRegistry, ModuleSettingsRegistry, NotificationRegistry, FaviconRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
 import './index.css'
 import './i18n'
 import { useMailStore } from './store'
 import MailLogo from './MailLogo'
 import MailSidebarBody from './MailSidebarBody'
 import MailFilterPanel from './MailFilterPanel'
-import MailTopbarSettingsButton from './MailTopbarSettingsButton'
 
 export const sdkVersion = SDK_VERSION
 
@@ -41,7 +40,20 @@ export function register() {
     FilterPanel: MailFilterPanel,
   })
 
-  SlotRegistry.registerOverride('topbar-settings', 'mail', MailTopbarSettingsButton)
+  // The header gear button opens the per-user Mail settings while in /mail.
+  ModuleSettingsRegistry.register('mail')
+
+  // Declare the notification activities shown in the core Settings → Notifications matrix.
+  NotificationRegistry.register({
+    moduleId: 'mail',
+    title: 'Mail',
+    order: 30,
+    activities: [
+      { id: 'mail_received', label: 'Nouvel e-mail reçu', pushDefault: true },
+      { id: 'mail_important', label: 'E-mail important reçu', emailDefault: true, pushDefault: true },
+      { id: 'mail_spam', label: 'Un e-mail a été classé comme spam' },
+    ],
+  })
 
   // Routes
   const MailApp          = lazy(() => import('./MailApp'))

@@ -1272,7 +1272,7 @@ export default function MailSettingsPage() {
 
       {/* Tab bar (Gmail-style) */}
       <div
-        className="flex items-end border-b border-[#e8eaed] px-4 flex-shrink-0 overflow-x-auto"
+        className="flex items-end border-b border-[#e8eaed] px-4 flex-shrink-0 overflow-x-auto overflow-y-hidden"
         style={{ background: '#fff' }}
       >
         {TAB_IDS.map(id => (
