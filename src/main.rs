@@ -39,6 +39,14 @@ struct SidebarItemRaw {
     icon:     String,
     path:     String,
     position: i32,
+    /// `false` for internal views/folders (Sent, Drafts, Trash…) that are not
+    /// launchable apps. Defaults to `true` for backward compatibility.
+    #[serde(default = "default_launchable")]
+    launchable: bool,
+}
+
+fn default_launchable() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -216,9 +224,10 @@ async fn register_with_core(http: &Client, settings: &Settings) {
             "icon":     s.icon,
             "path":     s.path,
             "position": s.position,
+            "launchable": s.launchable,
         })).collect())
         .unwrap_or_else(|| vec![
-            json!({ "id": "mail-inbox", "label": "Boîte de réception", "icon": "Inbox", "path": "/mail", "position": 30 }),
+            json!({ "id": "mail-inbox", "label": "Boîte de réception", "icon": "Inbox", "path": "/mail", "position": 30, "launchable": true }),
         ]);
     let subscribed_events: Vec<String> = manifest.as_ref()
         .and_then(|m| m.events.as_ref())

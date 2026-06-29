@@ -1598,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "kubuno-mail"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "aes-gcm",
  "ammonia",
