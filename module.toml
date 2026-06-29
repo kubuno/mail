@@ -1,7 +1,7 @@
 [module]
 id           = "mail"
 display_name = "Mail"
-version      = "0.1.0"
+version      = "0.1.2"
 description  = "Messagerie email IMAP/SMTP multi-comptes"
 author       = "Kubuno Contributors"
 license      = "AGPL-3.0"
@@ -34,6 +34,7 @@ id       = "mail-sent"
 label    = "Envoyés"
 icon     = "Send"
 path     = "/mail/sent"
+launchable = false
 position = 31
 section  = "main"
 
@@ -42,6 +43,7 @@ id       = "mail-drafts"
 label    = "Brouillons"
 icon     = "FileText"
 path     = "/mail/drafts"
+launchable = false
 position = 32
 section  = "main"
 
@@ -50,6 +52,7 @@ id       = "mail-starred"
 label    = "Suivis"
 icon     = "Star"
 path     = "/mail/starred"
+launchable = false
 position = 33
 section  = "main"
 
@@ -58,6 +61,7 @@ id       = "mail-spam"
 label    = "Spam"
 icon     = "ShieldAlert"
 path     = "/mail/spam"
+launchable = false
 position = 34
 section  = "main"
 
@@ -66,6 +70,7 @@ id       = "mail-trash"
 label    = "Corbeille"
 icon     = "Trash2"
 path     = "/mail/trash"
+launchable = false
 position = 35
 section  = "main"
 
