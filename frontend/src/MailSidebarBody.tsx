@@ -5,12 +5,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Inbox, Send, FileText, Star, ShieldAlert, Trash2,
   ChevronDown, ChevronRight, Plus, Tag, Circle, MailOpen,
-  ShoppingBag, Users, Info, MessagesSquare, Settings2,
+  Users, Info, Settings2,
   Clock, Bookmark, CalendarClock, MailX, type LucideIcon,
 } from 'lucide-react'
 import { SidebarNavItem, prompt } from '@kubuno/sdk'
 import { useMailStore } from './store'
 import { mailApi } from './api'
+import { categoryTo } from './categoryRoute'
 
 // Dossiers principaux (toujours visibles)
 const MAIN_FOLDERS = [
@@ -24,10 +25,8 @@ const MAIN_FOLDERS = [
 
 // Catégories de la boîte de réception (classées côté client par expéditeur/sujet)
 const CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
-  { id: 'purchases',     label: 'Achats',          icon: ShoppingBag },
   { id: 'social',        label: 'Réseaux sociaux', icon: Users },
   { id: 'notifications', label: 'Notifications',   icon: Info },
-  { id: 'forums',        label: 'Forums',          icon: MessagesSquare },
   { id: 'promotions',    label: 'Promotions',      icon: Tag },
 ]
 
@@ -47,7 +46,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
   const qc = useQueryClient()
   const [showMore,   setShowMore]   = useState(false)
   const [showLabels, setShowLabels] = useState(true)
-  const { setComposeOpen, inboxCategory, setInboxCategory, accounts } = useMailStore()
+  const { inboxCategory, setInboxCategory, accounts } = useMailStore()
 
   const { data: accountsData } = useQuery({ queryKey: ['mail-accounts'], queryFn: mailApi.listAccounts })
   const hasAccount = !!(accountsData?.accounts?.length)
@@ -70,14 +69,11 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     for (const th of inboxData?.threads ?? []) {
       if (th.unread_count <= 0) continue
       const e = th.last_sender_email ?? ''
-      const s = th.subject ?? ''
       const cat =
         /twitter|facebook|linkedin|instagram|tiktok|youtube|pinterest|snapchat|meta\.com|x\.com/i.test(e) ? 'social'
-        : /forum|digest|groups?@|discourse|mailing.?list|listserv|community|googlegroups/i.test(e) ? 'forums'
-        : /order|commande|re[çc]u|facture|invoice|shipping|livraison|delivery|tracking|colis|exp[ée]di|amazon|paypal|stripe|achat|purchase|payment|paiement|receipt/i.test(`${e} ${s}`) ? 'purchases'
         : /notification|alert|update|security|account|billing/i.test(e) ? 'notifications'
         : /no.?reply|newsletter|noreply|promo|marketing|info@|hello@|contact@|deals?@|offers?@/i.test(e) ? 'promotions'
-        : 'principale'
+        : 'main'
       m[cat] = (m[cat] ?? 0) + 1
     }
     return m
@@ -116,52 +112,39 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
   }
 
   // ── Item dossier ──────────────────────────────────────────────────────────
+  // The inbox only lights up on the "main" category, otherwise it would
+  // stay highlighted alongside the active category (both live on /mail).
   const folderActive = (id: string, path: string) =>
-    pathname === path || (id === 'inbox' && isInboxView && inboxCategory === 'principale')
+    id === 'inbox' ? isInboxView && inboxCategory === 'main' : pathname === path
 
   return (
     <>
-      {/* Bouton Nouveau message */}
-      {collapsed ? (
-        <div className="flex justify-center mb-2">
-          <button onClick={() => setComposeOpen(true)} title={t('new_message')}
-            className="w-10 h-10 flex items-center justify-center bg-white rounded-full transition-shadow"
-            style={{ boxShadow: '0 1px 3px rgba(60,64,67,0.3), 0 4px 8px rgba(60,64,67,0.15)' }}>
-            <Plus size={20} className="text-text-secondary" />
-          </button>
-        </div>
-      ) : (
-        <div className="px-3 mb-2">
-          <button onClick={() => setComposeOpen(true)}
-            className="flex items-center gap-3 bg-white text-sm font-medium text-text-primary cursor-pointer w-full hover:shadow-md transition-shadow"
-            style={{ padding: '14px 24px', border: '1px solid #e0e0e0', borderRadius: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
-            <Plus size={20} className="text-text-secondary flex-shrink-0" />
-            {t('new_message')}
-          </button>
-        </div>
-      )}
-
-      <nav className={`flex-1 space-y-0.5 overflow-y-auto ${collapsed ? 'px-2' : 'px-0 pr-2'}`}>
+      {/* The "New message" button lives in the shell's default New button now
+          (NewActions: MailCreateMenu, registered in entry.ts). */}
+      <nav className={`flex-1 overflow-y-auto py-1 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
         {/* Dossiers principaux */}
         {MAIN_FOLDERS.map(f => (
           <SidebarNavItem
             key={f.id} collapsed={collapsed}
             label={t(f.key, { defaultValue: f.label })}
-            icon={<f.icon size={18} className="flex-shrink-0" />}
+            icon={<f.icon size={16} className="flex-shrink-0" />}
             active={folderActive(f.id, f.path)}
-            onClick={() => navigate(f.path)}
+            // The inbox row IS the "main" category, hence its hash link.
+            to={f.id === 'inbox' ? categoryTo('main') : f.path}
             badge={badgeFor(f.id)}
           />
         ))}
 
-        {/* Catégories de la boîte de réception */}
+        {/* Catégories de la boîte de réception : filtres CLIENT sur /mail, donc
+            pas de route propre mais un vrai lien de hash (/mail/#category/<id>),
+            partageable et géré par l'historique. */}
         {CATEGORIES.map(c => (
           <SidebarNavItem
             key={c.id} collapsed={collapsed}
             label={t('mail_tab_' + c.id, { defaultValue: c.label })}
-            icon={<c.icon size={18} className="flex-shrink-0" />}
+            icon={<c.icon size={16} className="flex-shrink-0" />}
             active={isInboxView && inboxCategory === c.id}
-            onClick={() => { setInboxCategory(c.id); navigate('/mail') }}
+            to={categoryTo(c.id)}
             badge={num(catCounts[c.id])}
           />
         ))}
@@ -171,32 +154,40 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
           <SidebarNavItem
             key={f.id} collapsed={collapsed}
             label={t(f.key, { defaultValue: f.label })}
-            icon={<f.icon size={18} className="flex-shrink-0" />}
+            icon={<f.icon size={16} className="flex-shrink-0" />}
             active={pathname === f.path}
-            onClick={() => navigate(f.path)}
+            to={f.path}
             badge={badgeFor(f.id)}
           />
         ))}
 
         {!collapsed && (
-          <button onClick={() => setShowMore(v => !v)}
-            className="w-full flex items-center gap-3 pl-4 pr-3 py-[5px] rounded-r-full text-sm text-text-secondary hover:bg-surface-2 transition-colors">
-            {showMore ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-            <span>{showMore ? t('mail_less') : t('mail_more')}</span>
-          </button>
+          <SidebarNavItem
+            collapsed={false}
+            label={showMore ? t('mail_less') : t('mail_more')}
+            icon={showMore ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
+            active={false}
+            onClick={() => setShowMore(v => !v)}
+          />
         )}
 
         {/* Libellés */}
         {!collapsed && (
-          <div className="pt-2 pb-1">
-            <div className="w-full flex items-center justify-between pl-4 pr-3 py-1 text-xs font-semibold text-text-secondary uppercase tracking-wide">
-              <button onClick={() => setShowLabels(v => !v)} className="flex-1 text-left hover:text-text-primary transition-colors">
-                {t('labels')}
-              </button>
-              <button onClick={onCreateLabel} title={t('label_create', { defaultValue: 'Créer un libellé' })}
-                className="p-0.5 rounded hover:bg-surface-2 hover:text-text-primary transition-colors">
+          <div className="pt-2 space-y-0.5">
+            <div className="flex items-center gap-2 w-full px-3 py-1 text-[10px] font-bold text-text-tertiary uppercase tracking-widest">
+              {/* Anchors (never <button>) like the rest of the left sidebar;
+                  in-page actions so href="#". */}
+              <a href="#" role="button" aria-expanded={showLabels}
+                onClick={e => { e.preventDefault(); setShowLabels(v => !v) }}
+                className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer hover:text-text-secondary transition-colors">
+                <ChevronDown className={`w-3 h-3 flex-shrink-0 transition-transform ${showLabels ? '' : '-rotate-90'}`} />
+                <span className="truncate text-left">{t('labels')}</span>
+              </a>
+              <a href="#" role="button" title={t('label_create', { defaultValue: 'Créer un libellé' })}
+                onClick={e => { e.preventDefault(); onCreateLabel() }}
+                className="p-0.5 rounded cursor-pointer hover:bg-surface-2 hover:text-text-secondary transition-colors flex-shrink-0">
                 <Plus size={14} />
-              </button>
+              </a>
             </div>
 
             {showLabels && labels.map(label => (
@@ -205,7 +196,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
                 label={label.name}
                 icon={<Circle size={11} className="flex-shrink-0" style={{ color: label.color ?? '#5f6368', fill: label.color ?? '#5f6368' }} />}
                 active={pathname === `/mail/label/${label.id}`}
-                onClick={() => navigate(`/mail/label/${label.id}`)}
+                to={`/mail/label/${label.id}`}
                 badge={num(counts?.labels[label.id])}
               />
             ))}
@@ -215,7 +206,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
               label={t('label_manage', { defaultValue: 'Gérer les libellés' })}
               icon={<Settings2 size={16} className="flex-shrink-0" />}
               active={pathname === '/mail/settings'}
-              onClick={() => navigate('/mail/settings')}
+              to="/mail/settings"
             />
             <SidebarNavItem
               collapsed={false}

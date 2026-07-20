@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FloatingWindow, Dropdown, MenuDropdown, type MenuItem, type MenuDropdownPos } from '@ui'
+import { FloatingWindow, Dropdown, FontSizeField, MenuDropdown, type MenuItem, type MenuDropdownPos } from '@ui'
+
+// Web-safe families for the compose toolbar (applied via execCommand('fontName')).
+const MAIL_FONTS = ['Arial', 'Verdana', 'Trebuchet MS', 'Tahoma', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS']
+const MAIL_SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 24, 36, 48]
 import { prompt } from '@kubuno/sdk'
 import { useUndoSendStore } from './undoSendStore'
 import {
@@ -11,7 +15,9 @@ import {
   ChevronDown, Type, Palette, MoreHorizontal, Trash2, Eraser,
 } from 'lucide-react'
 import { mailApi, EmailAddress } from './api'
+import { RecipientField } from './AddressSuggest'
 import { useMailStore } from './store'
+import { readKubunoData, kubunoDataToEmailHtml } from './kubunoData'
 
 const MIN_W = 420, MIN_H = 320
 
@@ -53,15 +59,15 @@ export default function ComposeWindow() {
   const accountId = defaultAccount?.id ?? ''
 
   const [to,        setTo]        = useState<EmailAddress[]>(composeInitial?.to ?? [])
-  const [toInput,   setToInput]   = useState('')
   const [cc,        setCc]        = useState<EmailAddress[]>(composeInitial?.cc ?? [])
-  const [ccInput,   setCcInput]   = useState('')
   const [showCc,    setShowCc]    = useState(!!composeInitial?.cc.length)
+  const [bcc,       setBcc]       = useState<EmailAddress[]>([])
+  const [showBcc,   setShowBcc]   = useState(false)
   const [subject,   setSubject]   = useState(composeInitial?.subject ?? '')
   const [showFmt,   setShowFmt]   = useState(true)
   const [minimized, setMinimized] = useState(false)
-  const [fontName,  setFontName]  = useState('sans-serif')
-  const [fontSz,    setFontSz]    = useState('3')
+  const [fontName,  setFontName]  = useState('Arial')
+  const [fontSz,    setFontSz]    = useState('13')
 
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -86,6 +92,7 @@ export default function ComposeWindow() {
       account_id:   accountId,
       to_addresses: to,
       cc_addresses: cc.length ? cc : undefined,
+      bcc_addresses: bcc.length ? bcc : undefined,
       subject,
       body_html:    body,
       attachments:  attachments.length ? attachments.map(a => ({ filename: a.filename, mime: a.mime, content: a.content })) : undefined,
@@ -98,21 +105,50 @@ export default function ComposeWindow() {
     setComposeOpen(false)
   }
 
-  // ── Address helpers ─────────────────────────────────────────────────────────
-  const addTo = () => {
-    const v = toInput.trim()
-    if (v && v.includes('@')) { setTo(p => [...p, { email: v }]); setToInput('') }
-  }
-  const addCc = () => {
-    const v = ccInput.trim()
-    if (v && v.includes('@')) { setCc(p => [...p, { email: v }]); setCcInput('') }
+  // ── execCommand ─────────────────────────────────────────────────────────────
+  // The font/size selectors are editable inputs that steal focus from the body,
+  // collapsing its selection. We track the last body selection and restore it
+  // before applying a command so formatting lands on the intended text.
+  const savedRangeRef = useRef<Range | null>(null)
+  useEffect(() => {
+    const save = () => {
+      const sel = document.getSelection()
+      if (sel && sel.rangeCount && bodyRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+        savedRangeRef.current = sel.getRangeAt(0).cloneRange()
+      }
+    }
+    document.addEventListener('selectionchange', save)
+    return () => document.removeEventListener('selectionchange', save)
+  }, [])
+  const restoreSel = () => {
+    bodyRef.current?.focus()
+    const r = savedRangeRef.current
+    const sel = document.getSelection()
+    if (r && sel) { sel.removeAllRanges(); sel.addRange(r) }
   }
 
-  // ── execCommand ─────────────────────────────────────────────────────────────
   const exec = (cmd: string, value?: string) => {
-    bodyRef.current?.focus()
+    restoreSel()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(document as any).execCommand(cmd, false, value ?? undefined)
+  }
+
+  // Apply an arbitrary pixel font-size to the selection. execCommand('fontSize')
+  // only accepts the legacy 1-7 scale, so we tag the selection with size 7 then
+  // rewrite those <font> markers to the real px value (the classic reliable trick).
+  const applyFontSizePx = (px: string) => {
+    const ed = bodyRef.current
+    if (!ed) return
+    restoreSel()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cmd = (c: string, v?: string) => (document as any).execCommand(c, false, v)
+    cmd('styleWithCSS', 'false')
+    cmd('fontSize', '7')
+    ed.querySelectorAll('font[size="7"]').forEach(el => {
+      const e = el as HTMLElement
+      e.removeAttribute('size')
+      e.style.fontSize = `${px}px`
+    })
   }
 
   // ── Pièces jointes ────────────────────────────────────────────────────────────
@@ -161,6 +197,7 @@ export default function ComposeWindow() {
       account_id:   accountId,
       to_addresses: to,
       cc_addresses: cc.length ? cc : undefined,
+      bcc_addresses: bcc.length ? bcc : undefined,
       subject,
       body_html:    bodyRef.current?.innerHTML ?? '',
       scheduled_at: scheduledAt,
@@ -221,53 +258,36 @@ export default function ComposeWindow() {
         </button>
       }
     >
-      {/* ── Destinataires ────────────────────────────────────────────────────── */}
+      {/* ── Destinataires (autocomplétion : index mail + contacts) ─────────────── */}
       <div className="flex items-start gap-2 px-4 py-2.5 border-b border-border flex-shrink-0">
-        <div className="flex-1 flex flex-wrap gap-1 items-center min-w-0">
-          {to.map((a, i) => (
-            <span key={i} className="flex items-center gap-1 bg-surface-2 text-text-secondary text-xs px-2 py-0.5 rounded-full">
-              {a.name ? `${a.name} <${a.email}>` : a.email}
-              <button onClick={() => setTo(p => p.filter((_, idx) => idx !== i))}><X size={9} /></button>
-            </span>
-          ))}
-          <input
-            type="email"
-            value={toInput}
-            onChange={e => setToInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTo() } }}
-            onBlur={addTo}
-            placeholder={to.length ? '' : t('mail_add_recipient')}
-            className="flex-1 min-w-32 text-sm outline-none bg-transparent text-text-primary placeholder:text-text-tertiary"
-          />
+        <RecipientField chips={to} onChange={setTo} placeholder={t('mail_add_recipient')} />
+        <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+          {!showCc && (
+            <button onClick={() => setShowCc(true)} className="text-xs text-text-tertiary hover:text-primary whitespace-nowrap">
+              CC
+            </button>
+          )}
+          {!showBcc && (
+            <button onClick={() => setShowBcc(true)} className="text-xs text-text-tertiary hover:text-primary whitespace-nowrap">
+              {t('mail_bcc', { defaultValue: 'CCi' })}
+            </button>
+          )}
         </div>
-        {!showCc && (
-          <button onClick={() => setShowCc(true)} className="text-xs text-text-tertiary hover:text-primary whitespace-nowrap flex-shrink-0 mt-0.5">
-            CC
-          </button>
-        )}
       </div>
 
       {/* ── CC ───────────────────────────────────────────────────────────────── */}
       {showCc && (
         <div className="flex items-start px-4 py-2 border-b border-border flex-shrink-0">
           <span className="text-sm text-text-tertiary mr-3 mt-0.5 flex-shrink-0">CC</span>
-          <div className="flex-1 flex flex-wrap gap-1 items-center">
-            {cc.map((a, i) => (
-              <span key={i} className="flex items-center gap-1 bg-surface-2 text-xs px-2 py-0.5 rounded-full text-text-secondary">
-                {a.email}
-                <button onClick={() => setCc(p => p.filter((_, idx) => idx !== i))}><X size={9} /></button>
-              </span>
-            ))}
-            <input
-              type="email"
-              value={ccInput}
-              onChange={e => setCcInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addCc() } }}
-              onBlur={addCc}
-              placeholder={t('to_add')}
-              className="flex-1 min-w-24 text-sm outline-none bg-transparent text-text-primary placeholder:text-text-tertiary"
-            />
-          </div>
+          <RecipientField chips={cc} onChange={setCc} placeholder={t('to_add')} />
+        </div>
+      )}
+
+      {/* ── CCi (destinataires cachés) ──────────────────────────────────────── */}
+      {showBcc && (
+        <div className="flex items-start px-4 py-2 border-b border-border flex-shrink-0">
+          <span className="text-sm text-text-tertiary mr-3 mt-0.5 flex-shrink-0">{t('mail_bcc', { defaultValue: 'CCi' })}</span>
+          <RecipientField chips={bcc} onChange={setBcc} placeholder={t('to_add')} />
         </div>
       )}
 
@@ -290,6 +310,14 @@ export default function ComposeWindow() {
         data-placeholder={t('body')}
         className="flex-1 px-4 py-3 text-sm text-text-primary outline-none overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary"
         style={{ lineHeight: '1.6' }}
+        onPaste={e => {
+          // Cross-module data paste: insert a sanitizer-proof HTML block
+          // instead of the envelope's plain-text fallback.
+          const env = readKubunoData(e.clipboardData)
+          if (!env) return
+          e.preventDefault()
+          document.execCommand('insertHTML', false, kubunoDataToEmailHtml(env))
+        }}
       />
 
       {/* ── Pièces jointes ────────────────────────────────────────────────────── */}
@@ -312,23 +340,10 @@ export default function ComposeWindow() {
           <ToolBtn onClick={() => exec('undo')}   title={t('common_undo')}><Undo2 size={13} /></ToolBtn>
           <ToolBtn onClick={() => exec('redo')}   title={t('common_redo')}><Redo2 size={13} /></ToolBtn>
           <div className="w-px h-4 bg-border mx-0.5" />
-          <Dropdown
-            value={fontName}
-            onChange={v => { setFontName(v); bodyRef.current?.focus(); exec('fontName', v) }}
-            options={[
-              { value: 'sans-serif', label: t('mail_font_sans') },
-              { value: 'serif',      label: t('mail_font_serif') },
-              { value: 'Georgia',    label: 'Georgia' },
-              { value: 'Arial',      label: 'Arial' },
-              { value: 'monospace',  label: t('mail_font_mono') },
-            ]}
-            height={26} fontSize={12} width={118}
-          />
-          <Dropdown
-            value={fontSz}
-            onChange={v => { setFontSz(v); bodyRef.current?.focus(); exec('fontSize', v) }}
-            options={['8','10','12','14','18','24','36'].map((sz, i) => ({ value: String(i + 1), label: sz }))}
-            height={26} fontSize={12} width={64}
+          <FontSizeField
+            font={fontName} onFontChange={v => { setFontName(v); bodyRef.current?.focus(); exec('fontName', v) }} fonts={MAIL_FONTS}
+            size={fontSz} onSizeChange={v => { setFontSz(v); applyFontSizePx(v) }} sizes={MAIL_SIZES}
+            minSize={6} maxSize={96} height={26} fontWidth={118} sizeWidth={58} fontSize={12}
           />
           <div className="w-px h-4 bg-border mx-0.5" />
           <ToolBtn onClick={() => exec('bold')}          title={t('mail_bold')}><Bold size={13} /></ToolBtn>

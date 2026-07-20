@@ -6,6 +6,7 @@ import './i18n'
 import { useMailStore } from './store'
 import MailLogo from './MailLogo'
 import MailSidebarBody from './MailSidebarBody'
+import MailCreateMenu from './MailCreateMenu'
 import MailFilterPanel from './MailFilterPanel'
 
 export const sdkVersion = SDK_VERSION
@@ -22,7 +23,10 @@ export function register() {
     routePrefix: '/mail',
     SidebarBody: MailSidebarBody,
     collapsedBody: true,
-    hideSidebar: true,
+    // Use the shell's default "New" button (multicolor +) instead of a bespoke
+    // one inside the sidebar body; its dropdown offers "New message".
+    newButtonLabelKey: 'mail:new_message',
+    NewActions: MailCreateMenu,
   })
 
   useToolbarStore.getState().register({

@@ -81,6 +81,7 @@ export interface EmailMessage {
   sent_at:       string | null
   received_at:   string
   spam_score?:   number | null
+  list_unsubscribe?: string | null
 }
 
 export interface SpamStats {
@@ -272,6 +273,10 @@ export const mailApi = {
 
   getCounts: () =>
     api.get<MailCounts>('/mail/counts').then(r => r.data),
+
+  // Autocomplétion des destinataires (index d'adresses côté mail).
+  suggestAddresses: (q: string) =>
+    api.get<{ email: string; name: string | null }[]>('/mail/addresses', { params: { q } }).then(r => r.data),
 
   getThread: (id: string) =>
     api.get<{ thread: Thread; messages: EmailMessage[] }>(`/mail/threads/${id}`).then(r => r.data),
