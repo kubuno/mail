@@ -40,6 +40,7 @@ pub fn build(state: AppState) -> Router {
         .route("/messages/:id/star",     post(messages::star_message))
         .route("/messages/:id/read",     patch(messages::mark_read))
         .route("/send",                  post(messages::send_message))
+        .route("/addresses",             get(messages::suggest_addresses))
         // Drafts
         .route("/drafts",                get(drafts::list_drafts).post(drafts::save_draft))
         .route("/scheduled",             get(drafts::scheduled_drafts))

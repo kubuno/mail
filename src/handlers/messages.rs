@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, Response, StatusCode},
     Json,
 };
@@ -28,7 +28,7 @@ pub async fn get_message(
                   to_addresses, cc_addresses, bcc_addresses, reply_to,
                   subject, body_text, body_html, attachments,
                   is_read, is_starred, is_deleted, folder, label_ids,
-                  sent_at, received_at, created_at, spam_score
+                  sent_at, received_at, created_at, spam_score, list_unsubscribe
            FROM mail.messages WHERE id = $1 AND user_id = $2"#,
     )
     .bind(msg_id)
@@ -144,7 +144,55 @@ pub async fn send_message(
             .await;
     }
 
+    // Feed the recipient-autocomplete index — people the user WRITES TO rank
+    // highest (weight 3 vs 1 for synced mail).
+    let mut sent_to: Vec<(String, Option<String>)> = Vec::new();
+    for a in dto.to_addresses.iter()
+        .chain(dto.cc_addresses.as_deref().unwrap_or(&[]))
+        .chain(dto.bcc_addresses.as_deref().unwrap_or(&[]))
+    {
+        sent_to.push((a.email.clone(), a.name.clone()));
+    }
+    crate::services::address_index::upsert(&state.db, user.id, &sent_to, 3).await;
+
     Ok(Json(serde_json::json!({ "message": "Message envoyé" })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct SuggestQuery {
+    pub q: String,
+}
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+pub struct AddressSuggestion {
+    pub email: String,
+    pub name:  Option<String>,
+}
+
+/// Recipient autocompletion: search the per-user address index (kept up to date
+/// by the sync worker and outgoing sends — no scan of mail.messages).
+pub async fn suggest_addresses(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(q): Query<SuggestQuery>,
+) -> Result<Json<Vec<AddressSuggestion>>, MailError> {
+    let term = q.q.trim().to_lowercase();
+    if term.is_empty() {
+        return Ok(Json(vec![]));
+    }
+    let rows = sqlx::query_as::<_, AddressSuggestion>(
+        r#"SELECT email, name FROM mail.address_index
+           WHERE user_id = $1
+             AND (email LIKE $2 || '%' OR email LIKE '%' || $2 || '%'
+                  OR LOWER(COALESCE(name, '')) LIKE '%' || $2 || '%')
+           ORDER BY (email LIKE $2 || '%') DESC, use_count DESC, last_used_at DESC
+           LIMIT 8"#,
+    )
+    .bind(user.id)
+    .bind(&term)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(rows))
 }
 
 pub async fn star_message(

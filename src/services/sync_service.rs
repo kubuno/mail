@@ -1,11 +1,12 @@
 use anyhow::Result;
 use chrono::Utc;
-use mail_parser::{HeaderValue, MessageParser};
+use mail_parser::{HeaderValue, MessageParser, MimeHeaders};
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
+    config::settings::MailSettings,
     models::{EmailAccount, EmailFilter},
     services::{
         crypto::MailCrypto,
@@ -13,7 +14,7 @@ use crate::{
     },
 };
 
-pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCrypto) -> Result<()> {
+pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCrypto, mail_cfg: &MailSettings) -> Result<()> {
     let (imap_pass_enc, imap_nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
         "SELECT imap_password, imap_password_nonce FROM mail.accounts WHERE id = $1"
     )
@@ -41,7 +42,7 @@ pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCryp
         ("Spam",  "spam"),
         ("Trash", "trash"),
     ] {
-        if let Err(e) = sync_folder(db, account, &mut session, folder, folder_name).await {
+        if let Err(e) = sync_folder(db, account, &mut session, folder, folder_name, mail_cfg).await {
             tracing::warn!(
                 account_id = %account.id,
                 folder,
@@ -68,6 +69,7 @@ async fn sync_folder(
     session: &mut imap_service::ImapSession,
     imap_folder: &str,
     folder_name: &str,
+    mail_cfg: &MailSettings,
 ) -> Result<()> {
     let last_uid: Option<i64> = sqlx::query_scalar(
         "SELECT MAX(imap_uid) FROM mail.messages WHERE account_id = $1 AND imap_folder = $2"
@@ -79,10 +81,12 @@ async fn sync_folder(
     .unwrap_or(None);
 
     let since_uid = last_uid.map(|u| u as u32);
-    let raw_messages = imap_service::fetch_recent(session, imap_folder, 100, since_uid).await?;
+    // Honour the configured cap (`mail.max_fetch_per_sync`) instead of a hard-coded 100.
+    let max_fetch = mail_cfg.max_fetch_per_sync.max(1);
+    let raw_messages = imap_service::fetch_recent(session, imap_folder, max_fetch, since_uid).await?;
 
     for raw in raw_messages {
-        if let Err(e) = store_message(db, account, &raw.body, raw.uid, imap_folder, folder_name).await {
+        if let Err(e) = store_message(db, account, &raw.body, raw.uid, imap_folder, folder_name, &mail_cfg.attachments_dir).await {
             tracing::warn!(uid = raw.uid, folder = imap_folder, error = %e, "Stockage message échoué");
         }
     }
@@ -97,6 +101,7 @@ async fn store_message(
     uid: u32,
     imap_folder: &str,
     folder_name: &str,
+    attachments_dir: &str,
 ) -> Result<()> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM mail.messages WHERE account_id = $1 AND imap_folder = $2 AND imap_uid = $3)"
@@ -115,6 +120,14 @@ async fn store_message(
     let parsed = parser.parse(raw).ok_or_else(|| anyhow::anyhow!("Parse RFC 5322 échoué"))?;
 
     let message_id  = parsed.message_id().map(str::to_string);
+    // Full References chain (RFC 5322): every ancestor id. Threading walks this
+    // whole set so a reply still lands in its thread even when the DIRECT parent
+    // was never synced (deep chains, partial mailboxes).
+    let references: Vec<String> = match parsed.header("References") {
+        Some(HeaderValue::Text(t))     => vec![t.to_string()],
+        Some(HeaderValue::TextList(l)) => l.iter().map(|s| s.to_string()).collect(),
+        _                              => Vec::new(),
+    };
     let in_reply_to = match parsed.in_reply_to() {
         HeaderValue::Text(t)        => Some(t.to_string()),
         HeaderValue::TextList(list) => list.first().map(|s| s.to_string()),
@@ -140,6 +153,13 @@ async fn store_message(
 
     let to_addresses = addr_list_json(parsed.to());
     let cc_addresses = addr_list_json(parsed.cc());
+
+    // Recipient-autocomplete index entries (sender + recipients), applied further
+    // down only when the message is genuinely new.
+    let mut index_entries: Vec<(String, Option<String>)> =
+        vec![(from_email.clone(), from_name.clone())];
+    index_entries.extend(crate::services::address_index::from_json_list(&to_addresses));
+    index_entries.extend(crate::services::address_index::from_json_list(&cc_addresses));
 
     let body_text     = parsed.body_text(0).map(|s| s.into_owned());
     let body_html_raw = parsed.body_html(0).map(|s| s.into_owned());
@@ -182,6 +202,39 @@ async fn store_message(
         .or(body_html.as_deref())
         .map(|s| s.chars().take(200).collect::<String>());
 
+    // Incoming attachments: collect metadata + bytes now, but only write the files
+    // to disk AFTER the INSERT succeeds (ON CONFLICT DO NOTHING → no orphan files
+    // duplicated on every sync). Served later by download_attachment (fs read).
+    let msg_id = Uuid::new_v4();
+    let msg_dir = std::path::Path::new(attachments_dir).join(msg_id.to_string());
+    let mut att_meta:  Vec<serde_json::Value> = Vec::new();
+    let mut att_files: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
+    for (idx, part) in parsed.attachments().enumerate() {
+        let bytes = part.contents();
+        if bytes.is_empty() { continue }
+        let raw_name = part.attachment_name().unwrap_or("piece-jointe").to_string();
+        // Keep the filename readable but safe for the filesystem (no separators/control chars).
+        let safe: String = raw_name.chars()
+            .map(|c| if c.is_control() || matches!(c, '/' | '\\' | '\0') { '_' } else { c })
+            .take(180)
+            .collect();
+        let mime = part.content_type()
+            .map(|ct| match ct.subtype() {
+                Some(sub) => format!("{}/{}", ct.ctype(), sub),
+                None      => ct.ctype().to_string(),
+            })
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+        let path = msg_dir.join(format!("{idx}_{safe}"));
+        att_meta.push(json!({
+            "name": raw_name,
+            "mime": mime,
+            "size": bytes.len(),
+            "storage_path": path.to_string_lossy(),
+        }));
+        att_files.push((path, bytes.to_vec()));
+    }
+    let has_attachments = !att_meta.is_empty();
+
     let sent_at = parsed.date().and_then(|d| {
         chrono::DateTime::from_timestamp(d.to_timestamp(), 0)
     });
@@ -191,6 +244,7 @@ async fn store_message(
         account,
         &subject,
         in_reply_to.as_deref(),
+        &references,
         sent_at.unwrap_or_else(Utc::now),
         from_name.as_deref(),
         from_email.as_str(),
@@ -204,11 +258,10 @@ async fn store_message(
     let f_body    = body_text.clone();
     let f_to      = to_addresses.to_string();
 
-    let msg_id = Uuid::new_v4();
     let inserted = sqlx::query(
         r#"INSERT INTO mail.messages
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
-            from_name, from_email, to_addresses, cc_addresses, bcc_addresses,
+            from_name, from_email, to_addresses, cc_addresses, attachments,
             subject, body_text, body_html, is_read, folder, sent_at, list_unsubscribe, received_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())
            ON CONFLICT (account_id, imap_folder, imap_uid) DO NOTHING"#,
@@ -225,7 +278,7 @@ async fn store_message(
     .bind(from_email)
     .bind(to_addresses)
     .bind(cc_addresses)
-    .bind(json!([]))
+    .bind(json!(att_meta))
     .bind(&subject)
     .bind(body_text)
     .bind(body_html)
@@ -235,6 +288,29 @@ async fn store_message(
     .bind(list_unsubscribe)
     .execute(db)
     .await?;
+
+    // Feed the recipient-autocomplete index (weight 1 for synced mail).
+    if inserted.rows_affected() > 0 {
+        crate::services::address_index::upsert(db, account.user_id, &index_entries, 1).await;
+    }
+
+    // Write attachment files + flag the thread — only for genuinely new messages.
+    if inserted.rows_affected() > 0 && has_attachments {
+        if let Err(e) = tokio::fs::create_dir_all(&msg_dir).await {
+            tracing::error!(dir = %msg_dir.display(), error = %e, "Création répertoire pièces jointes échouée");
+        } else {
+            for (path, bytes) in &att_files {
+                if let Err(e) = tokio::fs::write(path, bytes).await {
+                    tracing::error!(path = %path.display(), error = %e, "Écriture pièce jointe échouée");
+                }
+            }
+        }
+        if let Err(e) = sqlx::query("UPDATE mail.threads SET has_attachments = TRUE WHERE id = $1")
+            .bind(thread_id).execute(db).await
+        {
+            tracing::error!(thread_id = %thread_id, error = %e, "MAJ has_attachments échouée");
+        }
+    }
 
     // Expéditeur bloqué → spam direct (avant les filtres).
     if inserted.rows_affected() > 0 {
@@ -316,24 +392,34 @@ async fn store_message(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // threading needs the full envelope context
 async fn find_or_create_thread(
     db: &PgPool,
     account: &EmailAccount,
     subject: &str,
     in_reply_to: Option<&str>,
+    references: &[String],
     last_at: chrono::DateTime<Utc>,
     sender_name: Option<&str>,
     sender_email: &str,
 ) -> Result<Uuid> {
-    if let Some(reply_id) = in_reply_to {
+    // Graph threading: any stored message whose Message-ID appears in the
+    // References chain (or In-Reply-To) anchors this message to its thread —
+    // the most recently active thread wins if several match.
+    let mut candidates: Vec<String> = references.to_vec();
+    if let Some(r) = in_reply_to {
+        if !candidates.iter().any(|c| c == r) { candidates.push(r.to_string()) }
+    }
+    if !candidates.is_empty() {
         let existing: Option<Uuid> = sqlx::query_scalar(
             "SELECT t.id FROM mail.threads t
              JOIN mail.messages m ON m.thread_id = t.id
-             WHERE t.account_id = $1 AND m.message_id = $2
+             WHERE t.account_id = $1 AND m.message_id = ANY($2)
+             ORDER BY t.last_message_at DESC
              LIMIT 1"
         )
         .bind(account.id)
-        .bind(reply_id)
+        .bind(&candidates)
         .fetch_optional(db)
         .await?;
 
@@ -342,22 +428,29 @@ async fn find_or_create_thread(
         }
     }
 
+    // Subject fallback — ONLY for actual replies/forwards (Re:/Fwd: prefix).
+    // A fresh subject with no prefix always starts its own thread; this stops
+    // unrelated messages that merely share a subject («Facture», «Bonjour»…)
+    // from being merged into one conversation.
     let normalized = normalize_subject(subject);
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM mail.threads
-         WHERE account_id = $1
-           AND LOWER(subject) = $2
-           AND last_message_at > NOW() - INTERVAL '30 days'
-         ORDER BY last_message_at DESC
-         LIMIT 1"
-    )
-    .bind(account.id)
-    .bind(&normalized)
-    .fetch_optional(db)
-    .await?;
+    let had_prefix = normalized != subject.to_lowercase().trim();
+    if had_prefix {
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM mail.threads
+             WHERE account_id = $1
+               AND LOWER(subject) = $2
+               AND last_message_at > NOW() - INTERVAL '30 days'
+             ORDER BY last_message_at DESC
+             LIMIT 1"
+        )
+        .bind(account.id)
+        .bind(&normalized)
+        .fetch_optional(db)
+        .await?;
 
-    if let Some(id) = existing {
-        return Ok(id);
+        if let Some(id) = existing {
+            return Ok(id);
+        }
     }
 
     let id = Uuid::new_v4();

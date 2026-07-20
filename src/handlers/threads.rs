@@ -34,7 +34,7 @@ pub async fn list_threads(
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT DISTINCT t.id, t.account_id, t.user_id, t.subject, \
                     t.message_count, t.unread_count, t.has_attachments, \
-                    t.is_starred, t.snippet, t.last_sender_name, t.last_sender_email, \
+                    t.is_starred, t.is_important, t.snippet, t.last_sender_name, t.last_sender_email, \
                     t.last_message_at, t.created_at \
              FROM mail.threads t JOIN mail.messages m ON m.thread_id = t.id \
              WHERE t.user_id = ",
@@ -84,7 +84,7 @@ pub async fn list_threads(
         sqlx::query_as::<_, Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
-                      t.is_starred, t.snippet,
+                      t.is_starred, t.is_important, t.snippet,
                       t.last_sender_name, t.last_sender_email,
                       t.last_message_at, t.created_at
                FROM mail.threads t
@@ -106,7 +106,7 @@ pub async fn list_threads(
         sqlx::query_as::<_, Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
-                      t.is_starred, t.snippet,
+                      t.is_starred, t.is_important, t.snippet,
                       t.last_sender_name, t.last_sender_email,
                       t.last_message_at, t.created_at
                FROM mail.threads t
@@ -127,7 +127,7 @@ pub async fn list_threads(
         sqlx::query_as::<_, Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
-                      t.is_starred, t.snippet,
+                      t.is_starred, t.is_important, t.snippet,
                       t.last_sender_name, t.last_sender_email,
                       t.last_message_at, t.created_at
                FROM mail.threads t
@@ -148,7 +148,7 @@ pub async fn list_threads(
         sqlx::query_as::<_, Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
-                      t.is_starred, t.snippet,
+                      t.is_starred, t.is_important, t.snippet,
                       t.last_sender_name, t.last_sender_email,
                       t.last_message_at, t.created_at
                FROM mail.threads t
@@ -169,7 +169,7 @@ pub async fn list_threads(
         sqlx::query_as::<_, Thread>(
             r#"SELECT DISTINCT ON (t.id, t.last_message_at) t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
-                      t.is_starred, t.snippet,
+                      t.is_starred, t.is_important, t.snippet,
                       t.last_sender_name, t.last_sender_email,
                       t.last_message_at, t.created_at
                FROM mail.threads t
@@ -213,7 +213,7 @@ pub async fn get_thread(
     let thread = sqlx::query_as::<_, Thread>(
         r#"SELECT id, account_id, user_id, subject,
                   message_count, unread_count, has_attachments,
-                  is_starred, snippet,
+                  is_starred, is_important, snippet,
                   last_sender_name, last_sender_email,
                   last_message_at, created_at
            FROM mail.threads WHERE id = $1 AND user_id = $2"#,
@@ -230,7 +230,7 @@ pub async fn get_thread(
                   to_addresses, cc_addresses, bcc_addresses, reply_to,
                   subject, body_text, body_html, attachments,
                   is_read, is_starred, is_deleted, folder, label_ids,
-                  sent_at, received_at, created_at, spam_score
+                  sent_at, received_at, created_at, spam_score, list_unsubscribe
            FROM mail.messages
            WHERE thread_id = $1 AND is_deleted = FALSE
            ORDER BY received_at ASC"#,

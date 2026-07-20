@@ -73,6 +73,7 @@ pub struct Thread {
     pub unread_count:    i32,
     pub has_attachments: bool,
     pub is_starred:      bool,
+    pub is_important:    bool,
     pub snippet:           Option<String>,
     pub last_sender_name:  Option<String>,
     pub last_sender_email: String,
@@ -109,6 +110,7 @@ pub struct EmailMessage {
     pub received_at:    DateTime<Utc>,
     pub created_at:     DateTime<Utc>,
     pub spam_score:     Option<f32>,
+    pub list_unsubscribe: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]

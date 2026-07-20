@@ -1,3 +1,4 @@
+pub mod address_index;
 pub mod crypto;
 pub mod imap_service;
 pub mod smtp_service;

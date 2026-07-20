@@ -42,7 +42,7 @@ async fn sync_all_accounts(state: &AppState, crypto: &MailCrypto) {
     for account in accounts {
         // Borne dure : une opération IMAP bloquée ne doit jamais figer le worker
         // (et donc tous les autres comptes) indéfiniment. L'échec est enregistré.
-        let fut = crate::services::sync_service::sync_account(&state.db, &account, crypto);
+        let fut = crate::services::sync_service::sync_account(&state.db, &account, crypto, &state.settings.mail);
         let outcome = tokio::time::timeout(Duration::from_secs(180), fut).await;
         let err: Option<String> = match outcome {
             Ok(Ok(()))  => None,
