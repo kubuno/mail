@@ -66,6 +66,8 @@ pub struct MailSettings {
     pub encryption_key:       String,
     pub sync_interval_secs:   u64,
     pub max_fetch_per_sync:   u32,
+    /// Directory where incoming attachments are written (served by download_attachment).
+    pub attachments_dir:      String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -95,6 +97,7 @@ impl Settings {
             .set_default("mail.encryption_key", "")?
             .set_default("mail.sync_interval_secs", 300i64)?
             .set_default("mail.max_fetch_per_sync", 200i64)?
+            .set_default("mail.attachments_dir", "/var/lib/kubuno/mail/attachments")?
             .set_default("logging.level", "info")?
             .set_default("logging.format", "pretty")?
             .add_source(File::with_name("config").required(false))

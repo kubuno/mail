@@ -35,6 +35,11 @@ pub async fn send_message(cfg: &SmtpConfig, dto: &SendMailDto, subject: &str, bo
     for addr in dto.cc_addresses.as_deref().unwrap_or(&[]) {
         builder = builder.cc(format_addr(addr).parse().context("Adresse CC invalide")?);
     }
+    // BCC: lettre adds these to the SMTP envelope then strips the Bcc header from
+    // the formatted message (default behaviour) — hidden recipients stay hidden.
+    for addr in dto.bcc_addresses.as_deref().unwrap_or(&[]) {
+        builder = builder.bcc(format_addr(addr).parse().context("Adresse BCC invalide")?);
+    }
 
     builder = builder.subject(subject);
 

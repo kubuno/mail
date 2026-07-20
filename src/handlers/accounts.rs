@@ -531,12 +531,13 @@ pub async fn trigger_sync(
 
     let db2 = state.db.clone();
     let key  = state.settings.mail.encryption_key.clone();
+    let mail_cfg = state.settings.mail.clone();
     tokio::spawn(async move {
         let crypto = match MailCrypto::new(&key) {
             Ok(c)  => c,
             Err(e) => { tracing::error!(error = %e, "Sync: clé invalide"); return; }
         };
-        if let Err(e) = crate::services::sync_service::sync_account(&db2, &account, &crypto).await {
+        if let Err(e) = crate::services::sync_service::sync_account(&db2, &account, &crypto, &mail_cfg).await {
             tracing::error!(account_id = %account.id, error = %e, "Sync manuel: erreur");
         }
     });
