@@ -50,7 +50,8 @@ export function ScheduledView() {
 }
 
 // ── Gérer les abonnements ─────────────────────────────────────────────────────
-function unsubscribeTarget(raw: string): string | null {
+// Exporté : réutilisé par le bouton « Se désabonner » du lecteur de message.
+export function unsubscribeTarget(raw: string): string | null {
   // List-Unsubscribe : "<https://...>, <mailto:...>" → préférer l'URL http.
   const links = [...raw.matchAll(/<([^>]+)>/g)].map(m => m[1])
   return links.find(l => /^https?:/i.test(l)) ?? links.find(l => /^mailto:/i.test(l)) ?? null

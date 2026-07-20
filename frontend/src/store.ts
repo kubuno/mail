@@ -52,7 +52,7 @@ export const useMailStore = create<MailState>((set) => ({
   selectedAccount: null,
   currentFolder:   'inbox',
   currentLabelId:  null,
-  inboxCategory:   'principale',
+  inboxCategory:   'main',
   selectedThread:  null,
   labels:          [],
   searchQuery:     '',
