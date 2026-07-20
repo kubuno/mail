@@ -1,7 +1,7 @@
 [module]
 id           = "mail"
 display_name = "Mail"
-version      = "0.1.3"
+version      = "0.1.4"
 description  = "Messagerie email IMAP/SMTP multi-comptes"
 author       = "Kubuno Contributors"
 license      = "AGPL-3.0"
