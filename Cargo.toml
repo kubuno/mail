@@ -1,6 +1,6 @@
 [package]
 name        = "kubuno-mail"
-version     = "0.1.4"
+version     = "0.1.5"
 edition     = "2021"
 description = "Kubuno Mail — module de messagerie IMAP/SMTP"
 license     = "AGPL-3.0"
