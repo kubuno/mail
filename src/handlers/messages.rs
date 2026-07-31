@@ -132,9 +132,18 @@ pub async fn send_message(
 
     let body_html = ammonia::clean(&dto.body_html);
 
-    smtp_service::send_message(&smtp_cfg, &dto, &dto.subject, &body_html)
+    let message_id = smtp_service::send_message(&smtp_cfg, &dto, &dto.subject, &body_html)
         .await
         .map_err(|e| MailError::Smtp(e.to_string()))?;
+
+    // Local Sent copy — the message is already sent, so a storage failure must
+    // not fail the request; log it instead.
+    if let Err(e) = crate::services::sent_copy::store_sent_copy(
+        &state.db, &account, &dto, &body_html, &message_id,
+        &state.settings.mail.attachments_dir,
+    ).await {
+        tracing::error!(error = %e, account_id = %account.id, "Copie locale « envoyés » échouée");
+    }
 
     if let Some(draft_id) = dto.draft_id {
         let _ = sqlx::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")

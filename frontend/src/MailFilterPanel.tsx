@@ -117,10 +117,13 @@ export default function MailFilterPanel({ onClose }: { onClose: () => void }) {
     if (f.hasWords)  parts.push(f.hasWords.trim())
     if (f.noWords)   parts.push(`-${f.noWords.trim()}`)
     if (f.hasAttach) parts.push('has:attachment')
-    if (f.sizeValue) parts.push(`size:${f.sizeValue}${f.sizeUnit}:${f.sizeOp}`)
+    if (f.sizeValue) {
+      const unit = { ko: 'K', mo: 'M', go: 'G' }[f.sizeUnit] ?? 'M'
+      parts.push(`${f.sizeOp === 'smaller' ? 'smaller' : 'larger'}:${f.sizeValue}${unit}`)
+    }
     if (f.dateRange !== '1d' || f.customDate) {
       if (f.dateRange === 'custom' && f.customDate) {
-        parts.push(`date:${f.customDate}`)
+        parts.push(`after:${f.customDate.slice(0, 10).replace(/-/g, '/')}`)
       } else if (f.dateRange !== '1d') {
         parts.push(`newer_than:${f.dateRange}`)
       }
@@ -143,10 +146,14 @@ export default function MailFilterPanel({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<'conditions' | 'actions'>('conditions')
   const [act, setAct] = useState({ archive: false, markRead: false, star: false, important: false, trash: false, spam: false, labelId: '' })
   const [applyExisting, setApplyExisting] = useState(false)
-  const { data: labels = [] } = useQuery({
+  /* MÊME queryFn que les autres consommateurs de cette clé (barre latérale, page de
+   * réglages) : react-query indexe par queryKey, donc deux formes de données sous la
+   * même clé s'écrasent mutuellement. Le tri se fait au rendu, pas dans le queryFn. */
+  const { data: labelsData } = useQuery({
     queryKey: ['mail-labels'],
-    queryFn:  () => mailApi.listLabels().then(r => r.labels.filter(l => !l.is_system)),
+    queryFn:  mailApi.listLabels,
   })
+  const labels = labelsData?.labels?.filter(l => !l.is_system) ?? []
   const hasCondition = !!(f.from || f.to || f.subject || f.hasWords)
   const createFilter = async () => {
     await mailApi.createFilter({

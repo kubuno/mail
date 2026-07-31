@@ -120,6 +120,26 @@ async fn store_message(
     let parsed = parser.parse(raw).ok_or_else(|| anyhow::anyhow!("Parse RFC 5322 échoué"))?;
 
     let message_id  = parsed.message_id().map(str::to_string);
+
+    // Sent folder: skip messages we already stored ourselves right after the
+    // SMTP send (services::sent_copy) — the server copy would be a duplicate.
+    if folder_name == "sent" {
+        if let Some(mid) = message_id.as_deref().filter(|s| !s.is_empty()) {
+            let dup: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM mail.messages \
+                 WHERE account_id = $1 AND folder = 'sent' \
+                   AND TRIM(BOTH '<>' FROM COALESCE(message_id,'')) = TRIM(BOTH '<>' FROM $2))",
+            )
+            .bind(account.id)
+            .bind(mid)
+            .fetch_one(db)
+            .await?;
+            if dup {
+                // Record the UID mapping is unnecessary; simply skip.
+                return Ok(());
+            }
+        }
+    }
     // Full References chain (RFC 5322): every ancestor id. Threading walks this
     // whole set so a reply still lands in its thread even when the DIRECT parent
     // was never synced (deep chains, partial mailboxes).

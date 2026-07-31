@@ -47,7 +47,7 @@ pub fn build(state: AppState) -> Router {
         .route("/drafts/:id",            patch(drafts::update_draft).delete(drafts::delete_draft))
         // Labels
         .route("/labels",                get(labels::list_labels).post(labels::create_label))
-        .route("/labels/:id",            delete(labels::delete_label))
+        .route("/labels/:id",            patch(labels::update_label).delete(labels::delete_label))
         // Filtres / règles automatiques
         .route("/filters",               get(filters::list_filters).post(filters::create_filter))
         .route("/filters/:id",           delete(filters::delete_filter))

@@ -4,14 +4,17 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Inbox, Send, FileText, Star, ShieldAlert, Trash2,
-  ChevronDown, ChevronRight, Plus, Tag, Circle, MailOpen,
-  Users, Info, Settings2,
+  ChevronDown, ChevronRight, Plus, Tag, MailOpen,
+  Users, Info,
   Clock, Bookmark, CalendarClock, MailX, type LucideIcon,
 } from 'lucide-react'
-import { SidebarNavItem, prompt } from '@kubuno/sdk'
+import { SidebarNavItem, useConfirm } from '@kubuno/sdk'
+import { ColorPicker, ConfirmDialog } from '@ui'
 import { useMailStore } from './store'
-import { mailApi } from './api'
+import { mailApi, type Label } from './api'
 import { categoryTo } from './categoryRoute'
+import NewLabelDialog, { type NewLabelResult } from './NewLabelDialog'
+import MailLabelItem, { leafName } from './MailLabelItem'
 
 // Dossiers principaux (toujours visibles)
 const MAIN_FOLDERS = [
@@ -46,6 +49,12 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
   const qc = useQueryClient()
   const [showMore,   setShowMore]   = useState(false)
   const [showLabels, setShowLabels] = useState(true)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [creating,   setCreating]   = useState(false)
+  const [editing,    setEditing]    = useState<Label | null>(null)
+  const [subParent,  setSubParent]  = useState<Label | null>(null)
+  const [colorFor,   setColorFor]   = useState<Label | null>(null)
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const { inboxCategory, setInboxCategory, accounts } = useMailStore()
 
   const { data: accountsData } = useQuery({ queryKey: ['mail-accounts'], queryFn: mailApi.listAccounts })
@@ -79,7 +88,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     return m
   }, [inboxData])
 
-  const labels = labelsData?.labels.filter(l => !l.is_system) ?? []
+  const labels = labelsData?.labels?.filter(l => !l.is_system) ?? []
   const isInboxView = pathname === '/mail' || pathname === '/mail/'
 
   const num = (n?: number) => (n && n > 0 ? n : undefined)
@@ -97,18 +106,70 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
   }
 
   // ── Créer un libellé ──────────────────────────────────────────────────────
-  const onCreateLabel = async () => {
-    const accountId = accounts.find(a => a.is_default)?.id ?? accounts[0]?.id ?? accountsData?.accounts?.[0]?.id
-    if (!accountId) return
-    const name = await prompt({
-      title:        t('label_create', { defaultValue: 'Créer un libellé' }),
-      placeholder:  t('label_name', { defaultValue: 'Nom du libellé' }),
-      confirmLabel: t('common_create', { defaultValue: 'Créer' }),
-    })
-    if (!name?.trim()) return
-    await mailApi.createLabel({ account_id: accountId, name: name.trim() }).catch(() => {})
+  const createAccountId =
+    accounts.find(a => a.is_default)?.id ?? accounts[0]?.id ?? accountsData?.accounts?.[0]?.id
+
+  const onCreateLabel = () => { if (createAccountId) setCreateOpen(true) }
+
+  const onCreateLabelSubmit = async ({ name }: NewLabelResult) => {
+    if (!createAccountId) return
+    setCreating(true)
+    await mailApi.createLabel({ account_id: createAccountId, name }).catch(() => {})
+    setCreating(false)
+    setCreateOpen(false)
+    refreshLabels()
+  }
+
+  const refreshLabels = () => {
     qc.invalidateQueries({ queryKey: ['mail-labels'] })
     qc.invalidateQueries({ queryKey: ['mail-counts'] })
+  }
+
+  // "unread" labels only show up while they actually have unread threads;
+  // "hide" keeps them out of the sidebar entirely (they stay in the settings).
+  const visibleLabels = labels.filter(l => {
+    const vis = l.list_visibility ?? 'show'
+    if (vis === 'hide')   return pathname === `/mail/label/${l.id}`
+    if (vis === 'unread') return (counts?.labels?.[l.id] ?? 0) > 0 || pathname === `/mail/label/${l.id}`
+    return true
+  })
+
+  // ── Menu d'un libellé ─────────────────────────────────────────────────────
+  const patchLabel = async (id: string, dto: Parameters<typeof mailApi.updateLabel>[1]) => {
+    await mailApi.updateLabel(id, dto).catch(() => {})
+    refreshLabels()
+  }
+
+  const onRenameSubmit = async ({ name }: NewLabelResult) => {
+    if (!editing) return
+    setCreating(true)
+    // Renaming a parent renames its whole subtree, so "A/B" keeps following "A".
+    const children = labels.filter(l => l.name.startsWith(`${editing.name}/`))
+    await mailApi.updateLabel(editing.id, { name }).catch(() => {})
+    for (const child of children) {
+      await mailApi
+        .updateLabel(child.id, { name: `${name}${child.name.slice(editing.name.length)}` })
+        .catch(() => {})
+    }
+    setCreating(false)
+    setEditing(null)
+    refreshLabels()
+  }
+
+  const onDeleteLabel = async (label: Label) => {
+    const ok = await confirm({
+      title:       t('label_delete'),
+      message:     t('label_delete_confirm', { name: leafName(label.name) }),
+      confirmLabel: t('common_delete'),
+      variant:      'danger',
+    })
+    if (!ok) return
+    // Sub-labels are separate rows: drop them with their parent.
+    for (const child of labels.filter(l => l.name.startsWith(`${label.name}/`))) {
+      await mailApi.deleteLabel(child.id).catch(() => {})
+    }
+    await mailApi.deleteLabel(label.id).catch(() => {})
+    refreshLabels()
   }
 
   // ── Item dossier ──────────────────────────────────────────────────────────
@@ -190,24 +251,25 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
               </a>
             </div>
 
-            {showLabels && labels.map(label => (
-              <SidebarNavItem
-                key={label.id} collapsed={false}
-                label={label.name}
-                icon={<Circle size={11} className="flex-shrink-0" style={{ color: label.color ?? '#5f6368', fill: label.color ?? '#5f6368' }} />}
+            {showLabels && visibleLabels.map(label => (
+              <MailLabelItem
+                key={label.id}
+                label={label}
+                unread={num(counts?.labels?.[label.id])}
                 active={pathname === `/mail/label/${label.id}`}
                 to={`/mail/label/${label.id}`}
-                badge={num(counts?.labels[label.id])}
+                actions={{
+                  onSetColor:    color => patchLabel(label.id, { color }),
+                  onPickCustom:  () => setColorFor(label),
+                  onSetListVis:  v => patchLabel(label.id, { list_visibility: v }),
+                  onSetMsgVis:   v => patchLabel(label.id, { message_list_visibility: v }),
+                  onRename:      () => setEditing(label),
+                  onDelete:      () => onDeleteLabel(label),
+                  onAddSubLabel: () => setSubParent(label),
+                }}
               />
             ))}
 
-            <SidebarNavItem
-              collapsed={false}
-              label={t('label_manage', { defaultValue: 'Gérer les libellés' })}
-              icon={<Settings2 size={16} className="flex-shrink-0" />}
-              active={pathname === '/mail/settings'}
-              to="/mail/settings"
-            />
             <SidebarNavItem
               collapsed={false}
               label={t('label_create', { defaultValue: 'Créer un libellé' })}
@@ -218,6 +280,65 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
           </div>
         )}
       </nav>
+
+      {createOpen && (
+        <NewLabelDialog
+          labels={labels}
+          pending={creating}
+          onCancel={() => setCreateOpen(false)}
+          onCreate={onCreateLabelSubmit}
+        />
+      )}
+
+      {subParent && (
+        <NewLabelDialog
+          labels={labels}
+          pending={creating}
+          initialParent={subParent.name}
+          onCancel={() => setSubParent(null)}
+          onCreate={async result => { await onCreateLabelSubmit(result); setSubParent(null) }}
+        />
+      )}
+
+      {editing && (
+        <NewLabelDialog
+          labels={labels}
+          pending={creating}
+          title={t('label_edit_title')}
+          submitLabel={t('common_save')}
+          initialName={leafName(editing.name)}
+          initialParent={parentOf(editing.name)}
+          excludeName={editing.name}
+          onCancel={() => setEditing(null)}
+          onCreate={onRenameSubmit}
+        />
+      )}
+
+      {colorFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+             onClick={() => setColorFor(null)}>
+          <div onClick={e => e.stopPropagation()}>
+            <ColorPicker
+              t={t}
+              color={colorFor.color ?? '#1a73e8'}
+              onChange={() => {}}
+              onClose={() => setColorFor(null)}
+              onCancel={() => setColorFor(null)}
+              onConfirm={hex => { patchLabel(colorFor.id, { color: hex }); setColorFor(null) }}
+            />
+          </div>
+        </div>
+      )}
+
+      {confirmState && (
+        <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />
+      )}
     </>
   )
+}
+
+/** "A/B/C" → "A/B" (empty when the label is top-level). */
+function parentOf(name: string) {
+  const i = name.lastIndexOf('/')
+  return i < 0 ? '' : name.slice(0, i)
 }

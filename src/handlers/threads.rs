@@ -3,6 +3,7 @@ use axum::{
     Json,
 };
 use sqlx::{Postgres, QueryBuilder};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
@@ -27,10 +28,10 @@ pub async fn list_threads(
     let folder = q.folder.as_deref().unwrap_or("inbox").to_string();
 
     let threads: Vec<Thread> = if let Some(raw) = q.search.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        // RECHERCHE : requête dynamique parsant les opérateurs Gmail (from:/to:/
-        // subject:/has:attachment/newer_than:/in:/is:unread|starred/-exclusion/mots).
-        // Cherche dans TOUS les dossiers par défaut (sauf `in:` explicite).
-        let c = parse_search(raw);
+        // SEARCH: dynamic query compiled from the Gmail-style operator language
+        // (see services::search_query). Spam & trash are excluded by default,
+        // like Gmail, unless the query names a location explicitly (`in:`).
+        let parsed = crate::services::search_query::parse(raw);
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT DISTINCT t.id, t.account_id, t.user_id, t.subject, \
                     t.message_count, t.unread_count, t.has_attachments, \
@@ -44,37 +45,11 @@ pub async fn list_threads(
         if let Some(acc) = q.account_id {
             qb.push(" AND t.account_id = ").push_bind(acc);
         }
-        if let Some(folder) = c.folder.as_deref() {
-            if folder != "all" { qb.push(" AND m.folder = ").push_bind(folder.to_string()); }
+        if !parsed.has_in {
+            qb.push(" AND m.folder NOT IN ('spam', 'trash')");
         }
-        if c.unread          { qb.push(" AND m.is_read = FALSE"); }
-        if c.starred         { qb.push(" AND t.is_starred = TRUE"); }
-        if c.has_attachment  { qb.push(" AND t.has_attachments = TRUE"); }
-        if let Some(days) = c.newer_than_days {
-            qb.push(" AND m.received_at > NOW() - make_interval(days => ").push_bind(days).push(")");
-        }
-        // Comparaisons INSENSIBLES à la casse ET aux accents : unaccent(col) ILIKE unaccent(motif)
-        // → « OVH »=« ovh », « ete »=« été ».
-        for term in &c.from {
-            qb.push(" AND (unaccent(m.from_email) ILIKE unaccent(").push_bind(like(term))
-              .push(") OR unaccent(COALESCE(m.from_name,'')) ILIKE unaccent(").push_bind(like(term)).push("))");
-        }
-        for term in &c.to {
-            qb.push(" AND unaccent(m.to_addresses::text) ILIKE unaccent(").push_bind(like(term)).push(")");
-        }
-        for term in &c.subject {
-            qb.push(" AND unaccent(m.subject) ILIKE unaccent(").push_bind(like(term)).push(")");
-        }
-        for term in &c.words {
-            qb.push(" AND (unaccent(m.subject) ILIKE unaccent(").push_bind(like(term))
-              .push(") OR unaccent(COALESCE(m.body_text,'')) ILIKE unaccent(").push_bind(like(term))
-              .push(") OR unaccent(m.from_email) ILIKE unaccent(").push_bind(like(term))
-              .push(") OR unaccent(COALESCE(m.from_name,'')) ILIKE unaccent(").push_bind(like(term)).push("))");
-        }
-        for term in &c.exclude {
-            qb.push(" AND NOT (unaccent(m.subject) ILIKE unaccent(").push_bind(like(term))
-              .push(") OR unaccent(COALESCE(m.body_text,'')) ILIKE unaccent(").push_bind(like(term)).push("))");
-        }
+        qb.push(" AND ");
+        crate::services::search_query::push_sql(&mut qb, &parsed.root, user.id);
         if let Some(before) = q.before {
             qb.push(" AND t.last_message_at < ").push_bind(before);
         }
@@ -198,8 +173,75 @@ pub async fn list_threads(
     let has_more = threads.len() as i64 == limit;
     let cursor   = threads.last().map(|t| t.last_message_at);
 
+    // Row chips: the user labels carried by each thread, plus the system
+    // folders its messages sit in. Two set-based queries, instead of joining
+    // both into every branch of the selection above.
+    let ids: Vec<Uuid> = threads.iter().map(|t| t.id).collect();
+
+    let label_rows: Vec<(Uuid, Uuid, String, Option<String>)> = sqlx::query_as(
+        r#"SELECT tl.thread_id, l.id, l.name, l.color
+           FROM mail.thread_labels tl
+           JOIN mail.labels l ON l.id = tl.label_id
+           WHERE tl.thread_id = ANY($1)
+             AND l.user_id = $2
+             AND NOT l.is_system
+             AND l.message_list_visibility <> 'hide'"#,
+    )
+    .bind(&ids)
+    .bind(user.id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| tracing::error!(error = %e, "list_threads: libellés des fils"))
+    .unwrap_or_default();
+
+    let folder_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        r#"SELECT DISTINCT m.thread_id, m.folder
+           FROM mail.messages m
+           WHERE m.thread_id = ANY($1) AND m.user_id = $2 AND NOT m.is_deleted"#,
+    )
+    .bind(&ids)
+    .bind(user.id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| tracing::error!(error = %e, "list_threads: dossiers des fils"))
+    .unwrap_or_default();
+
+    let mut labels_by_thread: HashMap<Uuid, Vec<serde_json::Value>> = HashMap::new();
+    for (thread_id, id, name, color) in label_rows {
+        labels_by_thread
+            .entry(thread_id)
+            .or_default()
+            .push(serde_json::json!({ "id": id, "name": name, "color": color }));
+    }
+
+    let mut folders_by_thread: HashMap<Uuid, Vec<String>> = HashMap::new();
+    for (thread_id, folder) in folder_rows {
+        folders_by_thread.entry(thread_id).or_default().push(folder);
+    }
+
+    let threads_json: Vec<serde_json::Value> = threads
+        .iter()
+        .map(|t| {
+            let mut value = serde_json::to_value(t).unwrap_or_else(|e| {
+                tracing::error!(error = %e, thread_id = %t.id, "list_threads: sérialisation");
+                serde_json::json!({})
+            });
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert(
+                    "labels".into(),
+                    serde_json::json!(labels_by_thread.get(&t.id).cloned().unwrap_or_default()),
+                );
+                obj.insert(
+                    "folders".into(),
+                    serde_json::json!(folders_by_thread.get(&t.id).cloned().unwrap_or_default()),
+                );
+            }
+            value
+        })
+        .collect();
+
     Ok(Json(serde_json::json!({
-        "threads":  threads,
+        "threads":  threads_json,
         "has_more": has_more,
         "cursor":   cursor,
     })))
@@ -461,65 +503,6 @@ pub async fn subscriptions(
     Ok(Json(serde_json::json!({ "subscriptions": subs })))
 }
 
-// ── Parsing de la requête de recherche (style Gmail) ─────────────────────────
-struct SearchCriteria {
-    from:            Vec<String>,
-    to:              Vec<String>,
-    subject:         Vec<String>,
-    words:           Vec<String>,
-    exclude:         Vec<String>,
-    folder:          Option<String>,
-    newer_than_days: Option<i32>,
-    unread:          bool,
-    starred:         bool,
-    has_attachment:  bool,
-}
-
-fn parse_search(raw: &str) -> SearchCriteria {
-    let mut c = SearchCriteria {
-        from: vec![], to: vec![], subject: vec![], words: vec![], exclude: vec![],
-        folder: None, newer_than_days: None, unread: false, starred: false, has_attachment: false,
-    };
-    for tok in raw.split_whitespace() {
-        if let Some(v) = tok.strip_prefix("from:") {
-            if !v.is_empty() { c.from.push(v.to_string()); }
-        } else if let Some(v) = tok.strip_prefix("to:") {
-            if !v.is_empty() { c.to.push(v.to_string()); }
-        } else if let Some(v) = tok.strip_prefix("subject:") {
-            if !v.is_empty() { c.subject.push(v.to_string()); }
-        } else if let Some(v) = tok.strip_prefix("in:") {
-            if !v.is_empty() { c.folder = Some(v.to_string()); }
-        } else if tok == "has:attachment" {
-            c.has_attachment = true;
-        } else if tok == "is:unread" {
-            c.unread = true;
-        } else if tok == "is:starred" {
-            c.starred = true;
-        } else if let Some(v) = tok.strip_prefix("newer_than:") {
-            c.newer_than_days = Some(range_to_days(v));
-        } else if tok.starts_with("size:") || tok.starts_with("date:") || tok.starts_with("older_than:") {
-            // non géré (taille/date exacte) — ignoré silencieusement
-        } else if let Some(w) = tok.strip_prefix('-') {
-            if !w.is_empty() { c.exclude.push(w.to_string()); }
-        } else {
-            c.words.push(tok.to_string());
-        }
-    }
-    c
-}
-
-fn range_to_days(v: &str) -> i32 {
-    match v {
-        "1d" => 1, "3d" => 3, "1w" => 7, "2w" => 14, "1m" => 30, "6m" => 180, "1y" => 365,
-        _ => 7,
-    }
-}
-
-/// Échappe les jokers SQL LIKE et entoure de `%` pour une recherche « contient ».
-fn like(term: &str) -> String {
-    format!("%{}%", term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
-}
-
 // ── Compteurs pour la barre latérale (non-lus par dossier, brouillons, libellés) ──
 pub async fn counts(
     State(state): State<AppState>,
@@ -586,11 +569,12 @@ pub async fn counts(
     )
     .bind(user.id).fetch_one(&state.db).await.unwrap_or(0);
 
+    // Unread threads per label — Gmail's sidebar badge counts unread, not total.
     let label_rows: Vec<(Uuid, i64)> = sqlx::query_as(
         r#"SELECT tl.label_id, COUNT(DISTINCT tl.thread_id)
            FROM mail.thread_labels tl
            JOIN mail.threads t ON t.id = tl.thread_id
-           WHERE t.user_id = $1
+           WHERE t.user_id = $1 AND t.unread_count > 0
            GROUP BY tl.label_id"#,
     )
     .bind(user.id)

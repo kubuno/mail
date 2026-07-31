@@ -59,6 +59,16 @@ export interface Thread {
   last_sender_email: string
   last_message_at:   string
   created_at:        string
+  /** User labels carried by the thread (chips on the row). */
+  labels?:  ThreadLabelRef[]
+  /** System folders the thread's messages sit in: inbox, sent, drafts… */
+  folders?: string[]
+}
+
+export interface ThreadLabelRef {
+  id:    string
+  name:  string
+  color: string | null
 }
 
 export interface EmailMessage {
@@ -120,6 +130,21 @@ export interface Label {
   color:       string | null
   is_system:   boolean
   position:    number
+  /** Sidebar visibility: 'show' | 'unread' | 'hide' */
+  list_visibility?:         LabelListVisibility
+  /** Chip on message rows: 'show' | 'hide' */
+  message_list_visibility?: LabelMsgVisibility
+}
+
+export type LabelListVisibility = 'show' | 'unread' | 'hide'
+export type LabelMsgVisibility  = 'show' | 'hide'
+
+export interface UpdateLabelDto {
+  name?:                    string
+  /** `null` clears the color. */
+  color?:                   string | null
+  list_visibility?:         LabelListVisibility
+  message_list_visibility?: LabelMsgVisibility
 }
 
 export interface EmailFilter {
@@ -353,6 +378,9 @@ export const mailApi = {
 
   createLabel: (dto: { account_id: string; name: string; color?: string }) =>
     api.post<{ id: string }>('/mail/labels', dto).then(r => r.data),
+
+  updateLabel: (id: string, dto: UpdateLabelDto) =>
+    api.patch(`/mail/labels/${id}`, dto).then(r => r.data),
 
   deleteLabel: (id: string) =>
     api.delete(`/mail/labels/${id}`).then(r => r.data),

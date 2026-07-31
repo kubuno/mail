@@ -178,6 +178,10 @@ pub struct Label {
     pub is_system:   bool,
     pub position:    i32,
     pub created_at:  DateTime<Utc>,
+    /// Sidebar visibility: "show" | "unread" | "hide".
+    pub list_visibility: String,
+    /// Chip on message rows: "show" | "hide".
+    pub message_list_visibility: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -185,6 +189,26 @@ pub struct CreateLabelDto {
     pub account_id: Uuid,
     pub name:       String,
     pub color:      Option<String>,
+}
+
+/// Partial update — every field is optional, only the ones sent are applied.
+/// `color` is doubly optional so an explicit `null` can clear it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateLabelDto {
+    pub name:  Option<String>,
+    #[serde(default, deserialize_with = "crate::models::double_option")]
+    pub color: Option<Option<String>>,
+    pub list_visibility:         Option<String>,
+    pub message_list_visibility: Option<String>,
+}
+
+/// Distinguishes "field absent" from "field explicitly null" in a JSON patch.
+pub fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(de).map(Some)
 }
 
 #[derive(Debug, Clone, Deserialize)]

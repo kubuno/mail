@@ -6,6 +6,8 @@ export interface ComposeInitial {
   cc:       EmailAddress[]
   subject:  string
   bodyHtml: string
+  /** Pre-filled attachments (e.g. « send this file by email » from Drive). */
+  attachments?: { filename: string; mime: string; content: string; size: number }[]
 }
 
 interface MailState {
@@ -22,6 +24,8 @@ interface MailState {
   composeInitial:  ComposeInitial | null
   splitMode:       'none' | 'vertical' | 'horizontal'
   density:         'comfortable' | 'compact'
+  /** Compose to start once a thread opened from the list has loaded. */
+  pendingCompose:  { threadId: string; mode: 'reply' | 'replyAll' | 'forward' } | null
 
   setAccounts:       (accounts: EmailAccount[]) => void
   setComposeInitial: (d: ComposeInitial | null) => void
@@ -34,6 +38,7 @@ interface MailState {
   setSearchQuery:    (q: string) => void
   setComposeOpen:    (open: boolean, replyToId?: string | null) => void
   setSplitMode:      (mode: 'none' | 'vertical' | 'horizontal') => void
+  setPendingCompose: (p: { threadId: string; mode: 'reply' | 'replyAll' | 'forward' } | null) => void
 }
 
 const SPLIT_KEY = 'kubuno_mail_split'
@@ -61,9 +66,11 @@ export const useMailStore = create<MailState>((set) => ({
   composeInitial:  null,
   splitMode:       initialSplit(),
   density:         initialDensity(),
+  pendingCompose:  null,
 
   setAccounts:        (accounts)       => set({ accounts }),
   setComposeInitial:  (composeInitial) => set({ composeInitial }),
+  setPendingCompose:  (pendingCompose)  => set({ pendingCompose }),
   setDensity:         (density)        => { try { localStorage.setItem(DENSITY_KEY, density) } catch { /* ignore */ } set({ density }) },
   setSplitMode:       (mode)           => { try { localStorage.setItem(SPLIT_KEY, mode) } catch { /* ignore */ } set({ splitMode: mode }) },
   setSelectedAccount: (id)             => set({ selectedAccount: id, selectedThread: null }),

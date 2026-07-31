@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { openImagePicker } from '@kubuno/sdk'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FloatingWindow, Dropdown, FontSizeField, MenuDropdown, type MenuItem, type MenuDropdownPos } from '@ui'
+import { FloatingWindow, Dropdown, FontSizeField, MenuDropdown, useIsMobile, type MenuItem, type MenuDropdownPos } from '@ui'
 
 // Web-safe families for the compose toolbar (applied via execCommand('fontName')).
 const MAIL_FONTS = ['Arial', 'Verdana', 'Trebuchet MS', 'Tahoma', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS']
@@ -51,12 +52,20 @@ function IconBtn({ onClick, title, children }: {
 
 export default function ComposeWindow() {
   const { t } = useTranslation('mail')
+  const isMobile = useIsMobile()
   const { setComposeOpen, accounts, composeInitial, setComposeInitial } = useMailStore()
   const scheduleUndo = useUndoSendStore(s => s.schedule)
   const qc = useQueryClient()
 
   const defaultAccount = accounts.find(a => a.is_default) ?? accounts[0]
-  const accountId = defaultAccount?.id ?? ''
+  // Sender identity: several accounts can be configured, the user picks one
+  // in the "From" row (defaults to the default account).
+  const [fromId, setFromId] = useState(defaultAccount?.id ?? '')
+  useEffect(() => {
+    if (!fromId && defaultAccount) setFromId(defaultAccount.id)
+  }, [fromId, defaultAccount])
+  const fromAccount = accounts.find(a => a.id === fromId) ?? defaultAccount
+  const accountId = fromAccount?.id ?? ''
 
   const [to,        setTo]        = useState<EmailAddress[]>(composeInitial?.to ?? [])
   const [cc,        setCc]        = useState<EmailAddress[]>(composeInitial?.cc ?? [])
@@ -153,7 +162,7 @@ export default function ComposeWindow() {
 
   // ── Pièces jointes ────────────────────────────────────────────────────────────
   const fileRef = useRef<HTMLInputElement>(null)
-  const [attachments, setAttachments] = useState<{ filename: string; mime: string; content: string; size: number }[]>([])
+  const [attachments, setAttachments] = useState<{ filename: string; mime: string; content: string; size: number }[]>(composeInitial?.attachments ?? [])
   const onPickFiles = async (files: FileList | null) => {
     if (!files?.length) return
     const read = (f: File) => new Promise<{ filename: string; mime: string; content: string; size: number }>(res => {
@@ -173,11 +182,16 @@ export default function ComposeWindow() {
     if (url?.trim()) exec('createLink', url.trim())
   }
   const insertImageUrl = async () => {
-    const url = await prompt({ title: t('mail_insert_image', { defaultValue: 'Insérer une image' }), placeholder: 'https://…/image.png' })
-    if (url?.trim()) exec('insertImage', url.trim())
+    // A recipient reads the message elsewhere, so an uploaded file would have
+    // to be hosted first: only addressable sources make sense here.
+    const picked = await openImagePicker({
+      title: t('mail_insert_image', { defaultValue: 'Insérer une image' }),
+      exclude: ['upload', 'webcam'],
+    })
+    if (picked?.kind === 'url') exec('insertImage', picked.url)
   }
   const insertSignature = () => {
-    const sig = defaultAccount?.name || defaultAccount?.email_address || ''
+    const sig = fromAccount?.name || fromAccount?.email_address || ''
     exec('insertHTML', `<br><br><div style="color:#5f6368">--<br>${sig}</div>`)
   }
   const [emojiOpen,    setEmojiOpen]    = useState(false)
@@ -224,7 +238,9 @@ export default function ComposeWindow() {
   }
 
   // ── Minimized bar ───────────────────────────────────────────────────────────
-  if (minimized) {
+  // On mobile the window is full screen (FloatingWindow fullBleed): minimizing
+  // makes no sense, and a leftover minimized state (desktop → rotate) reopens.
+  if (minimized && !isMobile) {
     return (
       <div
         className="fixed bottom-0 right-4 w-72 bg-[#404040] rounded-t-xl shadow-xl z-50 flex items-center justify-between px-4 py-2.5 cursor-pointer"
@@ -248,7 +264,7 @@ export default function ComposeWindow() {
       minWidth={MIN_W}
       minHeight={MIN_H}
       resizable
-      titleActions={
+      titleActions={isMobile ? undefined : (
         <button
           onClick={() => setMinimized(true)}
           className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
@@ -256,8 +272,23 @@ export default function ComposeWindow() {
         >
           <Minus size={15} />
         </button>
-      }
+      )}
     >
+      {/* ── Expéditeur (choix du compte quand plusieurs sont configurés) ───────── */}
+      {accounts.length > 1 && (
+        <div className="flex items-center gap-3 px-4 py-1.5 border-b border-border flex-shrink-0">
+          <span className="text-xs text-text-tertiary flex-shrink-0">{t('mail_filter_from')}</span>
+          <Dropdown
+            value={accountId}
+            onChange={setFromId}
+            options={accounts.map(a => ({ value: a.id, label: `${a.name} <${a.email_address}>` }))}
+            variant="ghost"
+            height={28}
+            fontSize={12}
+          />
+        </div>
+      )}
+
       {/* ── Destinataires (autocomplétion : index mail + contacts) ─────────────── */}
       <div className="flex items-start gap-2 px-4 py-2.5 border-b border-border flex-shrink-0">
         <RecipientField chips={to} onChange={setTo} placeholder={t('mail_add_recipient')} />
@@ -308,7 +339,9 @@ export default function ComposeWindow() {
         contentEditable
         suppressContentEditableWarning
         data-placeholder={t('body')}
-        className="flex-1 px-4 py-3 text-sm text-text-primary outline-none overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary"
+        className="flex-1 px-4 py-3 text-sm text-text-primary outline-none overflow-y-auto overflow-x-auto break-words
+                   [&_img]:max-w-full [&_img]:h-auto
+                   empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary"
         style={{ lineHeight: '1.6' }}
         onPaste={e => {
           // Cross-module data paste: insert a sanitizer-proof HTML block

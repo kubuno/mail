@@ -13,7 +13,7 @@ import {
   Paperclip, Download, FileText, MoreVertical, Smile, Send, X,
   AlertCircle, ShieldAlert, ShieldCheck, Filter, Printer, Code2,
   Archive, Clock, ExternalLink, Bookmark, Ban, FolderInput,
-  Columns2, Rows2, Square, BellOff, AlignJustify,
+  Columns2, Rows2, Square, BellOff, AlignJustify, Check,
   Undo2, Redo2, Bold, Italic, Underline, Strikethrough,
   AlignLeft, AlignCenter, AlignRight,
   List, ListOrdered, Indent, Outdent, Eraser, Type, Link, Image,
@@ -21,14 +21,19 @@ import {
 } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { mailApi, Thread, EmailMessage, Attachment } from './api'
-import { Button, MenuDropdown, type MenuDropdownPos } from '@ui'
+import { Button, Dropdown, MenuDropdown, useMenuDropdown, useIsMobile, type MenuItem as UiMenuItem, type MenuDropdownPos } from '@ui'
+import { ModuleServiceRegistry } from '@kubuno/sdk'
 import { useMailStore } from './store'
-import ComposeWindow from './ComposeWindow'
+// ComposeWindow is mounted app-wide via the 'app-dialogs' slot (entry.ts) so
+// the composer can float above any module, /mail included.
 import PdfViewerModal from './PdfViewerModal'
 import { ScheduledView, SubscriptionsView, unsubscribeTarget } from './MailViews'
 import { RecipientField } from './AddressSuggest'
 import { useUndoSendStore } from './undoSendStore'
 import { readKubunoData, kubunoDataToEmailHtml } from './kubunoData'
+import ThreadChips from './ThreadChips'
+import ThreadContextMenu, { type ThreadMenuActions } from './ThreadContextMenu'
+import NewLabelDialog, { type NewLabelResult } from './NewLabelDialog'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,9 +112,15 @@ const BASE_CSS = `
     text-align: left;
     background: #ffffff;
     padding: 16px;
+    /* Fixed-width email layouts (600px tables…) must scroll INSIDE the message,
+       never widen the app layout (phones would end up horizontally scrolled). */
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   *, *::before, *::after { box-sizing: border-box; }
+
+  img { max-width: 100%; height: auto; }
 
   /* Le <body> de l'email est conservé : marges/typo par défaut, l'email peut redéfinir. */
   body {
@@ -194,14 +205,6 @@ function EmailHtmlView({ html }: { html: string }) {
 
 // ── Message actions menu ──────────────────────────────────────────────────────
 
-type LucideIcon = React.ComponentType<{ size?: number; className?: string }>
-type MenuItem = {
-  icon:    LucideIcon
-  label:   string
-  onClick: () => void
-  danger?: boolean
-}
-
 function MessageActionsMenu({
   anchorRect, onClose, onReply, onForward, onDelete, onMarkUnread, onBlock,
   onSpam, onFilterSimilar, onDownload, onShowOriginal,
@@ -219,60 +222,32 @@ function MessageActionsMenu({
   onShowOriginal:   () => void
 }) {
   const { t } = useTranslation('mail')
+  // MenuDropdown from @ui: anchored dropdown on desktop, bottom sheet on touch.
   const menuW = 285
-  const top   = anchorRect.bottom + 4
-  const right = Math.max(8, window.innerWidth - anchorRect.right)
-
-  const groups: MenuItem[][] = [
-    [
-      { icon: Reply,       label: t('mail_reply'),             onClick: () => { onReply();      onClose() } },
-      { icon: Forward,     label: t('mail_forward'),           onClick: () => { onForward();    onClose() } },
-    ],
-    [
-      { icon: Trash2,      label: t('delete'),                 onClick: () => { onDelete();     onClose() }, danger: true },
-      { icon: MailOpen,    label: t('mail_mark_unread'),       onClick: () => { onMarkUnread(); onClose() } },
-    ],
-    [
-      { icon: AlertCircle, label: t('spam_report'),            onClick: () => { onSpam(); onClose() } },
-      { icon: Ban,         label: t('block_sender', { defaultValue: 'Bloquer l\'expéditeur' }), onClick: () => { onBlock(); onClose() } },
-      // Phishing = spam + expéditeur bloqué (entraîne le bayésien ET coupe la source).
-      { icon: ShieldAlert, label: t('mail_report_phishing'),   onClick: () => { onBlock(); onSpam(); onClose() } },
-    ],
-    [
-      { icon: Filter,    label: t('mail_filter_similar'),  onClick: () => { onFilterSimilar(); onClose() } },
-      { icon: Printer,   label: t('print'), onClick: () => { window.print(); onClose() } },
-      { icon: Download,  label: t('mail_download_message'), onClick: () => { onDownload(); onClose() } },
-      { icon: Code2,     label: t('mail_show_original'),   onClick: () => { onShowOriginal(); onClose() } },
-    ],
+  const items: UiMenuItem[] = [
+    { type: 'action', icon: <Reply size={15} />,       label: t('mail_reply'),       onClick: onReply },
+    { type: 'action', icon: <Forward size={15} />,     label: t('mail_forward'),     onClick: onForward },
+    { type: 'separator' },
+    { type: 'action', icon: <Trash2 size={15} />,      label: t('delete'),           onClick: onDelete, danger: true },
+    { type: 'action', icon: <MailOpen size={15} />,    label: t('mail_mark_unread'), onClick: onMarkUnread },
+    { type: 'separator' },
+    { type: 'action', icon: <AlertCircle size={15} />, label: t('spam_report'),      onClick: onSpam },
+    { type: 'action', icon: <Ban size={15} />,         label: t('block_sender', { defaultValue: 'Bloquer l\'expéditeur' }), onClick: onBlock },
+    // Phishing = spam + expéditeur bloqué (entraîne le bayésien ET coupe la source).
+    { type: 'action', icon: <ShieldAlert size={15} />, label: t('mail_report_phishing'), onClick: () => { onBlock(); onSpam() } },
+    { type: 'separator' },
+    { type: 'action', icon: <Filter size={15} />,      label: t('mail_filter_similar'),  onClick: onFilterSimilar },
+    { type: 'action', icon: <Printer size={15} />,     label: t('print'),                onClick: () => window.print() },
+    { type: 'action', icon: <Download size={15} />,    label: t('mail_download_message'), onClick: onDownload },
+    { type: 'action', icon: <Code2 size={15} />,       label: t('mail_show_original'),   onClick: onShowOriginal },
   ]
 
   return (
-    <>
-      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
-      <div
-        className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-border overflow-hidden py-1.5"
-        style={{ top, right, width: menuW }}
-        onClick={e => e.stopPropagation()}
-      >
-        {groups.map((group, gi) => (
-          <div key={gi}>
-            {gi > 0 && <div className="h-px bg-border mx-2 my-1.5" />}
-            {group.map(({ icon: Icon, label, onClick, danger }) => (
-              <button
-                key={label}
-                onClick={onClick}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-surface-1 transition-colors text-left ${
-                  danger ? 'text-danger' : 'text-text-primary'
-                }`}
-              >
-                <Icon size={16} className={`flex-shrink-0 ${danger ? 'text-danger' : 'text-text-secondary'}`} />
-                {label}
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
-    </>
+    <MenuDropdown
+      pos={{ top: anchorRect.bottom + 4, left: Math.max(8, anchorRect.right - menuW), minWidth: menuW }}
+      onClose={onClose}
+      items={items}
+    />
   )
 }
 
@@ -291,27 +266,43 @@ function ToolBtn({ onClick, title, children }: { onClick: () => void; title: str
 }
 
 function InlineCompose({
-  mode, message, onSent, onCancel,
+  mode, message, onSent, onCancel, replyAll = false,
 }: {
   mode:     'reply' | 'forward'
   message:  EmailMessage
   onSent:   () => void
   onCancel: () => void
+  /** Reply to every recipient: original To (minus us) go to Cc. */
+  replyAll?: boolean
 }) {
   const { t } = useTranslation('mail')
   const { accounts } = useMailStore()
   const qc = useQueryClient()
   const bodyRef   = useRef<HTMLDivElement>(null)
   const composeRef = useRef<HTMLDivElement>(null)
+  // Mobile: the format bar starts hidden (the "Aa" toggle reveals a reduced
+  // one-line set) and the non-wired insert buttons are dropped.
+  const isMobile = useIsMobile()
 
-  const defaultAccount = accounts.find(a => a.is_default) ?? accounts[0]
-  const accountId = defaultAccount?.id ?? ''
+  // Reply from the account that RECEIVED the message (fallback: default account);
+  // a "From" row lets the user switch when several accounts are configured.
+  const receivingAccount = accounts.find(a => a.id === message.account_id)
+    ?? accounts.find(a => a.is_default) ?? accounts[0]
+  const [fromId, setFromId] = useState(receivingAccount?.id ?? '')
+  const accountId = (accounts.some(a => a.id === fromId) ? fromId : receivingAccount?.id) ?? ''
   const [to,        setTo]        = useState<{ email: string; name?: string }[]>(
     mode === 'reply' ? [{ email: message.from_email, name: message.from_name ?? undefined }] : []
   )
-  const [cc,         setCc]       = useState<{ email: string; name?: string }[]>([])
-  const [showCc,     setShowCc]   = useState(false)
-  const [showFormat, setShowFormat] = useState(true)
+  const [cc,         setCc]       = useState<{ email: string; name?: string }[]>(() => {
+    if (mode !== 'reply' || !replyAll) return []
+    const mine = new Set(accounts.map(a => a.email_address.toLowerCase()))
+    mine.add(message.from_email.toLowerCase())
+    return [...(message.to_addresses ?? []), ...(message.cc_addresses ?? [])]
+      .filter(a => a?.email && !mine.has(a.email.toLowerCase()))
+      .map(a => ({ email: a.email, name: a.name ?? undefined }))
+  })
+  const [showCc,     setShowCc]   = useState(mode === 'reply' && replyAll)
+  const [showFormat, setShowFormat] = useState(() => !isMobile)
 
   // Injecte la citation DANS l'éditeur (et donc dans le mail envoyé) : en-tête
   // « Message transféré » complet en transfert, « Le …, X a écrit : » + blockquote
@@ -395,13 +386,32 @@ function InlineCompose({
         </div>
       )}
 
+      {/* ── From field (account picker, only with several accounts) ───────── */}
+      {accounts.length > 1 && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border">
+          <span className="text-xs text-text-tertiary w-6 flex-shrink-0">{t('mail_filter_from')}</span>
+          <Dropdown
+            value={accountId}
+            onChange={setFromId}
+            options={accounts.map(a => ({ value: a.id, label: `${a.name} <${a.email_address}>` }))}
+            variant="ghost"
+            height={24}
+            fontSize={12}
+          />
+        </div>
+      )}
+
       {/* ── Body (contenteditable) ────────────────────────────────────────── */}
       <div
         ref={bodyRef}
         contentEditable
         suppressContentEditableWarning
         data-placeholder={t('body')}
-        className="px-4 py-3 min-h-[100px] text-sm text-text-primary outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary"
+        // overflow-x-auto + img clamp: the injected quote can carry fixed-width
+        // email tables — they must scroll inside the card, not widen the page.
+        className="px-4 py-3 min-h-[100px] text-xs text-text-primary outline-none overflow-x-auto break-words
+                   [&_img]:max-w-full [&_img]:h-auto
+                   empty:before:content-[attr(data-placeholder)] empty:before:text-text-tertiary"
         style={{ lineHeight: '1.6' }}
         onPaste={e => {
           // Cross-module data paste (see kubunoData.kubunoDataToEmailHtml).
@@ -413,7 +423,21 @@ function InlineCompose({
       />
 
       {/* ── Format toolbar ────────────────────────────────────────────────── */}
-      {showFormat && (
+      {/* Mobile: reduced one-line set (B/I/U, lists, clear) — the full bar with
+          font selects and alignment would wrap into several rows. */}
+      {showFormat && isMobile && (
+        <div className="flex items-center gap-0.5 px-3 py-1.5 border-t border-border bg-surface-1/40">
+          <ToolBtn onClick={() => exec('bold')}          title={t('mail_bold')}><Bold size={14} /></ToolBtn>
+          <ToolBtn onClick={() => exec('italic')}        title={t('mail_italic')}><Italic size={14} /></ToolBtn>
+          <ToolBtn onClick={() => exec('underline')}     title={t('mail_underline')}><Underline size={14} /></ToolBtn>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <ToolBtn onClick={() => exec('insertOrderedList')}   title={t('mail_ordered_list')}><ListOrdered size={14} /></ToolBtn>
+          <ToolBtn onClick={() => exec('insertUnorderedList')} title={t('mail_bullet_list')}><List size={14} /></ToolBtn>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <ToolBtn onClick={() => exec('removeFormat')} title={t('mail_clear_format')}><Eraser size={14} /></ToolBtn>
+        </div>
+      )}
+      {showFormat && !isMobile && (
         <div className="flex items-center flex-wrap gap-0.5 px-3 py-1.5 border-t border-border bg-surface-1/40">
           <ToolBtn onClick={() => exec('undo')}   title={t('common_undo')}><Undo2 size={13} /></ToolBtn>
           <ToolBtn onClick={() => exec('redo')}   title={t('common_redo')}><Redo2 size={13} /></ToolBtn>
@@ -475,10 +499,12 @@ function InlineCompose({
         >
           <Type size={15} />
         </button>
-        <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_attach_file')}><Paperclip size={15} /></button>
-        <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_insert_link')}><Link size={15} /></button>
-        <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_insert_emoji')}><Smile size={15} /></button>
-        <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_insert_image')}><Image size={15} /></button>
+        {!isMobile && <>
+          <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_attach_file')}><Paperclip size={15} /></button>
+          <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_insert_link')}><Link size={15} /></button>
+          <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_insert_emoji')}><Smile size={15} /></button>
+          <button className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary" title={t('mail_insert_image')}><Image size={15} /></button>
+        </>}
         <div className="flex-1" />
         <button
           onClick={onCancel}
@@ -542,14 +568,29 @@ function threadTab(t: Thread): MailCategory {
 
 // Gmail-style importance marker (the yellow chevron): filled amber when the
 // conversation is important, thin grey outline otherwise.
+// List star — Material `star`/`star_border` outline (sharp points, uniform
+// thin edge). Lucide's Star has rounded joins and reads noticeably heavier.
+function ListStar({ active, size = 16 }: { active: boolean; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"
+         fill={active ? '#f9ab00' : '#9aa0a6'}>
+      {active ? (
+        <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+      ) : (
+        <path d="M22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z" />
+      )}
+    </svg>
+  )
+}
+
 function ImportanceMarker({ active }: { active: boolean }) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M6 4 L11.5 4 L17.5 12 L11.5 20 L6 20 L12 12 Z"
         fill={active ? '#f9ab00' : 'none'}
         stroke={active ? '#f9ab00' : '#9aa0a6'}
-        strokeWidth="1.6"
+        strokeWidth="1.5"
         strokeLinejoin="round"
       />
     </svg>
@@ -561,6 +602,7 @@ function ImportanceMarker({ active }: { active: boolean }) {
 function ThreadList() {
   const { t } = useTranslation('mail')
   const { currentFolder, currentLabelId, inboxCategory, setInboxCategory, selectedAccount, selectedThread, setSelectedThread, searchQuery, accounts, splitMode, setSplitMode, density, setDensity } = useMailStore()
+  const isMobile = useIsMobile()
   const [splitMenuPos, setSplitMenuPos] = useState<MenuDropdownPos | null>(null)
   const qc = useQueryClient()
   const [syncing,          setSyncing]          = useState(false)
@@ -696,7 +738,15 @@ function ThreadList() {
   }
 
   const [selMenuOpen,    setSelMenuOpen]    = useState(false)
+  // Mobile selection bar "⋮" menu (secondary bulk actions).
+  const [listMorePos,    setListMorePos]    = useState<MenuDropdownPos | null>(null)
   const [bulkSnoozeOpen, setBulkSnoozeOpen] = useState(false)
+  const [ctxCreateLabel, setCtxCreateLabel] = useState(false)
+  const { setPendingCompose, setSearchQuery } = useMailStore()
+  const { data: labelsData } = useQuery({ queryKey: ['mail-labels'], queryFn: mailApi.listLabels })
+  // Right-click menu on a row.
+  const ctxMenu = useMenuDropdown()
+  const [ctxThread, setCtxThread] = useState<Thread | null>(null)
 
   const refreshLists = () => {
     qc.invalidateQueries({ queryKey: ['mail-threads'] })
@@ -721,6 +771,43 @@ function ThreadList() {
       { label: t('snooze_nextweek', { defaultValue: 'La semaine prochaine' }), until: week.toISOString() },
     ]
   }
+  // ── Actions du menu contextuel ────────────────────────────────────────────
+  const labelList = labelsData?.labels?.filter(l => !l.is_system) ?? []
+
+  const startCompose = (thread: Thread, mode: 'reply' | 'replyAll' | 'forward') => {
+    setPendingCompose({ threadId: thread.id, mode })
+    setSelectedThread(thread.id)
+  }
+
+  const ctxActions = (thread: Thread): ThreadMenuActions => ({
+    onReply:      () => startCompose(thread, 'reply'),
+    onReplyAll:   () => startCompose(thread, 'replyAll'),
+    onForward:    () => startCompose(thread, 'forward'),
+    onArchive:    () => doArchive([thread.id]),
+    onDelete:     () => doDelete([thread.id]),
+    onToggleRead: () => doRead([thread.id], thread.unread_count > 0),
+    onSnooze:     () => doSnooze([thread.id], snoozePresets()[1].until),
+    onAddToTasks: async () => {
+      await ModuleServiceRegistry.call<Promise<unknown>>('tasks', 'createTask', { title: thread.subject })
+    },
+    onMoveFolder: async folder => { await mailApi.moveThread(thread.id, folder); refreshLists() },
+    // "Move to a label" is Gmail's archive + label in one go.
+    onMoveLabel: async label => {
+      await mailApi.addLabel(thread.id, label.id).catch(() => {})
+      await mailApi.moveThread(thread.id, 'archive').catch(() => {})
+      refreshLists()
+    },
+    onToggleLabel: async label => {
+      const has = (thread.labels ?? []).some(l => l.id === label.id)
+      await (has ? mailApi.removeLabel(thread.id, label.id) : mailApi.addLabel(thread.id, label.id)).catch(() => {})
+      refreshLists()
+    },
+    onCreateLabel: () => setCtxCreateLabel(true),
+    onMute:        async () => { await mailApi.muteThread(thread.id).catch(() => {}); refreshLists() },
+    onSearchFrom:  () => setSearchQuery(`from:${thread.last_sender_email}`),
+    onOpenWindow:  () => window.open(`/mail?thread=${thread.id}`, '_blank', 'noopener'),
+  })
+
   const TBtn = ({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) => (
     <button onClick={onClick} title={title}
       className="p-1.5 rounded hover:bg-surface-2 text-text-secondary transition-colors">{children}</button>
@@ -751,9 +838,57 @@ function ThreadList() {
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-w-0">
 
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      {/* flex-wrap : sur mobile la barre passe à la ligne au lieu de déborder
-          (pas d'overflow → les menus déroulants `absolute` restent visibles) ;
-          desktop inchangé (tout tient sur une ligne). */}
+      {/* Mobile: slim bar — refresh + pagination when browsing; X + count +
+          3 primary bulk actions + "⋮" while selecting (avatar tap selects).
+          Desktop: full Gmail-style bar, unchanged. */}
+      {isMobile ? (
+        <div className="flex items-center gap-1 px-2 h-11 border-b border-[#f0f0f0] flex-shrink-0 no-print">
+          {checkedIds.size > 0 ? (
+            <>
+              <TBtn onClick={clearSel} title={t('sel_none', { defaultValue: 'Aucun' })}><X size={18} /></TBtn>
+              <span className="text-xs font-medium text-text-primary">{checkedIds.size}</span>
+              <div className="flex-1" />
+              <TBtn onClick={() => doArchive(selIds())} title={t('archive', { defaultValue: 'Archiver' })}><Archive size={18} /></TBtn>
+              <TBtn onClick={() => doDelete(selIds())} title={t('delete', { defaultValue: 'Supprimer' })}><Trash2 size={18} /></TBtn>
+              <TBtn onClick={() => doRead(selIds(), true)} title={t('mail_mark_read', { defaultValue: 'Marquer comme lu' })}><MailOpen size={18} /></TBtn>
+              <button
+                title={t('more_options')}
+                onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setListMorePos(p => p ? null : { top: r.bottom + 4, left: Math.max(8, r.right - 240), minWidth: 240 }) }}
+                className="p-1.5 rounded hover:bg-surface-2 text-text-tertiary transition-colors">
+                <MoreVertical size={18} />
+              </button>
+              {listMorePos && (
+                <MenuDropdown pos={listMorePos} onClose={() => setListMorePos(null)} items={[
+                  { type: 'action', icon: <MailIcon size={15} />, label: t('mail_mark_unread', { defaultValue: 'Marquer comme non lu' }), onClick: () => doRead(selIds(), false) },
+                  { type: 'action', icon: <Bookmark size={15} />, label: t('folder_important', { defaultValue: 'Important' }), onClick: () => doImportant(selIds()) },
+                  { type: 'submenu', icon: <Clock size={15} />, label: t('snooze', { defaultValue: 'Différer' }),
+                    items: snoozePresets().map(p => ({ type: 'action' as const, label: p.label, onClick: () => doSnooze(selIds(), p.until) })) },
+                  { type: 'separator' },
+                  { type: 'action', label: t('sel_all', { defaultValue: 'Tout sélectionner' }), onClick: () => selectBy(() => true) },
+                ]} />
+              )}
+            </>
+          ) : (
+            <>
+              <TBtn onClick={handleSync} title={t('mail_refresh')}>
+                <RefreshCw size={16} className={(syncing || isFetching) ? 'animate-spin' : ''} />
+              </TBtn>
+              <div className="flex-1" />
+              <span className="text-xs text-text-secondary tabular-nums">{`${rangeStart}–${rangeEnd}`}</span>
+              <button onClick={goPrev} disabled={pageIdx === 0}
+                title={t('mail_newer', { defaultValue: 'Plus récents' })}
+                className="p-1.5 rounded hover:bg-surface-2 text-text-secondary disabled:opacity-30 transition-colors">
+                <ChevronLeft size={16} />
+              </button>
+              <button onClick={goNext} disabled={!hasMore}
+                title={t('mail_older', { defaultValue: 'Plus anciens' })}
+                className="p-1.5 rounded hover:bg-surface-2 text-text-secondary disabled:opacity-30 transition-colors">
+                <ChevronRight size={16} />
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
       <div className="flex items-center flex-wrap gap-1 px-4 py-2 border-b border-[#f0f0f0] min-h-[44px] no-print">
         {/* Case + menu de sélection (Tout / Aucun / Lus / Non lus / Suivis) */}
         <div className="relative flex items-center">
@@ -869,9 +1004,10 @@ function ThreadList() {
           </div>
         </div>
       </div>
+      )}
 
-      {/* ── Tabs (catégories) — uniquement dans la boîte de réception ─────── */}
-      <div className={`${isInbox && !searchQuery ? 'flex' : 'hidden'} border-b border-[#e0e0e0] overflow-x-auto flex-shrink-0 bg-white`}>
+      {/* ── Category tabs — inbox only ────────────────────────────────────── */}
+      <div className={`${isInbox && !searchQuery ? 'flex' : 'hidden'} border-b border-[#e0e0e0] overflow-x-auto scrollbar-none flex-shrink-0 bg-white`}>
         {TABS.map(tab => {
           const isActive = activeTab === tab.id
           const { count, preview } = catInfo[tab.id]
@@ -883,10 +1019,11 @@ function ThreadList() {
               key={tab.id}
               to={categoryTo(tab.id)}
               title={showDetail ? preview : undefined}
-              className={`flex items-center gap-3 pl-4 pr-6 h-14 min-w-[168px] max-w-[320px] text-left border-b-[3px] transition-colors flex-shrink-0
+              className={`flex items-center text-left border-b-[3px] transition-colors
+                ${isMobile ? 'flex-shrink-0 gap-2 px-4 h-12 min-w-0' : 'gap-3 pl-4 pr-6 h-14 min-w-[96px] max-w-[320px]'}
                 ${isActive ? 'border-primary bg-white' : 'border-transparent hover:bg-surface-1'}`}
             >
-              <tab.Icon size={20} className={`flex-shrink-0 ${isActive ? 'text-primary' : 'text-text-tertiary'}`} />
+              <tab.Icon size={isMobile ? 17 : 20} className={`flex-shrink-0 ${isActive ? 'text-primary' : 'text-text-tertiary'}`} />
               <span className="flex flex-col min-w-0 leading-tight">
                 <span className="flex items-center gap-2 min-w-0">
                   <span className={`text-[15px] truncate ${isActive ? 'text-primary font-medium' : 'text-text-primary'}`}>
@@ -898,7 +1035,7 @@ function ThreadList() {
                     </span>
                   )}
                 </span>
-                {showDetail && (
+                {showDetail && !isMobile && (
                   <span className="text-xs text-text-tertiary truncate">{preview}</span>
                 )}
               </span>
@@ -926,42 +1063,66 @@ function ThreadList() {
               highlighted={highlightedId === thread.id}
               opened={selectedThread === thread.id}
               checked={checkedIds.has(thread.id)}
-              onSingleClick={() => { setHighlightedId(thread.id); if (splitMode !== 'none') setSelectedThread(thread.id) }}
-              onDoubleClick={() => { setHighlightedId(thread.id); setSelectedThread(thread.id) }}
+              onSingleClick={() => { setHighlightedId(thread.id); setSelectedThread(thread.id) }}
               onCheck={e => { e.stopPropagation(); toggleOne(thread.id) }}
               onArchive={() => doArchive([thread.id])}
               onDelete={() => doDelete([thread.id])}
               onMarkRead={() => doRead([thread.id], thread.unread_count > 0)}
               onSnooze={() => doSnooze([thread.id], snoozePresets()[1].until)}
+              onContextMenu={e => { e.preventDefault(); setCtxThread(thread); ctxMenu.open(e) }}
             />
           ))
         )}
       </div>
+
+      {ctxMenu.pos && ctxThread && (
+        <ThreadContextMenu
+          thread={ctxThread}
+          labels={labelList}
+          pos={ctxMenu.pos}
+          onClose={ctxMenu.close}
+          actions={ctxActions(ctxThread)}
+        />
+      )}
+
+      {ctxCreateLabel && (
+        <NewLabelDialog
+          labels={labelList}
+          onCancel={() => setCtxCreateLabel(false)}
+          onCreate={async ({ name }: NewLabelResult) => {
+            const accountId = ctxThread?.account_id ?? accounts[0]?.id
+            if (accountId) await mailApi.createLabel({ account_id: accountId, name }).catch(() => {})
+            setCtxCreateLabel(false)
+            qc.invalidateQueries({ queryKey: ['mail-labels'] })
+          }}
+        />
+      )}
     </div>
   )
 }
 
 function ThreadItem({
-  thread, highlighted, opened, checked, onSingleClick, onDoubleClick, onCheck,
-  onArchive, onDelete, onMarkRead, onSnooze,
+  thread, highlighted, opened, checked, onSingleClick, onCheck,
+  onArchive, onDelete, onMarkRead, onSnooze, onContextMenu,
 }: {
   thread:         Thread
   highlighted:    boolean
   opened:         boolean
   checked:        boolean
   onSingleClick:  () => void
-  onDoubleClick:  () => void
   onCheck:        (e: React.MouseEvent) => void
   onArchive:      () => void
   onDelete:       () => void
   onMarkRead:     () => void
   onSnooze:       () => void
+  onContextMenu:  (e: React.MouseEvent) => void
 }) {
   const { t, i18n } = useTranslation('mail')
   const [hovered, setHovered] = useState(false)
   const qc = useQueryClient()
   const density = useMailStore(s => s.density)
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const currentFolder  = useMailStore(s => s.currentFolder)
+  const currentLabelId = useMailStore(s => s.currentLabelId)
   const unread = thread.unread_count > 0
   const senderDisplay = thread.last_sender_name || thread.last_sender_email || '?'
   const initial = senderDisplay[0]?.toUpperCase() ?? '?'
@@ -977,36 +1138,79 @@ function ThreadItem({
     onSuccess:  () => qc.invalidateQueries({ queryKey: ['mail-threads'] }),
   })
 
-  // Debounce : le clic simple n'agit que si aucun double-clic ne suit dans 220ms
+  // A single click opens the conversation — no double-click debounce. Touch and
+  // mouse behave the same way.
   function handleClick() {
-    // Touch UIs have no double-click: a single tap opens the thread directly
-    // (otherwise, with no split panel, a tap would only highlight it).
-    if (isCoarsePointer()) { onDoubleClick(); return }
-    if (clickTimer.current) clearTimeout(clickTimer.current)
-    clickTimer.current = setTimeout(() => {
-      clickTimer.current = null
-      onSingleClick()
-    }, 220)
-  }
-  function handleDoubleClick() {
-    if (clickTimer.current) { clearTimeout(clickTimer.current); clickTimer.current = null }
-    onDoubleClick()
+    onSingleClick()
   }
 
   const swipe = useSwipeActions({ onRight: onArchive, onLeft: onDelete })
+  const isMobile = useIsMobile()
+
+  // Mobile: Gmail-style two-line row — avatar (tap = select), sender + date,
+  // subject/snippet + star. Hover actions are replaced by the swipe gestures.
+  if (isMobile) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleClick}
+        onKeyDown={e => { if (e.key === 'Enter') handleClick() }}
+        {...swipe.handlers}
+        style={swipe.dx !== 0 ? { transform: `translateX(${swipe.dx}px)`, transition: swipe.swiping ? 'none' : 'transform 0.2s ease', touchAction: 'pan-y' } : { touchAction: 'pan-y' }}
+        className={`relative flex items-center gap-3 px-4 py-2 min-h-[64px] cursor-pointer select-none border-b border-[#f0f0f0]
+          ${swipe.dx > 0 ? 'bg-[#1e8e3e]' : swipe.dx < 0 ? 'bg-[#d93025]' :
+            opened ? 'bg-blue-50' : checked ? 'bg-[#e8f0fe]' : 'bg-white'}`}
+      >
+        {/* Avatar — tap toggles selection */}
+        <button
+          onClick={e => { e.stopPropagation(); onCheck(e) }}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold text-white flex-shrink-0"
+          style={{ backgroundColor: checked ? '#1a73e8' : color }}
+        >
+          {checked ? <Check size={18} /> : initial}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className={`flex-1 truncate text-[15px] ${unread ? 'font-semibold text-text-primary' : 'text-text-secondary'}`}>
+              {senderDisplay}
+            </span>
+            <span className={`text-xs flex-shrink-0 ${unread ? 'font-semibold text-primary' : 'text-text-tertiary'}`}>
+              {formatDate(thread.last_message_at, t, i18n.language)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex-1 min-w-0">
+              <div className={`truncate text-sm ${unread ? 'font-semibold text-text-primary' : 'text-text-primary'}`}>
+                {thread.subject || t('mail_no_subject')}
+              </div>
+              {thread.snippet && (
+                <div className="truncate text-xs text-text-tertiary">{thread.snippet}</div>
+              )}
+            </div>
+            {thread.has_attachments && <Paperclip size={14} className="text-text-tertiary flex-shrink-0" />}
+            <button onClick={e => { e.stopPropagation(); starMut.mutate() }} className="p-1 flex-shrink-0"
+              title={thread.is_starred ? t('mail_unstar') : t('mail_star')}>
+              <ListStar active={thread.is_starred} size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
-      onKeyDown={e => { if (e.key === 'Enter') handleDoubleClick() }}
+      onContextMenu={onContextMenu}
+      onKeyDown={e => { if (e.key === 'Enter') handleClick() }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       {...swipe.handlers}
       style={swipe.dx !== 0 ? { transform: `translateX(${swipe.dx}px)`, transition: swipe.swiping ? 'none' : 'transform 0.2s ease', touchAction: 'pan-y' } : { touchAction: 'pan-y' }}
-      className={`relative flex items-center ${density === 'compact' ? 'h-[36px]' : 'h-[52px]'} px-3 gap-2 cursor-pointer select-none
+      className={`relative flex items-center ${density === 'compact' ? 'h-8' : 'h-10'} pl-[15px] pr-3 gap-0 cursor-pointer select-none
         border-b border-[#f0f0f0] group
         ${swipe.dx > 0 ? 'bg-[#1e8e3e]' : swipe.dx < 0 ? 'bg-[#d93025]' :
           opened      ? 'bg-blue-50 shadow-[inset_3px_0_0_#1a73e8]' :
@@ -1014,30 +1218,30 @@ function ThreadItem({
           checked     ? 'bg-yellow-50' :
           hovered     ? 'shadow-[0_1px_3px_rgba(0,0,0,0.16)] z-10 relative' : 'bg-white'}`}
     >
-      {/* Checkbox — always visible (Gmail-style row controls) */}
-      <div className="w-5 flex-shrink-0 flex items-center justify-center">
+      {/* Row controls — 30px pitch, matching Gmail's gutter geometry */}
+      <div className="w-[30px] flex-shrink-0 flex items-center justify-center">
         <input
           type="checkbox"
           checked={checked}
           onClick={onCheck}
           onChange={() => {}}
-          className="w-4 h-4 rounded cursor-pointer accent-primary"
+          className="w-[14px] h-[14px] rounded-[2px] cursor-pointer accent-primary"
         />
       </div>
 
-      {/* Étoile — always visible (outline when not starred) */}
+      {/* Star — always visible (outline when not starred) */}
       <button
         onClick={e => { e.stopPropagation(); starMut.mutate() }}
-        className="w-5 flex-shrink-0 flex items-center justify-center"
+        className="w-[30px] flex-shrink-0 flex items-center justify-center"
         title={thread.is_starred ? t('mail_unstar') : t('mail_star')}
       >
-        <Star size={15} className={thread.is_starred ? 'fill-yellow-400 text-yellow-400' : 'text-text-tertiary'} />
+        <ListStar active={thread.is_starred} />
       </button>
 
-      {/* Marqueur d'importance (chevron façon Gmail) — toujours visible */}
+      {/* Importance marker (Gmail-style chevron) — always visible */}
       <button
         onClick={e => { e.stopPropagation(); importantMut.mutate() }}
-        className="w-5 flex-shrink-0 flex items-center justify-center"
+        className="w-[30px] flex-shrink-0 flex items-center justify-center"
         title={thread.is_important
           ? t('mail_mark_not_important', { defaultValue: 'Marquer comme non important' })
           : t('mail_mark_important', { defaultValue: 'Marquer comme important' })}
@@ -1045,22 +1249,15 @@ function ThreadItem({
         <ImportanceMarker active={!!thread.is_important} />
       </button>
 
-      {/* Avatar */}
-      <div
-        className="w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-semibold text-white flex-shrink-0"
-        style={{ backgroundColor: color }}
-      >
-        {initial}
-      </div>
-
-      {/* Expéditeur — largeur fixe */}
-      <div className={`flex-shrink-0 truncate text-sm w-40
+      {/* Sender — fixed width, no avatar on desktop (Gmail parity) */}
+      <div className={`flex-shrink-0 truncate text-sm w-40 ml-[5px] pr-2
         ${unread ? 'font-semibold text-text-primary' : 'font-normal text-text-secondary'}`}>
         {senderDisplay}
       </div>
 
-      {/* Sujet + extrait */}
-      <div className="flex-1 min-w-0 flex items-center gap-0 overflow-hidden">
+      {/* Subject + snippet, preceded by the folder/label chips */}
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+        <ThreadChips thread={thread} currentFolder={currentFolder} currentLabelId={currentLabelId} />
         <span className={`text-sm truncate flex-shrink-0 max-w-[60%]
           ${unread ? 'font-semibold text-text-primary' : 'text-text-primary'}`}>
           {thread.subject || t('mail_no_subject')}
@@ -1096,7 +1293,7 @@ function ThreadItem({
       )}
 
       {/* Date */}
-      <div className={`text-xs flex-shrink-0 text-right min-w-[64px]
+      <div className={`text-xs flex-shrink-0 text-right min-w-[64px] ml-2
         ${unread ? 'font-semibold text-text-primary' : 'text-text-tertiary'}
         ${hovered ? 'hidden' : ''}`}>
         {formatDate(thread.last_message_at, t, i18n.language)}
@@ -1160,6 +1357,9 @@ function MessageCard({
   const { t, i18n } = useTranslation('mail')
   const qc = useQueryClient()
   const { setSearchQuery } = useMailStore()
+  // Mobile: lighter header — short date, no raw address, star + "⋮" only
+  // (Reply stays as the big button under the message).
+  const isMobile = useIsMobile()
   const [expanded,      setExpanded]      = useState(isLast)
   const [starred,       setStarred]       = useState(message.is_starred)
   const [showOriginal,  setShowOriginal]  = useState(false)
@@ -1221,7 +1421,7 @@ function MessageCard({
         onClick={() => setExpanded(true)}
         className="w-full flex items-center gap-3 py-3 hover:bg-[#f1f3f4] rounded-lg text-left"
       >
-        <div className="w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-semibold text-white flex-shrink-0"
+        <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold text-white flex-shrink-0"
              style={{ backgroundColor: color }}>
           {initial}
         </div>
@@ -1252,7 +1452,7 @@ function MessageCard({
               <span className="text-sm font-semibold text-[#202124]">
                 {message.from_name || message.from_email}
               </span>
-              {message.from_name && (
+              {message.from_name && !isMobile && (
                 <span className="text-xs text-[#5f6368] ml-1.5">
                   &lt;{message.from_email}&gt;
                 </span>
@@ -1276,7 +1476,7 @@ function MessageCard({
             {/* Date + actions */}
             <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
               <span className="text-xs text-[#5f6368] mr-2 whitespace-nowrap">
-                {formatFullDate(message.received_at)}
+                {isMobile ? formatDate(message.received_at, t, i18n.language) : formatFullDate(message.received_at)}
               </span>
               <button
                 onClick={() => starMut.mutate()}
@@ -1285,13 +1485,15 @@ function MessageCard({
               >
                 <Star size={16} className={starred ? 'fill-yellow-400 text-yellow-400' : 'text-[#5f6368]'} />
               </button>
-              <button
-                onClick={onReply}
-                className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]"
-                title={t('mail_reply')}
-              >
-                <Reply size={16} />
-              </button>
+              {!isMobile && (
+                <button
+                  onClick={onReply}
+                  className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]"
+                  title={t('mail_reply')}
+                >
+                  <Reply size={16} />
+                </button>
+              )}
               <button
                 onClick={e => setActionsAnchor(r => r ? null : e.currentTarget.getBoundingClientRect())}
                 className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]"
@@ -1402,6 +1604,7 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
   const qc = useQueryClient()
   const [inlineMode, setInlineMode] = useState<'reply' | 'forward' | null>(null)
   const [inlineMsg,  setInlineMsg]  = useState<EmailMessage | null>(null)
+  const [replyAll,   setReplyAll]   = useState(false)
 
   useEffect(() => { setInlineMode(null); setInlineMsg(null) }, [selectedThread])
 
@@ -1410,6 +1613,21 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
     queryFn:  () => mailApi.getThread(selectedThread!),
     enabled:  !!selectedThread,
   })
+
+  // Reply/forward asked for from the list's right-click menu: the thread had
+  // to load first, so the request waits in the store until its messages arrive.
+  const pendingCompose = useMailStore(s => s.pendingCompose)
+  const setPendingCompose = useMailStore(s => s.setPendingCompose)
+  useEffect(() => {
+    if (!pendingCompose || pendingCompose.threadId !== selectedThread) return
+    const msgs = data?.messages ?? []
+    const last = msgs[msgs.length - 1]
+    if (!last) return
+    setInlineMsg(last)
+    setInlineMode(pendingCompose.mode === 'forward' ? 'forward' : 'reply')
+    setReplyAll(pendingCompose.mode === 'replyAll')
+    setPendingCompose(null)
+  }, [pendingCompose, selectedThread, data, setPendingCompose])
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => mailApi.deleteThread(id),
@@ -1520,6 +1738,10 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedThread, data, deleteMut, qc, setSelectedThread])
 
+  const isMobile = useIsMobile()
+  // Mobile "⋮" menu (all the secondary actions live there, not in the toolbar).
+  const [morePos, setMorePos] = useState<MenuDropdownPos | null>(null)
+
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-white">
@@ -1529,6 +1751,30 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
   }
 
   const { thread, messages } = data!
+
+  // Secondary actions, shown in the mobile "⋮" menu (bottom sheet on touch,
+  // with drill-in submenus for snooze and move).
+  const moreItems: UiMenuItem[] = [
+    { type: 'action', icon: <Bookmark size={15} />, label: t('folder_important', { defaultValue: 'Important' }),
+      checked: !!thread.is_important, onClick: () => importantMut.mutate(thread.id) },
+    currentFolder === 'spam'
+      ? { type: 'action', icon: <ShieldCheck size={15} />, label: t('not_spam', { defaultValue: 'Pas un spam' }),
+          onClick: () => spamMut.mutate({ id: thread.id, folder: 'inbox' }) }
+      : { type: 'action', icon: <ShieldAlert size={15} />, label: t('spam_report'),
+          onClick: () => spamMut.mutate({ id: thread.id, folder: 'spam' }) },
+    { type: 'action', icon: <BellOff size={15} />, label: t('mute', { defaultValue: 'Ignorer la conversation' }),
+      onClick: () => muteMut.mutate(thread.id) },
+    { type: 'submenu', icon: <Clock size={15} />, label: t('snooze', { defaultValue: 'Différer' }),
+      items: snoozePresets().map(p => ({ type: 'action' as const, label: p.label, onClick: () => snoozeMut.mutate({ id: thread.id, until: p.until }) })) },
+    { type: 'submenu', icon: <FolderInput size={15} />, label: t('move_to'),
+      items: ([['inbox', t('folder_inbox')], ['archive', t('archive')], ['spam', t('folder_spam')], ['trash', t('folder_trash')]] as [string, string][])
+        .filter(([f]) => f !== currentFolder)
+        .map(([f, label]) => ({ type: 'action' as const, label, onClick: () => moveTo(f) })) },
+    { type: 'separator' },
+    { type: 'action', icon: <Printer size={15} />, label: t('print'), onClick: () => window.print() },
+    { type: 'action', icon: <ExternalLink size={15} />, label: t('mail_open_new_window'),
+      onClick: () => window.open(`${window.location.origin}/mail?thread=${thread.id}`, '_blank', 'noopener') },
+  ]
 
   const TBtn = ({ onClick, title, children, danger }: {
     onClick?: () => void; title: string; children: React.ReactNode; danger?: boolean
@@ -1549,8 +1795,26 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white">
 
       {/* ══ Toolbar ══════════════════════════════════════════════════════════ */}
-      {/* flex-wrap + min-h : la barre d'actions (nombreux boutons) passe à la ligne
-          sur mobile sans déborder ni clipper les menus ; desktop = une seule ligne. */}
+      {/* Mobile: back + the 2 primary actions + a "⋮" menu holding everything
+          else — never several wrapped rows of icons. Desktop: full bar. */}
+      {isMobile ? (
+        <div className="flex items-center justify-between pl-1 pr-2 h-12 border-b border-[#e0e0e0] flex-shrink-0 no-print">
+          <TBtn onClick={() => setSelectedThread(null)} title={t('back')}>
+            <ChevronLeft size={22} />
+          </TBtn>
+          <div className="flex items-center gap-1">
+            <TBtn title={t('archive')} onClick={() => moveTo('archive')}><Archive size={19} /></TBtn>
+            <TBtn title={t('delete')} danger onClick={() => deleteMut.mutate(thread.id)}><Trash2 size={19} /></TBtn>
+            <button
+              title={t('more_options')}
+              onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setMorePos(p => p ? null : { top: r.bottom + 4, left: Math.max(8, r.right - 260), minWidth: 260 }) }}
+              className="p-2 rounded-full hover:bg-[#f1f3f4] text-[#444746] transition-colors">
+              <MoreVertical size={19} />
+            </button>
+          </div>
+          {morePos && <MenuDropdown pos={morePos} onClose={() => setMorePos(null)} items={moreItems} />}
+        </div>
+      ) : (
       <div className="flex items-center flex-wrap gap-0.5 px-2 min-h-[48px] py-1 border-b border-[#e0e0e0] flex-shrink-0 no-print">
 
         {/* Retour à la liste */}
@@ -1630,14 +1894,15 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
           <ExternalLink size={18} />
         </TBtn>
       </div>
+      )}
 
       {/* ══ Zone de lecture (scrollable) ══════════════════════════════════════ */}
       <div className="flex-1 overflow-y-auto">
-        <div className="w-full px-8 py-4">
+        <div className={`w-full py-4 ${isMobile ? 'px-4' : 'px-8'}`}>
 
           {/* ── Sujet + label ─────────────────────────────────────────────── */}
           <div className="flex items-start gap-3 mb-4">
-            <h1 className="flex-1 text-[22px] font-normal text-[#202124] leading-snug break-words">
+            <h1 className={`flex-1 font-normal text-[#202124] leading-snug break-words ${isMobile ? 'text-lg' : 'text-[22px]'}`}>
               {thread.subject || t('mail_no_subject')}
             </h1>
             <div className="flex items-center gap-2 flex-shrink-0 mt-1">
@@ -1648,20 +1913,23 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
                 <button className="ml-1 hover:text-[#202124] leading-none" title={t('archive')}
                   onClick={() => moveTo('archive')}>×</button>
               </span>
-              <button className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#444746]" title={t('print')}
-                onClick={() => window.print()}>
-                <Printer size={16} />
-              </button>
-              <button className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#444746]" title={t('mail_new_window')}
-                onClick={() => window.open(`${window.location.origin}/mail?thread=${thread.id}`, '_blank', 'noopener')}>
-                <ExternalLink size={16} />
-              </button>
+              {/* Print / new window: secondary — on mobile they live in "⋮" only. */}
+              {!isMobile && <>
+                <button className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#444746]" title={t('print')}
+                  onClick={() => window.print()}>
+                  <Printer size={16} />
+                </button>
+                <button className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#444746]" title={t('mail_new_window')}
+                  onClick={() => window.open(`${window.location.origin}/mail?thread=${thread.id}`, '_blank', 'noopener')}>
+                  <ExternalLink size={16} />
+                </button>
+              </>}
             </div>
           </div>
 
           {/* Avertissement bayésien : message resté en boîte mais jugé douteux. */}
           {currentFolder === 'inbox' && messages.some(m => (m.spam_score ?? 0) >= 0.7) && (
-            <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[13px] text-amber-800">
+            <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
               <ShieldAlert size={16} className="flex-shrink-0 text-amber-500" />
               <span className="flex-1">{t('spam_suspected', { defaultValue: 'Ce message ressemble à un indésirable.' })}</span>
               <button
@@ -1694,8 +1962,9 @@ function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) =>
               <InlineCompose
                 mode={inlineMode}
                 message={inlineMsg}
-                onSent={() => setInlineMode(null)}
-                onCancel={() => setInlineMode(null)}
+                replyAll={replyAll}
+                onSent={() => { setInlineMode(null); setReplyAll(false) }}
+                onCancel={() => { setInlineMode(null); setReplyAll(false) }}
               />
             </div>
           )}
@@ -1750,6 +2019,10 @@ function UndoSendToast({ label, undoLabel, onCancel }: {
 export default function MailApp() {
   const { t } = useTranslation('mail')
   const { composeOpen, setComposeOpen, setComposeInitial, setAccounts, accounts, setCurrentFolder, currentFolder, selectedThread, splitMode } = useMailStore()
+  // Mobile: always single pane (list ↔ reader via selectedThread) — a persisted
+  // split mode from desktop makes no sense on a phone.
+  const isMobile = useIsMobile()
+  const effSplit = isMobile ? 'none' : splitMode
   const undoPayload = useUndoSendStore(s => s.payload)
   const cancelUndo  = useUndoSendStore(s => s.cancel)
 
@@ -1820,13 +2093,13 @@ export default function MailApp() {
       {/* ── Zone principale ───────────────────────────────────────────────── */}
       {currentFolder === 'subscriptions' ? <SubscriptionsView />
         : currentFolder === 'scheduled'  ? <ScheduledView />
-        : splitMode === 'none'
+        : effSplit === 'none'
           ? (selectedThread ? <ThreadReader onOpenPdf={openPdf} /> : <ThreadList />)
           : (
-            <div className={splitMode === 'vertical'
+            <div className={effSplit === 'vertical'
               ? 'flex flex-1 min-w-0 overflow-hidden'
               : 'flex flex-col flex-1 min-h-0 overflow-hidden'}>
-              <div className={splitMode === 'vertical'
+              <div className={effSplit === 'vertical'
                 ? 'w-[42%] min-w-[340px] max-w-[600px] border-r border-[#e0e0e0] flex flex-col overflow-hidden'
                 : 'h-[45%] min-h-[200px] border-b border-[#e0e0e0] flex flex-col overflow-hidden'}>
                 <ThreadList />
@@ -1844,7 +2117,7 @@ export default function MailApp() {
           )
       }
 
-      {composeOpen && <ComposeWindow />}
+      {/* ComposeWindow : monté globalement via le slot app-dialogs (entry.ts). */}
 
       {/* Toast décompte « Annuler l'envoi » (même mécanique que le décompte de
           suppression de drive : carte + barre de progression qui se vide). */}

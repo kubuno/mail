@@ -18,7 +18,9 @@ pub struct SmtpConfig {
     pub from_email:   String,
 }
 
-pub async fn send_message(cfg: &SmtpConfig, dto: &SendMailDto, subject: &str, body_html: &str) -> Result<()> {
+/// Sends the message and returns its Message-ID (without angle brackets),
+/// so the caller can store a matching local copy in the Sent folder.
+pub async fn send_message(cfg: &SmtpConfig, dto: &SendMailDto, subject: &str, body_html: &str) -> Result<String> {
     let from = if cfg.from_name.is_empty() {
         cfg.from_email.parse().context("Adresse expéditeur invalide")?
     } else {
@@ -80,8 +82,16 @@ pub async fn send_message(cfg: &SmtpConfig, dto: &SendMailDto, subject: &str, bo
             .build(),
     };
 
+    // lettre generates a Message-ID at build time; normalize it like mail-parser
+    // does on the sync side (no angle brackets) so dedup comparisons match.
+    let message_id = email
+        .headers()
+        .get_raw("Message-ID")
+        .map(|v| v.trim().trim_matches(|c| c == '<' || c == '>').to_string())
+        .unwrap_or_else(|| format!("{}@kubuno.generated", uuid::Uuid::new_v4()));
+
     transport.send(email).await.context("Envoi SMTP")?;
-    Ok(())
+    Ok(message_id)
 }
 
 fn format_addr(addr: &EmailAddress) -> String {

@@ -1,10 +1,20 @@
-/* Émet les utilitaires Tailwind de CE module dans la couche `kubuno-module` pour
- * qu'ils ne supplantent jamais les utilitaires responsive du shell host (le CSS
- * du module est injecté après celui du host au runtime). Le host pré-déclare
- * l'ordre des couches (kubuno-module sous `utilities`, au-dessus de `base`).
- * Le plugin @tailwindcss/vite ignore layer() sur le shorthand → imports granulaires. */
+/* Emit THIS module's Tailwind utilities into the `kubuno-module` layer so they
+ * never override the host shell's responsive utilities (the module's CSS is
+ * injected after the host's at runtime). The host pre-declares the layer order
+ * (kubuno-module below `utilities`, above `base`). The @tailwindcss/vite plugin
+ * ignores layer() on the shorthand → granular imports. */
 @layer theme, base, components, kubuno-module;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(kubuno-module) source("../");
 @import "./theme.css";
+
+@layer kubuno-module {
+  /* Scrollable container without a visible scrollbar (category tabs bar). */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

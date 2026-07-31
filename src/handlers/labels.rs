@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     errors::MailError,
     middleware::AuthUser,
-    models::{CreateLabelDto, Label},
+    models::{CreateLabelDto, Label, UpdateLabelDto},
     state::AppState,
 };
 
@@ -16,7 +16,8 @@ pub async fn list_labels(
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
     let labels = sqlx::query_as::<_, Label>(
-        "SELECT id, account_id, user_id, name, color, imap_folder, is_system, position, created_at
+        "SELECT id, account_id, user_id, name, color, imap_folder, is_system, position, created_at,
+                list_visibility, message_list_visibility
          FROM mail.labels WHERE user_id = $1 ORDER BY is_system DESC, position, name",
     )
     .bind(user.id)
@@ -67,6 +68,84 @@ pub async fn create_label(
     })?;
 
     Ok(Json(serde_json::json!({ "id": id })))
+}
+
+pub async fn update_label(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(label_id): Path<Uuid>,
+    Json(dto): Json<UpdateLabelDto>,
+) -> Result<Json<serde_json::Value>, MailError> {
+    // Validate before touching the DB.
+    if let Some(name) = &dto.name {
+        if name.trim().is_empty() {
+            return Err(MailError::Validation("Nom requis".into()));
+        }
+    }
+    if let Some(v) = &dto.list_visibility {
+        if !matches!(v.as_str(), "show" | "unread" | "hide") {
+            return Err(MailError::Validation("Visibilité invalide".into()));
+        }
+    }
+    if let Some(v) = &dto.message_list_visibility {
+        if !matches!(v.as_str(), "show" | "hide") {
+            return Err(MailError::Validation("Visibilité invalide".into()));
+        }
+    }
+
+    let is_system: Option<bool> = sqlx::query_scalar(
+        "SELECT is_system FROM mail.labels WHERE id = $1 AND user_id = $2",
+    )
+    .bind(label_id)
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %label_id, "update_label: lecture du label");
+        MailError::Database(e)
+    })?;
+
+    match is_system {
+        None       => return Err(MailError::NotFound(format!("Label {label_id}"))),
+        // System labels keep their name, but their display settings are the
+        // user's to change.
+        Some(true) if dto.name.is_some() => {
+            return Err(MailError::Validation(
+                "Les labels système ne peuvent pas être renommés".into(),
+            ))
+        }
+        _ => {}
+    }
+
+    // COALESCE keeps untouched columns; `color` uses its own flag so an
+    // explicit null clears it.
+    sqlx::query(
+        "UPDATE mail.labels SET
+            name                    = COALESCE($3, name),
+            color                   = CASE WHEN $4 THEN $5 ELSE color END,
+            list_visibility         = COALESCE($6, list_visibility),
+            message_list_visibility = COALESCE($7, message_list_visibility)
+         WHERE id = $1 AND user_id = $2",
+    )
+    .bind(label_id)
+    .bind(user.id)
+    .bind(dto.name.as_ref().map(|n| n.trim()))
+    .bind(dto.color.is_some())
+    .bind(dto.color.clone().flatten())
+    .bind(&dto.list_visibility)
+    .bind(&dto.message_list_visibility)
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, %label_id, "update_label: mise à jour");
+        if e.to_string().contains("unique") {
+            MailError::Conflict("Un libellé porte déjà ce nom".into())
+        } else {
+            MailError::Database(e)
+        }
+    })?;
+
+    Ok(Json(serde_json::json!({ "message": "Label mis à jour" })))
 }
 
 pub async fn delete_label(

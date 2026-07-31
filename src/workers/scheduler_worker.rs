@@ -107,6 +107,15 @@ async fn send_one(
         attachments:   None,
     };
 
-    smtp_service::send_message(&cfg, &dto, subject, body_html).await?;
+    let message_id = smtp_service::send_message(&cfg, &dto, subject, body_html).await?;
+
+    // Local Sent copy (same behaviour as direct sends); the mail already left,
+    // so only log on failure.
+    if let Err(e) = crate::services::sent_copy::store_sent_copy(
+        &state.db, &account, &dto, body_html, &message_id,
+        &state.settings.mail.attachments_dir,
+    ).await {
+        tracing::error!(error = %e, account_id = %account.id, "Copie locale « envoyés » (programmé) échouée");
+    }
     Ok(())
 }
