@@ -12,6 +12,7 @@ import com.kubuno.mail.net.ThreadDto
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 /**
  * Offline-first mailbox. The UI reads threads from Room; the network only
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.Flow
  */
 @Singleton
 class MailRepository @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val clients: MailClients,
     private val db: MailDatabase,
 ) {
@@ -100,6 +102,32 @@ class MailRepository @Inject constructor(
     /** Loads a thread with its messages (does not mark read server-side). */
     suspend fun thread(account: SharedAccount, id: String): ThreadDetailDto =
         clients.api(account).thread(id)
+
+    /**
+     * Downloads one attachment to the app cache and returns the file. Streams
+     * over the authenticated client — the same endpoint that now speaks Range,
+     * so a resumed download would work, though here we fetch it whole.
+     */
+    suspend fun downloadAttachment(
+        account: SharedAccount,
+        messageId: String,
+        index: Int,
+        filename: String,
+    ): java.io.File = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val client = clients.raw(account)
+        val url = "${client.serverUrl}/api/v1/mail/messages/$messageId/attachments/$index"
+        val request = okhttp3.Request.Builder().url(url).build()
+        client.okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code}")
+            val dir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+            val safe = filename.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "attachment" }
+            val file = java.io.File(dir, safe)
+            response.body?.byteStream()?.use { input ->
+                file.outputStream().use { input.copyTo(it) }
+            } ?: error("Réponse vide")
+            file
+        }
+    }
 
     /** Marks a thread read: clears the local badge, then tells the server. */
     suspend fun markRead(account: SharedAccount, id: String) {

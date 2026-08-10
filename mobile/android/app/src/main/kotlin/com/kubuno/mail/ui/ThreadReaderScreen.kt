@@ -3,6 +3,8 @@ package com.kubuno.mail.ui
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.kubuno.mail.net.AttachmentDto
 import com.kubuno.mail.net.EmailMessageDto
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,6 +55,7 @@ fun ThreadReaderScreen(
     onTrash: () -> Unit,
     onReply: (ComposePrefill) -> Unit,
     onMarkUnread: () -> Unit,
+    onOpenAttachment: (messageId: String, index: Int, name: String, mime: String?) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -99,7 +104,7 @@ fun ThreadReaderScreen(
                     )
                     state.messages.forEach { message ->
                         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                        MessageCard(message)
+                        MessageCard(message, onOpenAttachment)
                     }
                 }
             }
@@ -108,7 +113,10 @@ fun ThreadReaderScreen(
 }
 
 @Composable
-private fun MessageCard(message: EmailMessageDto) {
+private fun MessageCard(
+    message: EmailMessageDto,
+    onOpenAttachment: (messageId: String, index: Int, name: String, mime: String?) -> Unit,
+) {
     val sender = (message.fromName?.takeIf { it.isNotBlank() } ?: message.fromEmail).orEmpty()
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Row(
@@ -145,7 +153,56 @@ private fun MessageCard(message: EmailMessageDto) {
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
+        message.attachments.forEachIndexed { index, attachment ->
+            AttachmentChip(attachment) {
+                onOpenAttachment(message.id, index, attachment.display, attachment.mime)
+            }
+        }
     }
+}
+
+/** A tappable attachment: name and size, downloaded and opened on click. */
+@Composable
+private fun AttachmentChip(attachment: AttachmentDto, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            Icons.Outlined.AttachFile,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Column {
+            Text(
+                attachment.display,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (attachment.size > 0) {
+                Text(
+                    formatBytes(attachment.size),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_048_576 -> "%.1f Mo".format(bytes / 1_048_576.0)
+    bytes >= 1024 -> "%.0f Ko".format(bytes / 1024.0)
+    else -> "$bytes o"
 }
 
 /**

@@ -89,6 +89,16 @@ data class EmailAddressDto(
 )
 
 @Serializable
+data class AttachmentDto(
+    val name: String? = null,
+    val filename: String? = null,
+    val mime: String? = null,
+    val size: Long = 0,
+) {
+    val display: String get() = (name ?: filename)?.takeIf { it.isNotBlank() } ?: "pièce jointe"
+}
+
+@Serializable
 data class EmailMessageDto(
     val id: String,
     @SerialName("thread_id") val threadId: String? = null,
@@ -101,6 +111,7 @@ data class EmailMessageDto(
     @SerialName("is_read") val isRead: Boolean = true,
     @SerialName("is_starred") val isStarred: Boolean = false,
     @SerialName("received_at") val receivedAt: String? = null,
+    val attachments: List<AttachmentDto> = emptyList(),
 )
 
 @Serializable

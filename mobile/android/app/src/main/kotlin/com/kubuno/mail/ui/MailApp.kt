@@ -30,6 +30,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -160,6 +161,7 @@ fun MailApp(
     var panelOpen by remember { mutableStateOf(false) }
     var openThread by remember { mutableStateOf<String?>(null) }
     var compose by remember { mutableStateOf<ComposePrefill?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -178,7 +180,7 @@ fun MailApp(
                     onOpenMenu = { scope.launch { drawerState.open() } },
                     onSearch = { /* search screen lands in M4 */ },
                     onNotifications = { /* notifications land with push in M5 */ },
-                    onSettings = { /* settings land in M3 */ },
+                    onSettings = { showSettings = true },
                 )
             },
             bottomBar = { MailBottomBar(folder, viewModel::selectFolder) },
@@ -223,6 +225,10 @@ fun MailApp(
         val id = openThread!!
         fun close() { openThread = null; reader.reset() }
         BackHandler { close() }
+        // Surface the reader's download messages on the shell's snackbar.
+        LaunchedEffect(reader) {
+            reader.events.collect { scope.launch { snackbar.showMessage(it) } }
+        }
         ThreadReaderScreen(
             state = readerState,
             onBack = { close() },
@@ -233,6 +239,16 @@ fun MailApp(
                 viewModel.markUnread(id)
                 scope.launch { snackbar.showMessage("Marqué comme non lu") }
             },
+            onOpenAttachment = reader::openAttachment,
+        )
+    }
+
+    if (showSettings) {
+        BackHandler { showSettings = false }
+        MailSettingsScreen(
+            account = active,
+            onBack = { showSettings = false },
+            onManageDeviceAccounts = { openDeviceAccounts(context) },
         )
     }
 

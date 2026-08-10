@@ -1,5 +1,6 @@
 package com.kubuno.mail.net
 
+import com.kubuno.android.account.BrokeredClient
 import com.kubuno.android.account.BrokeredClients
 import com.kubuno.android.account.SharedAccount
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,4 +38,7 @@ class MailClients @Inject constructor(
             .build()
             .create(MailApi::class.java)
     }
+
+    /** The authenticated client itself, for raw byte streams like attachments. */
+    fun raw(account: SharedAccount): BrokeredClient = brokered.of(account)
 }

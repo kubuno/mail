@@ -29,5 +29,17 @@
         <!-- The com.kubuno account authenticator (service + type) is contributed
              by :core-account, so this app serves and reuses the same accounts as
              the drive app. Nothing to declare here. -->
+
+        <!-- Shares downloaded attachments with the app that opens them; a raw
+             file:// path may not cross the app boundary. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>
