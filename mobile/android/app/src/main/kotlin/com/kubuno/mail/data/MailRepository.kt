@@ -1,6 +1,7 @@
 package com.kubuno.mail.data
 
 import com.kubuno.android.account.SharedAccount
+import com.kubuno.mail.net.DraftDto
 import com.kubuno.mail.net.MailClients
 import com.kubuno.mail.net.MoveBody
 import com.kubuno.mail.net.ReadBody
@@ -23,28 +24,38 @@ class MailRepository @Inject constructor(
 ) {
     private val dao = db.dao()
 
-    fun inbox(account: SharedAccount, folder: String = "inbox"): Flow<List<ThreadEntity>> =
-        dao.observe(account.key, folder)
+    fun threads(account: SharedAccount, folder: MailFolder): Flow<List<ThreadEntity>> =
+        dao.observe(account.key, folder.key)
 
-    /** Pulls the folder from the server and swaps it into the cache. */
-    suspend fun refresh(account: SharedAccount, folder: String = "inbox") {
-        val page = clients.api(account).threads(folder = folder, limit = 50)
-        val rows = page.threads.map { it.toEntity(account.key, folder) }
-        dao.clearFolder(account.key, folder)
+    /** Pulls one tab from the server and swaps it into the cache. */
+    suspend fun refresh(account: SharedAccount, folder: MailFolder) {
+        val api = clients.api(account)
+        val rows = when (folder) {
+            MailFolder.INBOX -> api.threads(folder = "inbox", limit = 50).threads
+                .map { it.toEntity(account.key, folder.key) }
+            MailFolder.SENT -> api.threads(folder = "sent", limit = 50).threads
+                .map { it.toEntity(account.key, folder.key) }
+            // Starred spans every folder, so ask by flag rather than by folder.
+            MailFolder.STARRED -> api.threads(folder = "all", starred = true, limit = 50).threads
+                .map { it.toEntity(account.key, folder.key) }
+            MailFolder.DRAFTS -> api.drafts().drafts
+                .map { it.toEntity(account.key) }
+        }
+        dao.clearFolder(account.key, folder.key)
         dao.upsert(rows)
     }
 
-    /** Archive: leaves the inbox, so the row disappears locally right away. */
-    suspend fun archive(account: SharedAccount, id: String) {
+    /** Archive: leaves the folder, so the row disappears locally right away. */
+    suspend fun archive(account: SharedAccount, id: String, folder: MailFolder) {
         dao.delete(account.key, id)
         runCatching { clients.api(account).move(id, MoveBody("archive")) }
-            .onFailure { refresh(account) }
+            .onFailure { refresh(account, folder) }
     }
 
-    suspend fun trash(account: SharedAccount, id: String) {
+    suspend fun trash(account: SharedAccount, id: String, folder: MailFolder) {
         dao.delete(account.key, id)
         runCatching { clients.api(account).trash(id) }
-            .onFailure { refresh(account) }
+            .onFailure { refresh(account, folder) }
     }
 
     /** Loads a thread with its messages (does not mark read server-side). */
@@ -60,6 +71,23 @@ class MailRepository @Inject constructor(
 
 /** serverUrl|userId: stable across renames, unique per account on the device. */
 val SharedAccount.key: String get() = "$serverUrl|$userId"
+
+/** A draft rendered as a row: keyed like a thread, shown by recipient. */
+private fun DraftDto.toEntity(accountKey: String) = ThreadEntity(
+    accountKey = accountKey,
+    id = id,
+    folder = MailFolder.DRAFTS.key,
+    subject = subject,
+    snippet = null,
+    senderName = recipient,
+    senderEmail = null,
+    orderKey = updatedAt,
+    unreadCount = 0,
+    isStarred = false,
+    isImportant = false,
+    hasAttachments = false,
+    category = null,
+)
 
 private fun ThreadDto.toEntity(accountKey: String, folder: String) = ThreadEntity(
     accountKey = accountKey,

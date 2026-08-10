@@ -63,6 +63,24 @@ data class MailAccountsDto(
 )
 
 @Serializable
+data class DraftDto(
+    val id: String,
+    val subject: String? = null,
+    @SerialName("body_html") val bodyHtml: String? = null,
+    @SerialName("to_addresses") val toAddresses: List<EmailAddressDto> = emptyList(),
+    @SerialName("updated_at") val updatedAt: String? = null,
+) {
+    /** Drafts list by recipient, since the sender is always us. */
+    val recipient: String
+        get() = toAddresses.firstOrNull()?.let { it.name ?: it.email } ?: "(sans destinataire)"
+}
+
+@Serializable
+data class DraftsDto(
+    val drafts: List<DraftDto> = emptyList(),
+)
+
+@Serializable
 data class EmailAddressDto(
     val name: String? = null,
     val email: String,

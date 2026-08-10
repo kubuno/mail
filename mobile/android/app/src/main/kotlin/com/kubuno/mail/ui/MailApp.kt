@@ -12,11 +12,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.kubuno.android.account.SharedAccount
 import com.kubuno.android.account.SharedAccounts
+import com.kubuno.mail.data.MailFolder
 import com.kubuno.mail.data.MailRepository
 import com.kubuno.mail.data.ThreadEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -27,6 +31,7 @@ import javax.inject.Inject
  * refresh feeds the cache from the server. Swipe archives or trashes a thread,
  * updating Room first so the row leaves immediately.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class InboxViewModel @Inject constructor(
     sharedAccounts: SharedAccounts,
@@ -35,32 +40,45 @@ class InboxViewModel @Inject constructor(
 
     val account: SharedAccount? = sharedAccounts.list().firstOrNull()
 
-    val threads: StateFlow<List<ThreadEntity>> =
-        (account?.let { repo.inbox(it) } ?: flowOf(emptyList()))
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val _folder = MutableStateFlow(MailFolder.INBOX)
+    val folder: StateFlow<MailFolder> = _folder
 
-    private val _refreshing = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** The rows follow the selected tab, straight from Room. */
+    val threads: StateFlow<List<ThreadEntity>> =
+        _folder.flatMapLatest { f ->
+            account?.let { repo.threads(it, f) } ?: flowOf(emptyList())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
     init {
         if (account != null) refresh()
     }
 
+    /** Switching a tab shows its cache at once, then refreshes it. */
+    fun selectFolder(folder: MailFolder) {
+        if (_folder.value == folder) return
+        _folder.value = folder
+        refresh()
+    }
+
     fun refresh() {
         val account = account ?: return
+        val folder = _folder.value
         viewModelScope.launch {
             _refreshing.value = true
-            runCatching { repo.refresh(account) }
+            runCatching { repo.refresh(account, folder) }
             _refreshing.value = false
         }
     }
 
     fun archive(id: String) = account?.let { a ->
-        viewModelScope.launch { repo.archive(a, id) }
+        viewModelScope.launch { repo.archive(a, id, _folder.value) }
     }
 
     fun trash(id: String) = account?.let { a ->
-        viewModelScope.launch { repo.trash(a, id) }
+        viewModelScope.launch { repo.trash(a, id, _folder.value) }
     }
 }
 
@@ -71,18 +89,21 @@ fun MailApp(
 ) {
     val threads by viewModel.threads.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val folder by viewModel.folder.collectAsStateWithLifecycle()
     // The reader overlays the list — the list stays composed so its scroll
     // position and cache survive, matching the web's mobile behaviour.
     var openThread by remember { mutableStateOf<String?>(null) }
 
     InboxScreen(
-        title = viewModel.account?.let { "Boîte de réception" } ?: "Kubuno Mail",
         subtitle = viewModel.account?.label,
         hasAccount = viewModel.account != null,
+        folder = folder,
+        onSelectFolder = viewModel::selectFolder,
         threads = threads,
         refreshing = refreshing,
         onRefresh = viewModel::refresh,
-        onOpen = { id -> openThread = id; reader.open(id) },
+        // Drafts open the composer (M3); for now only threads open the reader.
+        onOpen = { id -> if (folder != MailFolder.DRAFTS) { openThread = id; reader.open(id) } },
         onArchive = viewModel::archive,
         onTrash = viewModel::trash,
     )

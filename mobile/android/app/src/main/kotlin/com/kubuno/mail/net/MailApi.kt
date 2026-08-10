@@ -22,10 +22,14 @@ interface MailApi {
         @Query("folder") folder: String = "inbox",
         @Query("account_id") accountId: String? = null,
         @Query("category") category: String? = null,
+        @Query("starred") starred: Boolean? = null,
         @Query("limit") limit: Int = 50,
         // Keyset cursor: the last thread's last_message_at from the prior page.
         @Query("before") before: String? = null,
     ): ThreadPageDto
+
+    @GET("api/v1/mail/drafts")
+    suspend fun drafts(): DraftsDto
 
     /** Delta since the client's modseq cursor. Requires the deployed module. */
     @GET("api/v1/mail/changes")

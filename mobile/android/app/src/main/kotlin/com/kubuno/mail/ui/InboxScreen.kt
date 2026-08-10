@@ -15,9 +15,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Drafts
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.StarBorder
@@ -26,6 +28,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -43,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kubuno.mail.data.MailFolder
 import com.kubuno.mail.data.ThreadEntity
 import java.time.Instant
 import java.time.ZoneId
@@ -52,9 +57,10 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InboxScreen(
-    title: String,
     subtitle: String?,
     hasAccount: Boolean,
+    folder: MailFolder,
+    onSelectFolder: (MailFolder) -> Unit,
     threads: List<ThreadEntity>,
     refreshing: Boolean,
     onRefresh: () -> Unit,
@@ -67,7 +73,7 @@ fun InboxScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(folder.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         subtitle?.let {
                             Text(
                                 it,
@@ -86,6 +92,7 @@ fun InboxScreen(
                 },
             )
         },
+        bottomBar = { MailBottomBar(folder, onSelectFolder) },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
@@ -165,6 +172,28 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
             Icon(it, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
         }
     }
+}
+
+/** The web's mobile bottom bar: Réception / Suivis / Envoyés / Brouillons. */
+@Composable
+private fun MailBottomBar(current: MailFolder, onSelect: (MailFolder) -> Unit) {
+    NavigationBar {
+        MailFolder.entries.forEach { folder ->
+            NavigationBarItem(
+                selected = folder == current,
+                onClick = { onSelect(folder) },
+                icon = { Icon(folderIcon(folder), contentDescription = folder.label) },
+                label = { Text(folder.label, maxLines = 1) },
+            )
+        }
+    }
+}
+
+private fun folderIcon(folder: MailFolder): ImageVector = when (folder) {
+    MailFolder.INBOX -> Icons.Outlined.Inbox
+    MailFolder.STARRED -> Icons.Outlined.StarBorder
+    MailFolder.SENT -> Icons.AutoMirrored.Outlined.Send
+    MailFolder.DRAFTS -> Icons.Outlined.Drafts
 }
 
 @Composable
