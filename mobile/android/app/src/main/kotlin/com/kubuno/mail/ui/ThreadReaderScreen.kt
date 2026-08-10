@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +48,7 @@ fun ThreadReaderScreen(
     onBack: () -> Unit,
     onArchive: () -> Unit,
     onTrash: () -> Unit,
+    onReply: (ComposePrefill) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -58,6 +60,11 @@ fun ThreadReaderScreen(
                     }
                 },
                 actions = {
+                    if (state is ReaderState.Loaded) {
+                        IconButton(onClick = { onReply(replyPrefill(state)); onBack() }) {
+                            Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = "Répondre")
+                        }
+                    }
                     IconButton(onClick = { onArchive(); onBack() }) {
                         Icon(Icons.Outlined.Archive, contentDescription = "Archiver")
                     }
@@ -175,6 +182,19 @@ private fun HtmlBody(html: String) {
             """.trimIndent()
             web.loadDataWithBaseURL(null, css + html, "text/html", "UTF-8", null)
         },
+    )
+}
+
+/** A reply to the last message: its sender, an "Re:" subject, the message id. */
+private fun replyPrefill(state: ReaderState.Loaded): ComposePrefill {
+    val last = state.messages.lastOrNull()
+    val subject = state.thread.subject.orEmpty()
+    val reSubject = if (subject.startsWith("Re:", ignoreCase = true)) subject else "Re: $subject"
+    return ComposePrefill(
+        to = last?.fromEmail.orEmpty(),
+        subject = reSubject,
+        body = "",
+        replyToId = last?.id,
     )
 }
 

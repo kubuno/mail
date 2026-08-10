@@ -110,6 +110,20 @@ data class ThreadDetailDto(
 )
 
 @Serializable
+data class AddressInput(val name: String? = null, val email: String)
+
+@Serializable
+data class SendBody(
+    @SerialName("account_id") val accountId: String,
+    @SerialName("to_addresses") val toAddresses: List<AddressInput>,
+    @SerialName("cc_addresses") val ccAddresses: List<AddressInput> = emptyList(),
+    @SerialName("bcc_addresses") val bccAddresses: List<AddressInput> = emptyList(),
+    val subject: String,
+    @SerialName("body_html") val bodyHtml: String,
+    @SerialName("reply_to_id") val replyToId: String? = null,
+)
+
+@Serializable
 data class MoveBody(val folder: String)
 
 @Serializable

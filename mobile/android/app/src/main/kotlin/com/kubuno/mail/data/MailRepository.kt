@@ -6,6 +6,7 @@ import com.kubuno.mail.net.DraftDto
 import com.kubuno.mail.net.MailClients
 import com.kubuno.mail.net.MoveBody
 import com.kubuno.mail.net.ReadBody
+import com.kubuno.mail.net.SendBody
 import com.kubuno.mail.net.ThreadDetailDto
 import com.kubuno.mail.net.ThreadDto
 import javax.inject.Inject
@@ -104,6 +105,23 @@ class MailRepository @Inject constructor(
     suspend fun markRead(account: SharedAccount, id: String) {
         dao.setUnread(account.key, id, 0)
         runCatching { clients.api(account).setRead(id, ReadBody(isRead = true)) }
+    }
+
+    /** The mail account a message is sent from: the default, else the first active. */
+    suspend fun sendingAccountId(account: SharedAccount): String? {
+        val accounts = clients.api(account).accounts().accounts
+        return (accounts.firstOrNull { it.isDefault && it.isActive }
+            ?: accounts.firstOrNull { it.isActive }
+            ?: accounts.firstOrNull())?.id
+    }
+
+    /**
+     * Sends a message with a stable [idempotencyKey] so a retry cannot send it
+     * twice. Refreshes the Sent folder afterwards so the copy shows up.
+     */
+    suspend fun send(account: SharedAccount, idempotencyKey: String, body: SendBody) {
+        clients.api(account).send(idempotencyKey, body)
+        runCatching { refresh(account, MailFolder.SENT) }
     }
 }
 

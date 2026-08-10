@@ -3,6 +3,7 @@ package com.kubuno.mail.net
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -57,4 +58,11 @@ interface MailApi {
     /** Mark the whole thread read or unread. */
     @POST("api/v1/mail/threads/{id}/read")
     suspend fun setRead(@Path("id") id: String, @Body body: ReadBody)
+
+    /**
+     * Sends a message. The Idempotency-Key makes a network retry safe: the
+     * server replays the first response instead of sending twice.
+     */
+    @POST("api/v1/mail/send")
+    suspend fun send(@Header("Idempotency-Key") key: String, @Body body: SendBody)
 }

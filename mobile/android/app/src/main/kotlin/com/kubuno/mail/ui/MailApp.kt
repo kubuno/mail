@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Drafts
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -146,6 +148,7 @@ fun MailApp(
     val scope = rememberCoroutineScope()
     var panelOpen by remember { mutableStateOf(false) }
     var openThread by remember { mutableStateOf<String?>(null) }
+    var compose by remember { mutableStateOf<ComposePrefill?>(null) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -168,6 +171,11 @@ fun MailApp(
                 )
             },
             bottomBar = { MailBottomBar(folder, viewModel::selectFolder) },
+            floatingActionButton = {
+                FloatingActionButton(onClick = { compose = ComposePrefill() }) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "Nouveau message")
+                }
+            },
         ) { padding ->
             InboxBody(
                 hasAccount = active != null,
@@ -207,7 +215,13 @@ fun MailApp(
             onBack = { close() },
             onArchive = { viewModel.archive(id) },
             onTrash = { viewModel.trash(id) },
+            onReply = { prefill -> compose = prefill },
         )
+    }
+
+    compose?.let { prefill ->
+        BackHandler { compose = null }
+        ComposeScreen(prefill = prefill, onClose = { compose = null })
     }
 }
 
