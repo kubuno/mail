@@ -107,6 +107,20 @@ class MailRepository @Inject constructor(
         runCatching { clients.api(account).setRead(id, ReadBody(isRead = true)) }
     }
 
+    /** Marks a thread unread again (a fresh badge of 1). */
+    suspend fun markUnread(account: SharedAccount, id: String) {
+        dao.setUnread(account.key, id, 1)
+        runCatching { clients.api(account).setRead(id, ReadBody(isRead = false)) }
+    }
+
+    /** Toggles the star: flips it in the cache first, reverts if the call fails. */
+    suspend fun toggleStar(account: SharedAccount, id: String) {
+        val wasStarred = dao.rowsFor(account.key, id).firstOrNull()?.isStarred ?: false
+        dao.setStarred(account.key, id, !wasStarred)
+        runCatching { clients.api(account).toggleStar(id) }
+            .onFailure { dao.setStarred(account.key, id, wasStarred) }
+    }
+
     /** The mail account a message is sent from: the default, else the first active. */
     suspend fun sendingAccountId(account: SharedAccount): String? {
         val accounts = clients.api(account).accounts().accounts

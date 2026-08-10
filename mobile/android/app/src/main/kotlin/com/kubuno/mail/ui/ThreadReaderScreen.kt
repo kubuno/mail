@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +50,7 @@ fun ThreadReaderScreen(
     onArchive: () -> Unit,
     onTrash: () -> Unit,
     onReply: (ComposePrefill) -> Unit,
+    onMarkUnread: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -70,6 +72,9 @@ fun ThreadReaderScreen(
                     }
                     IconButton(onClick = { onTrash(); onBack() }) {
                         Icon(Icons.Outlined.Delete, contentDescription = "Supprimer")
+                    }
+                    IconButton(onClick = { onMarkUnread(); onBack() }) {
+                        Icon(Icons.Outlined.MarkEmailUnread, contentDescription = "Marquer non lu")
                     }
                 },
             )

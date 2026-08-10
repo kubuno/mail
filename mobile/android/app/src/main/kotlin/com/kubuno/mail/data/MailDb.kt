@@ -69,6 +69,9 @@ interface MailDao {
     @Query("UPDATE threads SET unreadCount = :count WHERE accountKey = :accountKey AND id = :id")
     suspend fun setUnread(accountKey: String, id: String, count: Int)
 
+    @Query("UPDATE threads SET isStarred = :starred WHERE accountKey = :accountKey AND id = :id")
+    suspend fun setStarred(accountKey: String, id: String, starred: Boolean)
+
     @Query("SELECT cursor FROM sync_state WHERE accountKey = :accountKey")
     suspend fun cursor(accountKey: String): String?
 

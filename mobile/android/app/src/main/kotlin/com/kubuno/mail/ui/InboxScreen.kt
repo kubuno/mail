@@ -65,6 +65,7 @@ fun InboxBody(
     onOpen: (String) -> Unit,
     onArchive: (String) -> Unit,
     onTrash: (String) -> Unit,
+    onStar: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize()) {
@@ -87,6 +88,7 @@ fun InboxBody(
                                 onOpen = { onOpen(thread.id) },
                                 onArchive = { onArchive(thread.id) },
                                 onTrash = { onTrash(thread.id) },
+                                onStar = { onStar(thread.id) },
                             )
                         }
                     }
@@ -103,6 +105,7 @@ private fun SwipeableThreadRow(
     onOpen: () -> Unit,
     onArchive: () -> Unit,
     onTrash: () -> Unit,
+    onStar: () -> Unit,
 ) {
     // Swipe right = archive (green), left = trash (red) — the web's gestures.
     val dismissState = rememberSwipeToDismissBoxState(
@@ -118,7 +121,7 @@ private fun SwipeableThreadRow(
         state = dismissState,
         backgroundContent = { SwipeBackground(dismissState.dismissDirection) },
     ) {
-        ThreadRow(thread, onOpen)
+        ThreadRow(thread, onOpen, onStar)
     }
 }
 
@@ -193,7 +196,7 @@ private fun Centered(message: String, icon: ImageVector? = null) {
  * below, then a snippet. Unread rows are bold; 64dp min height.
  */
 @Composable
-private fun ThreadRow(thread: ThreadEntity, onOpen: () -> Unit) {
+private fun ThreadRow(thread: ThreadEntity, onOpen: () -> Unit, onStar: () -> Unit) {
     val unread = thread.unreadCount > 0
     val sender = (thread.senderName?.takeIf { it.isNotBlank() } ?: thread.senderEmail).orEmpty()
     Row(
@@ -245,12 +248,20 @@ private fun ThreadRow(thread: ThreadEntity, onOpen: () -> Unit) {
                 )
             }
         }
-        Icon(
-            if (thread.isStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
-            contentDescription = null,
-            tint = if (thread.isStarred) Color(0xFFF9AB00) else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onStar),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (thread.isStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                contentDescription = "Suivre",
+                tint = if (thread.isStarred) Color(0xFFF9AB00) else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 

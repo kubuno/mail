@@ -25,6 +25,8 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -130,6 +132,14 @@ class InboxViewModel @Inject constructor(
     fun trash(id: String) = _active.value?.let { a ->
         viewModelScope.launch { repo.trash(a, id) }
     }
+
+    fun toggleStar(id: String) = _active.value?.let { a ->
+        viewModelScope.launch { repo.toggleStar(a, id) }
+    }
+
+    fun markUnread(id: String) = _active.value?.let { a ->
+        viewModelScope.launch { repo.markUnread(a, id) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,6 +156,7 @@ fun MailApp(
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
     var panelOpen by remember { mutableStateOf(false) }
     var openThread by remember { mutableStateOf<String?>(null) }
     var compose by remember { mutableStateOf<ComposePrefill?>(null) }
@@ -171,6 +182,7 @@ fun MailApp(
                 )
             },
             bottomBar = { MailBottomBar(folder, viewModel::selectFolder) },
+            snackbarHost = { SnackbarHost(snackbar) },
             floatingActionButton = {
                 FloatingActionButton(onClick = { compose = ComposePrefill() }) {
                     Icon(Icons.Outlined.Edit, contentDescription = "Nouveau message")
@@ -185,6 +197,7 @@ fun MailApp(
                 onOpen = { id -> openThread = id; reader.open(id) },
                 onArchive = viewModel::archive,
                 onTrash = viewModel::trash,
+                onStar = viewModel::toggleStar,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -216,13 +229,29 @@ fun MailApp(
             onArchive = { viewModel.archive(id) },
             onTrash = { viewModel.trash(id) },
             onReply = { prefill -> compose = prefill },
+            onMarkUnread = {
+                viewModel.markUnread(id)
+                scope.launch { snackbar.showMessage("Marqué comme non lu") }
+            },
         )
     }
 
     compose?.let { prefill ->
         BackHandler { compose = null }
-        ComposeScreen(prefill = prefill, onClose = { compose = null })
+        ComposeScreen(
+            prefill = prefill,
+            onClose = { compose = null },
+            onSent = {
+                compose = null
+                scope.launch { snackbar.showMessage("Message envoyé") }
+            },
+        )
     }
+}
+
+private suspend fun SnackbarHostState.showMessage(message: String) {
+    currentSnackbarData?.dismiss()
+    showSnackbar(message)
 }
 
 @Composable

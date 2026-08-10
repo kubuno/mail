@@ -9,10 +9,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +46,7 @@ import java.util.UUID
 fun ComposeScreen(
     prefill: ComposePrefill,
     onClose: () -> Unit,
+    onSent: () -> Unit,
     viewModel: ComposeViewModel = hiltViewModel(),
 ) {
     val status by viewModel.status.collectAsStateWithLifecycle()
@@ -56,11 +59,12 @@ fun ComposeScreen(
     var subject by remember { mutableStateOf(prefill.subject) }
     var body by remember { mutableStateOf(prefill.body) }
 
-    // Leave the screen once the message is on its way.
-    if (status is ComposeStatus.Sent) {
-        onClose()
-        viewModel.reset()
-        return
+    // Leave the screen once the message is on its way; the inbox confirms it.
+    LaunchedEffect(status) {
+        if (status is ComposeStatus.Sent) {
+            viewModel.reset()
+            onSent()
+        }
     }
 
     val canSend = to.contains('@') && subject.isNotBlank() && status != ComposeStatus.Sending
@@ -78,13 +82,18 @@ fun ComposeScreen(
                     if (status == ComposeStatus.Sending) {
                         CircularProgressIndicator(Modifier.padding(end = 16.dp).size(20.dp))
                     } else {
-                        IconButton(
+                        FilledIconButton(
                             enabled = canSend,
                             onClick = {
                                 viewModel.send(to, cc, bcc, subject, body, prefill.replyToId, idempotencyKey)
                             },
+                            modifier = Modifier.padding(end = 8.dp),
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Envoyer")
+                            Icon(
+                                Icons.AutoMirrored.Rounded.Send,
+                                contentDescription = "Envoyer",
+                                modifier = Modifier.size(20.dp),
+                            )
                         }
                     }
                 },
