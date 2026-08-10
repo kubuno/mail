@@ -51,6 +51,7 @@ import com.kubuno.android.account.SharedAccounts
 import com.kubuno.android.ui.shell.KubunoTopBar
 import com.kubuno.android.ui.shell.KubunoAccountPanel
 import com.kubuno.android.ui.shell.UiAccount
+import com.kubuno.mail.DeepLinkBus
 import com.kubuno.mail.R
 import com.kubuno.mail.data.MailFolder
 import com.kubuno.mail.data.MailRepository
@@ -163,6 +164,17 @@ fun MailApp(
     var compose by remember { mutableStateOf<ComposePrefill?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+
+    // A notification tap arrives as a thread id on the deep-link bus: open the
+    // reader on it, then clear the one-shot so it does not re-fire on recompose.
+    val deepLink by DeepLinkBus.target.collectAsStateWithLifecycle()
+    LaunchedEffect(deepLink) {
+        deepLink?.let { id ->
+            openThread = id
+            reader.open(id)
+            DeepLinkBus.target.value = null
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
