@@ -204,8 +204,17 @@ private fun ThreadDto.toEntity(accountKey: String, folder: String) = ThreadEntit
     folder = folder,
     subject = subject,
     snippet = snippet,
-    senderName = lastSenderName,
-    senderEmail = lastSenderEmail,
+    // Sent shows the recipient (once the server exposes it), else the sender.
+    senderName = if (folder == MailFolder.SENT.key && recipientDisplay.isNotBlank()) {
+        lastRecipientName ?: lastRecipientEmail
+    } else {
+        lastSenderName
+    },
+    senderEmail = if (folder == MailFolder.SENT.key && recipientDisplay.isNotBlank()) {
+        lastRecipientEmail
+    } else {
+        lastSenderEmail
+    },
     orderKey = lastMessageAt,
     unreadCount = unreadCount,
     isStarred = isStarred,

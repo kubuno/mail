@@ -22,6 +22,9 @@ data class ThreadDto(
     val snippet: String? = null,
     @SerialName("last_sender_name") val lastSenderName: String? = null,
     @SerialName("last_sender_email") val lastSenderEmail: String? = null,
+    // Present once the server exposes it; used to show the recipient in Sent.
+    @SerialName("last_recipient_name") val lastRecipientName: String? = null,
+    @SerialName("last_recipient_email") val lastRecipientEmail: String? = null,
     @SerialName("last_message_at") val lastMessageAt: String? = null,
     val labels: List<LabelRef> = emptyList(),
     /** Folders this thread currently belongs to (inbox, sent, archive…). */
@@ -33,6 +36,10 @@ data class ThreadDto(
     /** What the row shows as the correspondent: a name if we have one. */
     val senderDisplay: String
         get() = lastSenderName?.takeIf { it.isNotBlank() } ?: lastSenderEmail.orEmpty()
+
+    /** The recipient, for the Sent view; blank until the server provides it. */
+    val recipientDisplay: String
+        get() = lastRecipientName?.takeIf { it.isNotBlank() } ?: lastRecipientEmail.orEmpty()
 }
 
 @Serializable
