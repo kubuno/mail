@@ -54,68 +54,40 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** The inbox list and its states — the body under the shared shell. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InboxScreen(
-    subtitle: String?,
+fun InboxBody(
     hasAccount: Boolean,
-    folder: MailFolder,
-    onSelectFolder: (MailFolder) -> Unit,
     threads: List<ThreadEntity>,
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
     onArchive: (String) -> Unit,
     onTrash: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(folder.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        subtitle?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+    Box(modifier.fillMaxSize()) {
+        when {
+            !hasAccount -> Centered("Aucun compte email configuré", Icons.Outlined.Inbox)
+            threads.isEmpty() && refreshing ->
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
+            else -> PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (threads.isEmpty()) {
+                    Centered("Aucun message", Icons.Outlined.Inbox)
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        items(threads, key = { it.id }) { thread ->
+                            SwipeableThreadRow(
+                                thread = thread,
+                                onOpen = { onOpen(thread.id) },
+                                onArchive = { onArchive(thread.id) },
+                                onTrash = { onTrash(thread.id) },
                             )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onRefresh) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Rafraîchir")
-                    }
-                },
-            )
-        },
-        bottomBar = { MailBottomBar(folder, onSelectFolder) },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                !hasAccount -> Centered("Aucun compte email configuré", Icons.Outlined.Inbox)
-                threads.isEmpty() && refreshing ->
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                else -> PullToRefreshBox(
-                    isRefreshing = refreshing,
-                    onRefresh = onRefresh,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    if (threads.isEmpty()) {
-                        Centered("Aucun message", Icons.Outlined.Inbox)
-                    } else {
-                        LazyColumn(Modifier.fillMaxSize()) {
-                            items(threads, key = { it.id }) { thread ->
-                                SwipeableThreadRow(
-                                    thread = thread,
-                                    onOpen = { onOpen(thread.id) },
-                                    onArchive = { onArchive(thread.id) },
-                                    onTrash = { onTrash(thread.id) },
-                                )
-                            }
                         }
                     }
                 }
@@ -176,7 +148,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
 
 /** The web's mobile bottom bar: Réception / Suivis / Envoyés / Brouillons. */
 @Composable
-private fun MailBottomBar(current: MailFolder, onSelect: (MailFolder) -> Unit) {
+fun MailBottomBar(current: MailFolder, onSelect: (MailFolder) -> Unit) {
     NavigationBar {
         MailFolder.entries.forEach { folder ->
             NavigationBarItem(
