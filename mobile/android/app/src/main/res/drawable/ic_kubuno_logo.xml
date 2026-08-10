@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Kubuno "K" monogram, transcribed from the web component
+    core/frontend/src/ui/KubunoLogo.tsx (viewBox 0 0 321 346, ratio 321:346).
+    The source SVG paints every path with `currentColor`, so a single fill is
+    used here and the caller applies the tint (primary in the app header).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="24dp"
+    android:viewportWidth="321"
+    android:viewportHeight="346">
+
+    <!-- The exported paths live in a flipped 10x space; same transform as the SVG group. -->
+    <group
+        android:translateY="346"
+        android:scaleX="0.1"
+        android:scaleY="-0.1">
+
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M264 3307 c-3 -8 -3 -434 -1 -948 3 -913 3 -936 24 -1009 70 -249 198 -454 419 -672 125 -123 303 -268 328 -268 3 0 5 654 4 1452 l-3 1453 -383 3 c-313 2 -383 0 -388 -11z" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M1187 3313 c-4 -3 -7 -680 -7 -1504 l0 -1498 27 -19 c38 -27 279 -165 354 -202 l61 -31 61 32 c34 17 87 47 118 65 31 19 60 34 64 34 3 0 26 14 51 30 l44 31 0 729 c0 608 2 731 14 742 7 7 112 110 233 228 120 118 343 336 496 484 l277 269 -2 306 -3 306 -204 3 -203 2 -87 -83 c-47 -47 -151 -147 -231 -225 l-145 -140 -5 -299 -5 -299 -60 -62 c-32 -34 -63 -62 -67 -62 -4 0 -9 262 -10 583 l-3 582 -381 3 c-209 1 -383 -1 -387 -5z" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M2217 1782 l-118 -117 1 -265 2 -265 225 -225 224 -225 61 64 c133 140 264 349 319 508 l20 58 -143 138 c-294 284 -459 442 -466 444 -4 1 -60 -51 -125 -115z" />
+    </group>
+</vector>

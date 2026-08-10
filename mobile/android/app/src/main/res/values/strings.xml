@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kubuno Mail</string>
+
+    <!-- Scaffold state; replaced as the mail screens land. -->
+    <string name="mail_no_account">Aucun compte email configuré</string>
+    <string name="mail_scaffold_ready">Mail — socle prêt</string>
+</resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher icon mirrors the web mark: the blue monogram sits on
+         white, the way the logo is published (core/frontend/public/kubuno-logo.svg
+         shown on the app's white surfaces), not inverted into a blue tile. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="kubuno_blue">#1A73E8</color>
+</resources>
