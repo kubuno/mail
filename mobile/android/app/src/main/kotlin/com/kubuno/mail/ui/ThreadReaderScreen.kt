@@ -58,7 +58,7 @@ fun ThreadReaderScreen(
     onTrash: () -> Unit,
     onReply: (ComposePrefill) -> Unit,
     onMarkUnread: () -> Unit,
-    onOpenAttachment: (messageId: String, index: Int, name: String, mime: String?) -> Unit,
+    onOpenAttachments: (messageId: String, attachments: List<AttachmentDto>, index: Int) -> Unit,
 ) {
     Scaffold(
         // The reader overlays the shell, so it hosts its own snackbar; otherwise
@@ -110,7 +110,7 @@ fun ThreadReaderScreen(
                     )
                     state.messages.forEach { message ->
                         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                        MessageCard(message, onOpenAttachment)
+                        MessageCard(message, onOpenAttachments)
                     }
                 }
             }
@@ -121,7 +121,7 @@ fun ThreadReaderScreen(
 @Composable
 private fun MessageCard(
     message: EmailMessageDto,
-    onOpenAttachment: (messageId: String, index: Int, name: String, mime: String?) -> Unit,
+    onOpenAttachments: (messageId: String, attachments: List<AttachmentDto>, index: Int) -> Unit,
 ) {
     val sender = (message.fromName?.takeIf { it.isNotBlank() } ?: message.fromEmail).orEmpty()
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -161,7 +161,7 @@ private fun MessageCard(
         }
         message.attachments.forEachIndexed { index, attachment ->
             AttachmentChip(attachment) {
-                onOpenAttachment(message.id, index, attachment.display, attachment.mime)
+                onOpenAttachments(message.id, message.attachments, index)
             }
         }
     }

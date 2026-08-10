@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":core-api"))
     implementation(project(":core-account"))
     implementation(project(":core-ui"))
+    implementation(project(":core-viewer"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

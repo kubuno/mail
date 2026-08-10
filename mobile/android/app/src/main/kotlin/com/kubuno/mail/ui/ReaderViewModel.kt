@@ -96,6 +96,12 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** Downloads an attachment to a local file, for the in-app viewer to render. */
+    suspend fun fetchAttachment(messageId: String, index: Int, name: String): java.io.File {
+        val account = account ?: error("Aucun compte")
+        return repo.downloadAttachment(account, messageId, index, name)
+    }
+
     fun reset() {
         loadedId = null
         _state.value = ReaderState.Loading

@@ -51,8 +51,11 @@ import com.kubuno.android.account.SharedAccounts
 import com.kubuno.android.ui.shell.KubunoTopBar
 import com.kubuno.android.ui.shell.KubunoAccountPanel
 import com.kubuno.android.ui.shell.UiAccount
+import com.kubuno.android.viewer.FileViewer
+import com.kubuno.android.viewer.ViewerItem
 import com.kubuno.mail.DeepLinkBus
 import com.kubuno.mail.R
+import com.kubuno.mail.net.AttachmentDto
 import com.kubuno.mail.data.MailFolder
 import com.kubuno.mail.data.MailRepository
 import com.kubuno.mail.data.ThreadEntity
@@ -164,6 +167,7 @@ fun MailApp(
     var compose by remember { mutableStateOf<ComposePrefill?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var viewer by remember { mutableStateOf<ViewerRequest?>(null) }
 
     // A notification tap arrives as a thread id on the deep-link bus: open the
     // reader on it, then clear the one-shot so it does not re-fire on recompose.
@@ -254,7 +258,21 @@ fun MailApp(
                 viewModel.markUnread(id)
                 scope.launch { snackbar.showMessage("Marqué comme non lu") }
             },
-            onOpenAttachment = reader::openAttachment,
+            onOpenAttachments = { mid, atts, idx -> viewer = ViewerRequest(mid, atts, idx) },
+        )
+    }
+
+    // Attachments open in the shared in-app viewer, as a swipeable gallery of
+    // the message's attachments; "open with" / download fall back to an app.
+    viewer?.let { req ->
+        BackHandler { viewer = null }
+        FileViewer(
+            items = req.attachments.map { ViewerItem(it.display, it.mime, it.size) },
+            initialIndex = req.index,
+            fetch = { i -> reader.fetchAttachment(req.messageId, i, req.attachments[i].display) },
+            onDownload = { i -> reader.openAttachment(req.messageId, i, req.attachments[i].display, req.attachments[i].mime) },
+            onOpenExternally = { i -> reader.openAttachment(req.messageId, i, req.attachments[i].display, req.attachments[i].mime) },
+            onClose = { viewer = null },
         )
     }
 
@@ -321,6 +339,13 @@ private fun MailDrawer(current: MailFolder, onSelect: (MailFolder) -> Unit) {
         }
     }
 }
+
+/** An attachment tap: which message, its attachments, and the one tapped. */
+data class ViewerRequest(
+    val messageId: String,
+    val attachments: List<AttachmentDto>,
+    val index: Int,
+)
 
 private fun drawerIcon(folder: MailFolder): ImageVector = when (folder) {
     MailFolder.INBOX -> Icons.Outlined.Inbox
