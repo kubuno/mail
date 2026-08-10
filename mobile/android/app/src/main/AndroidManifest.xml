@@ -3,8 +3,16 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- New-mail notifications land in a later milestone. -->
+    <!-- New-mail notifications are posted by the UnifiedPush receiver. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Package visibility (Android 11+): needed to discover UnifiedPush
+         distributors (ntfy, NextPush…) via getDistributors(). -->
+    <queries>
+        <intent>
+            <action android:name="org.unifiedpush.android.distributor.REGISTER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".KubunoMailApp"
@@ -24,7 +32,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Notification deep link: kubuno-mail://thread/<threadId>. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="kubuno-mail" android:host="thread" />
+            </intent-filter>
         </activity>
+
+        <!-- UnifiedPush receiver. Declaring these intent-filters here takes
+             precedence over the library's embedded receiver, so our
+             MessagingReceiver handles endpoints and messages directly. -->
+        <receiver
+            android:name=".push.KubunoMailPushReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.MESSAGE" />
+                <action android:name="org.unifiedpush.android.connector.NEW_ENDPOINT" />
+                <action android:name="org.unifiedpush.android.connector.REGISTRATION_FAILED" />
+                <action android:name="org.unifiedpush.android.connector.UNREGISTERED" />
+            </intent-filter>
+        </receiver>
 
         <!-- The com.kubuno account authenticator (service + type) is contributed
              by :core-account, so this app serves and reuses the same accounts as

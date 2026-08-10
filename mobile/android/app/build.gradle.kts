@@ -25,8 +25,9 @@ android {
 
     buildTypes {
         release {
-            // R8 is enabled in a later milestone with the keep-rules audit.
-            isMinifyEnabled = false
+            // R8 shrinks and obfuscates; proguard-rules.pro carries the keep-rules
+            // audit (serializers, Retrofit/Room/Hilt/UnifiedPush reflection surfaces).
+            isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -82,6 +83,9 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+
+    // Push transport (UnifiedPush): receiver + register/unregister against a distributor.
+    implementation(libs.unifiedpush.connector)
 
     testImplementation(libs.junit)
 }
