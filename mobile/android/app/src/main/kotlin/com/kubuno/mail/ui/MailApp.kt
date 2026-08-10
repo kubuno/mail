@@ -53,6 +53,7 @@ import com.kubuno.android.ui.shell.KubunoAccountPanel
 import com.kubuno.android.ui.shell.UiAccount
 import com.kubuno.android.viewer.FileViewer
 import com.kubuno.android.viewer.ViewerItem
+import com.kubuno.mail.ComposeBus
 import com.kubuno.mail.DeepLinkBus
 import com.kubuno.mail.R
 import com.kubuno.mail.net.AttachmentDto
@@ -177,6 +178,22 @@ fun MailApp(
             openThread = id
             reader.open(id)
             DeepLinkBus.target.value = null
+        }
+    }
+
+    // A mailto: link or a share opens the composer pre-filled.
+    val composeLaunch by ComposeBus.request.collectAsStateWithLifecycle()
+    LaunchedEffect(composeLaunch) {
+        composeLaunch?.let { launch ->
+            compose = ComposePrefill(
+                to = launch.to,
+                cc = launch.cc,
+                bcc = launch.bcc,
+                subject = launch.subject,
+                body = launch.body,
+                attachmentUris = launch.attachmentUris,
+            )
+            ComposeBus.request.value = null
         }
     }
 

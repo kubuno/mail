@@ -67,15 +67,21 @@ fun ComposeScreen(
     val idempotencyKey = remember { UUID.randomUUID().toString() }
 
     var to by remember { mutableStateOf(prefill.to) }
-    var cc by remember { mutableStateOf("") }
-    var bcc by remember { mutableStateOf("") }
-    var showCc by remember { mutableStateOf(false) }
+    var cc by remember { mutableStateOf(prefill.cc) }
+    var bcc by remember { mutableStateOf(prefill.bcc) }
+    var showCc by remember { mutableStateOf(prefill.cc.isNotBlank() || prefill.bcc.isNotBlank()) }
     var subject by remember { mutableStateOf(prefill.subject) }
     var body by remember { mutableStateOf(prefill.body) }
     val attachments = remember { mutableStateListOf<PendingAttachment>() }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Files shared into the app (a mailto/share launch) become attachments.
+    LaunchedEffect(Unit) {
+        prefill.attachmentUris.forEach { uri ->
+            readAttachment(context, uri)?.let { attachments.add(it) }
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             readAttachment(context, uri)?.let { attachments.add(it) }

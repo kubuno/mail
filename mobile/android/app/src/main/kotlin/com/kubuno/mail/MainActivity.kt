@@ -31,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         // The launch intent may be a notification deep link; feed the bus before
         // the tree composes so the reader can open straight away.
-        handleDeepLink(intent)
+        handleIntent(intent)
         maybeRequestNotificationPermission()
         setContent {
             KubunoTheme {
@@ -44,21 +44,67 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         // Keep getIntent() consistent for anything that reads it later.
         setIntent(intent)
-        handleDeepLink(intent)
+        handleIntent(intent)
     }
 
     /**
-     * Extracts a `kubuno-mail://thread/<id>` deep link and forwards the thread
-     * id to [DeepLinkBus]. The Compose layer decides what to do with it, keeping
-     * the Activity free of navigation knowledge.
+     * Routes the launch intent: a notification deep link opens a thread; a
+     * `mailto:` link or a share (ACTION_SEND) opens the composer — the intents
+     * that let the system treat this as an email client. The Compose layer acts
+     * on the buses, keeping the Activity free of screen knowledge.
      */
-    private fun handleDeepLink(intent: Intent?) {
-        val uri: Uri = intent?.data ?: return
-        if (uri.scheme == MailNotifications.DEEP_LINK_SCHEME &&
-            uri.host == MailNotifications.DEEP_LINK_HOST
-        ) {
-            // Path is "/<threadId>"; lastPathSegment yields the id.
-            DeepLinkBus.request(uri.lastPathSegment)
+    private fun handleIntent(intent: Intent?) {
+        intent ?: return
+        val data = intent.data
+        when {
+            data?.scheme == MailNotifications.DEEP_LINK_SCHEME &&
+                data.host == MailNotifications.DEEP_LINK_HOST ->
+                DeepLinkBus.request(data.lastPathSegment)
+
+            data?.scheme == "mailto" -> ComposeBus.open(mailtoLaunch(data, intent))
+
+            intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE ->
+                ComposeBus.open(shareLaunch(intent))
+        }
+    }
+
+    /** Turns a mailto: URI (to/cc/subject/body) into a compose request. */
+    private fun mailtoLaunch(uri: Uri, intent: Intent): ComposeLaunch {
+        val mailTo = runCatching { android.net.MailTo.parse(uri.toString()) }.getOrNull()
+        return ComposeLaunch(
+            to = mailTo?.to.orEmpty(),
+            cc = mailTo?.cc.orEmpty(),
+            subject = mailTo?.subject ?: intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty(),
+            body = mailTo?.body ?: intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty(),
+        )
+    }
+
+    /** Turns a share (with recipients/subject/text and attachments) into a request. */
+    private fun shareLaunch(intent: Intent): ComposeLaunch = ComposeLaunch(
+        to = intent.getStringArrayExtra(Intent.EXTRA_EMAIL)?.joinToString(", ").orEmpty(),
+        cc = intent.getStringArrayExtra(Intent.EXTRA_CC)?.joinToString(", ").orEmpty(),
+        bcc = intent.getStringArrayExtra(Intent.EXTRA_BCC)?.joinToString(", ").orEmpty(),
+        subject = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty(),
+        body = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty(),
+        attachmentUris = streamUris(intent),
+    )
+
+    private fun streamUris(intent: Intent): List<Uri> = when (intent.action) {
+        Intent.ACTION_SEND_MULTIPLE ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+            }
+        else -> {
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            }
+            listOfNotNull(uri)
         }
     }
 

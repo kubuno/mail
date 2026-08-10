@@ -24,12 +24,16 @@ sealed interface ComposeStatus {
     data class Failed(val message: String) : ComposeStatus
 }
 
-/** What a reply/forward pre-fills; null for a blank new message. */
+/** What a reply/forward/mailto/share pre-fills; empty for a blank message. */
 data class ComposePrefill(
     val to: String = "",
+    val cc: String = "",
+    val bcc: String = "",
     val subject: String = "",
     val body: String = "",
     val replyToId: String? = null,
+    /** Files shared into the app, read into attachments when the composer opens. */
+    val attachmentUris: List<android.net.Uri> = emptyList(),
 )
 
 /**
