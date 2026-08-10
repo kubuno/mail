@@ -1,6 +1,7 @@
 package com.kubuno.mail.data
 
 import com.kubuno.android.account.SharedAccount
+import com.kubuno.mail.net.ChangesDto
 import com.kubuno.mail.net.DraftDto
 import com.kubuno.mail.net.MailClients
 import com.kubuno.mail.net.MoveBody
@@ -12,10 +13,14 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Offline-first inbox: the UI reads threads from Room, the network only feeds
- * the cache. A refresh replaces the folder's cached page (delta via /changes
- * lands in M2 once the module is deployed). Actions update Room optimistically,
- * then call the server; a failure reloads the truth from the network.
+ * Offline-first mailbox. The UI reads threads from Room; the network only
+ * feeds the cache.
+ *
+ * The three thread folders (inbox, sent, starred) are kept by the /changes
+ * delta: each sync fetches only what moved since the stored modseq cursor and
+ * reconciles every view from the thread's current folder membership and star
+ * flag. Drafts live in a separate table server-side, so they keep their own
+ * full fetch. Actions update Room optimistically and roll back on failure.
  */
 @Singleton
 class MailRepository @Inject constructor(
@@ -24,38 +29,71 @@ class MailRepository @Inject constructor(
 ) {
     private val dao = db.dao()
 
+    // Folders reconciled from the delta, with how membership is decided.
+    private val deltaFolders = listOf(
+        MailFolder.INBOX to { t: ThreadDto -> t.folders.contains("inbox") },
+        MailFolder.SENT to { t: ThreadDto -> t.folders.contains("sent") },
+        MailFolder.STARRED to { t: ThreadDto -> t.isStarred },
+    )
+
     fun threads(account: SharedAccount, folder: MailFolder): Flow<List<ThreadEntity>> =
         dao.observe(account.key, folder.key)
 
-    /** Pulls one tab from the server and swaps it into the cache. */
+    /** Refreshes one tab: drafts by their own endpoint, the rest by delta. */
     suspend fun refresh(account: SharedAccount, folder: MailFolder) {
-        val api = clients.api(account)
-        val rows = when (folder) {
-            MailFolder.INBOX -> api.threads(folder = "inbox", limit = 50).threads
-                .map { it.toEntity(account.key, folder.key) }
-            MailFolder.SENT -> api.threads(folder = "sent", limit = 50).threads
-                .map { it.toEntity(account.key, folder.key) }
-            // Starred spans every folder, so ask by flag rather than by folder.
-            MailFolder.STARRED -> api.threads(folder = "all", starred = true, limit = 50).threads
-                .map { it.toEntity(account.key, folder.key) }
-            MailFolder.DRAFTS -> api.drafts().drafts
-                .map { it.toEntity(account.key) }
+        if (folder == MailFolder.DRAFTS) {
+            val drafts = clients.api(account).drafts().drafts.map { it.toEntity(account.key) }
+            dao.clearFolder(account.key, MailFolder.DRAFTS.key)
+            dao.upsert(drafts)
+        } else {
+            syncDelta(account)
         }
-        dao.clearFolder(account.key, folder.key)
-        dao.upsert(rows)
     }
 
-    /** Archive: leaves the folder, so the row disappears locally right away. */
-    suspend fun archive(account: SharedAccount, id: String, folder: MailFolder) {
-        dao.delete(account.key, id)
-        runCatching { clients.api(account).move(id, MoveBody("archive")) }
-            .onFailure { refresh(account, folder) }
+    /**
+     * Incremental sync: pulls /changes from the stored cursor until drained,
+     * reconciling the delta folders and dropping deleted threads. The first run
+     * (cursor 0) sweeps the history and populates the caches.
+     */
+    suspend fun syncDelta(account: SharedAccount) {
+        val api = clients.api(account)
+        var cursor = dao.cursor(account.key) ?: "0"
+        while (true) {
+            val res = api.changes(since = cursor.toLongOrNull() ?: 0L, limit = 200)
+            apply(account.key, res)
+            cursor = res.cursor ?: cursor
+            dao.setCursor(SyncStateEntity(account.key, cursor))
+            if (!res.hasMore) break
+        }
     }
 
-    suspend fun trash(account: SharedAccount, id: String, folder: MailFolder) {
+    private suspend fun apply(accountKey: String, res: ChangesDto) {
+        for (thread in res.threads) {
+            for ((folder, isMember) in deltaFolders) {
+                if (isMember(thread)) {
+                    dao.upsert(listOf(thread.toEntity(accountKey, folder.key)))
+                } else {
+                    dao.deleteInFolder(accountKey, folder.key, thread.id)
+                }
+            }
+        }
+        for (id in res.deletedIds) dao.delete(accountKey, id)
+    }
+
+    /** Archive: leaves the inbox, so the row disappears locally right away. */
+    suspend fun archive(account: SharedAccount, id: String) = act(account, id) {
+        clients.api(account).move(id, MoveBody("archive"))
+    }
+
+    suspend fun trash(account: SharedAccount, id: String) = act(account, id) {
+        clients.api(account).trash(id)
+    }
+
+    /** Optimistic remove-then-call, restoring the exact rows on failure. */
+    private suspend fun act(account: SharedAccount, id: String, call: suspend () -> Unit) {
+        val saved = dao.rowsFor(account.key, id)
         dao.delete(account.key, id)
-        runCatching { clients.api(account).trash(id) }
-            .onFailure { refresh(account, folder) }
+        runCatching { call() }.onFailure { dao.upsert(saved) }
     }
 
     /** Loads a thread with its messages (does not mark read server-side). */

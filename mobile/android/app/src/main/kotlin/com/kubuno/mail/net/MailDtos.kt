@@ -24,6 +24,8 @@ data class ThreadDto(
     @SerialName("last_sender_email") val lastSenderEmail: String? = null,
     @SerialName("last_message_at") val lastMessageAt: String? = null,
     val labels: List<LabelRef> = emptyList(),
+    /** Folders this thread currently belongs to (inbox, sent, archive…). */
+    val folders: List<String> = emptyList(),
     val category: String? = null,
 ) {
     val unread: Boolean get() = unreadCount > 0

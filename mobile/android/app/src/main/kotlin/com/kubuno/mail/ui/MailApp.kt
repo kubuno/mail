@@ -74,11 +74,11 @@ class InboxViewModel @Inject constructor(
     }
 
     fun archive(id: String) = account?.let { a ->
-        viewModelScope.launch { repo.archive(a, id, _folder.value) }
+        viewModelScope.launch { repo.archive(a, id) }
     }
 
     fun trash(id: String) = account?.let { a ->
-        viewModelScope.launch { repo.trash(a, id, _folder.value) }
+        viewModelScope.launch { repo.trash(a, id) }
     }
 }
 
