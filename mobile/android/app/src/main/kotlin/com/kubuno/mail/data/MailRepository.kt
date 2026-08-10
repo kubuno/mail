@@ -3,6 +3,8 @@ package com.kubuno.mail.data
 import com.kubuno.android.account.SharedAccount
 import com.kubuno.mail.net.MailClients
 import com.kubuno.mail.net.MoveBody
+import com.kubuno.mail.net.ReadBody
+import com.kubuno.mail.net.ThreadDetailDto
 import com.kubuno.mail.net.ThreadDto
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,6 +45,16 @@ class MailRepository @Inject constructor(
         dao.delete(account.key, id)
         runCatching { clients.api(account).trash(id) }
             .onFailure { refresh(account) }
+    }
+
+    /** Loads a thread with its messages (does not mark read server-side). */
+    suspend fun thread(account: SharedAccount, id: String): ThreadDetailDto =
+        clients.api(account).thread(id)
+
+    /** Marks a thread read: clears the local badge, then tells the server. */
+    suspend fun markRead(account: SharedAccount, id: String) {
+        dao.setUnread(account.key, id, 0)
+        runCatching { clients.api(account).setRead(id, ReadBody(isRead = true)) }
     }
 }
 

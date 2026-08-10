@@ -58,6 +58,7 @@ fun InboxScreen(
     threads: List<ThreadEntity>,
     refreshing: Boolean,
     onRefresh: () -> Unit,
+    onOpen: (String) -> Unit,
     onArchive: (String) -> Unit,
     onTrash: (String) -> Unit,
 ) {
@@ -103,6 +104,7 @@ fun InboxScreen(
                             items(threads, key = { it.id }) { thread ->
                                 SwipeableThreadRow(
                                     thread = thread,
+                                    onOpen = { onOpen(thread.id) },
                                     onArchive = { onArchive(thread.id) },
                                     onTrash = { onTrash(thread.id) },
                                 )
@@ -119,6 +121,7 @@ fun InboxScreen(
 @Composable
 private fun SwipeableThreadRow(
     thread: ThreadEntity,
+    onOpen: () -> Unit,
     onArchive: () -> Unit,
     onTrash: () -> Unit,
 ) {
@@ -136,7 +139,7 @@ private fun SwipeableThreadRow(
         state = dismissState,
         backgroundContent = { SwipeBackground(dismissState.dismissDirection) },
     ) {
-        ThreadRow(thread)
+        ThreadRow(thread, onOpen)
     }
 }
 
@@ -189,7 +192,7 @@ private fun Centered(message: String, icon: ImageVector? = null) {
  * below, then a snippet. Unread rows are bold; 64dp min height.
  */
 @Composable
-private fun ThreadRow(thread: ThreadEntity) {
+private fun ThreadRow(thread: ThreadEntity, onOpen: () -> Unit) {
     val unread = thread.unreadCount > 0
     val sender = (thread.senderName?.takeIf { it.isNotBlank() } ?: thread.senderEmail).orEmpty()
     Row(
@@ -197,7 +200,7 @@ private fun ThreadRow(thread: ThreadEntity) {
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .heightIn(min = 64.dp)
-            .clickable { /* reader lands in M2 */ }
+            .clickable(onClick = onOpen)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

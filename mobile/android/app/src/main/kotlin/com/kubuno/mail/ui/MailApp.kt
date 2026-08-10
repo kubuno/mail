@@ -1,7 +1,11 @@
 package com.kubuno.mail.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,9 +65,16 @@ class InboxViewModel @Inject constructor(
 }
 
 @Composable
-fun MailApp(viewModel: InboxViewModel = hiltViewModel()) {
+fun MailApp(
+    viewModel: InboxViewModel = hiltViewModel(),
+    reader: ReaderViewModel = hiltViewModel(),
+) {
     val threads by viewModel.threads.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    // The reader overlays the list — the list stays composed so its scroll
+    // position and cache survive, matching the web's mobile behaviour.
+    var openThread by remember { mutableStateOf<String?>(null) }
+
     InboxScreen(
         title = viewModel.account?.let { "Boîte de réception" } ?: "Kubuno Mail",
         subtitle = viewModel.account?.label,
@@ -71,7 +82,21 @@ fun MailApp(viewModel: InboxViewModel = hiltViewModel()) {
         threads = threads,
         refreshing = refreshing,
         onRefresh = viewModel::refresh,
+        onOpen = { id -> openThread = id; reader.open(id) },
         onArchive = viewModel::archive,
         onTrash = viewModel::trash,
     )
+
+    if (openThread != null) {
+        val readerState by reader.state.collectAsStateWithLifecycle()
+        val id = openThread!!
+        fun close() { openThread = null; reader.reset() }
+        BackHandler { close() }
+        ThreadReaderScreen(
+            state = readerState,
+            onBack = { close() },
+            onArchive = { viewModel.archive(id) },
+            onTrash = { viewModel.trash(id) },
+        )
+    }
 }

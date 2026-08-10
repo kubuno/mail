@@ -93,6 +93,9 @@ data class ThreadDetailDto(
 data class MoveBody(val folder: String)
 
 @Serializable
+data class ReadBody(@SerialName("is_read") val isRead: Boolean)
+
+@Serializable
 data class StarResult(@SerialName("is_starred") val isStarred: Boolean = false)
 
 /** The delta response — same thread shape, keyed by the modseq cursor. */

@@ -49,4 +49,8 @@ interface MailApi {
     /** Toggle the star (the server flips it; no explicit set). */
     @POST("api/v1/mail/threads/{id}/star")
     suspend fun toggleStar(@Path("id") id: String): StarResult
+
+    /** Mark the whole thread read or unread. */
+    @POST("api/v1/mail/threads/{id}/read")
+    suspend fun setRead(@Path("id") id: String, @Body body: ReadBody)
 }

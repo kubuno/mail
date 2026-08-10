@@ -52,6 +52,9 @@ interface MailDao {
 
     @Query("UPDATE threads SET isStarred = :starred WHERE accountKey = :accountKey AND id = :id")
     suspend fun setStarred(accountKey: String, id: String, starred: Boolean)
+
+    @Query("UPDATE threads SET unreadCount = :count WHERE accountKey = :accountKey AND id = :id")
+    suspend fun setUnread(accountKey: String, id: String, count: Int)
 }
 
 @Database(entities = [ThreadEntity::class], version = 1, exportSchema = false)
