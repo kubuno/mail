@@ -162,6 +162,7 @@ fun MailApp(
     var openThread by remember { mutableStateOf<String?>(null) }
     var compose by remember { mutableStateOf<ComposePrefill?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -178,7 +179,7 @@ fun MailApp(
                     avatarLabel = active?.label,
                     onAvatarClick = { panelOpen = true },
                     onOpenMenu = { scope.launch { drawerState.open() } },
-                    onSearch = { /* search screen lands in M4 */ },
+                    onSearch = { showSearch = true },
                     onNotifications = { /* notifications land with push in M5 */ },
                     onSettings = { showSettings = true },
                 )
@@ -225,12 +226,14 @@ fun MailApp(
         val id = openThread!!
         fun close() { openThread = null; reader.reset() }
         BackHandler { close() }
-        // Surface the reader's download messages on the shell's snackbar.
+        val readerSnackbar = remember { SnackbarHostState() }
+        // The reader hosts its own snackbar; feed its download messages there.
         LaunchedEffect(reader) {
-            reader.events.collect { scope.launch { snackbar.showMessage(it) } }
+            reader.events.collect { readerSnackbar.showMessage(it) }
         }
         ThreadReaderScreen(
             state = readerState,
+            snackbar = readerSnackbar,
             onBack = { close() },
             onArchive = { viewModel.archive(id) },
             onTrash = { viewModel.trash(id) },
@@ -240,6 +243,14 @@ fun MailApp(
                 scope.launch { snackbar.showMessage("Marqué comme non lu") }
             },
             onOpenAttachment = reader::openAttachment,
+        )
+    }
+
+    if (showSearch) {
+        BackHandler { showSearch = false }
+        SearchScreen(
+            onBack = { showSearch = false },
+            onOpen = { id -> showSearch = false; openThread = id; reader.open(id) },
         )
     }
 

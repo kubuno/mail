@@ -124,6 +124,14 @@ data class ThreadDetailDto(
 data class AddressInput(val name: String? = null, val email: String)
 
 @Serializable
+data class AttachmentInput(
+    val filename: String,
+    val mime: String,
+    /** Base64 (standard) of the file bytes; the v1 send carries them inline. */
+    val content: String,
+)
+
+@Serializable
 data class SendBody(
     @SerialName("account_id") val accountId: String,
     @SerialName("to_addresses") val toAddresses: List<AddressInput>,
@@ -132,6 +140,7 @@ data class SendBody(
     val subject: String,
     @SerialName("body_html") val bodyHtml: String,
     @SerialName("reply_to_id") val replyToId: String? = null,
+    val attachments: List<AttachmentInput> = emptyList(),
 )
 
 @Serializable

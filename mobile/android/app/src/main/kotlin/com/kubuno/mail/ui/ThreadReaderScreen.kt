@@ -30,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -50,6 +52,7 @@ import com.kubuno.mail.net.EmailMessageDto
 @Composable
 fun ThreadReaderScreen(
     state: ReaderState,
+    snackbar: SnackbarHostState,
     onBack: () -> Unit,
     onArchive: () -> Unit,
     onTrash: () -> Unit,
@@ -58,6 +61,9 @@ fun ThreadReaderScreen(
     onOpenAttachment: (messageId: String, index: Int, name: String, mime: String?) -> Unit,
 ) {
     Scaffold(
+        // The reader overlays the shell, so it hosts its own snackbar; otherwise
+        // download feedback would show behind it, unseen.
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = {},

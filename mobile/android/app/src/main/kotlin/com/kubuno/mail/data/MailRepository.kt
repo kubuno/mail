@@ -103,6 +103,10 @@ class MailRepository @Inject constructor(
     suspend fun thread(account: SharedAccount, id: String): ThreadDetailDto =
         clients.api(account).thread(id)
 
+    /** Full-text search across folders; results are not cached. */
+    suspend fun search(account: SharedAccount, query: String): List<ThreadDto> =
+        clients.api(account).threads(folder = "all", search = query, limit = 50).threads
+
     /**
      * Downloads one attachment to the app cache and returns the file. Streams
      * over the authenticated client — the same endpoint that now speaks Range,

@@ -6,6 +6,7 @@ import com.kubuno.android.account.SharedAccount
 import com.kubuno.android.account.SharedAccounts
 import com.kubuno.mail.data.MailRepository
 import com.kubuno.mail.net.AddressInput
+import com.kubuno.mail.net.AttachmentInput
 import com.kubuno.mail.net.SendBody
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +54,7 @@ class ComposeViewModel @Inject constructor(
         subject: String,
         body: String,
         replyToId: String?,
+        attachments: List<AttachmentInput>,
         idempotencyKey: String,
     ) {
         val account = account ?: return
@@ -73,6 +75,7 @@ class ComposeViewModel @Inject constructor(
                             subject = subject.trim(),
                             bodyHtml = textToHtml(body),
                             replyToId = replyToId,
+                            attachments = attachments,
                         ),
                     )
                 }
