@@ -102,6 +102,12 @@ class ReaderViewModel @Inject constructor(
         return repo.downloadAttachment(account, messageId, index, name)
     }
 
+    /** Authenticated client + per-attachment URL so the viewer streams media. */
+    val mediaHttpClient: okhttp3.OkHttpClient? get() = account?.let { repo.mediaHttpClient(it) }
+
+    fun attachmentStreamUrl(messageId: String, index: Int): String? =
+        account?.let { repo.attachmentStreamUrl(it, messageId, index) }
+
     fun reset() {
         loadedId = null
         _state.value = ReaderState.Loading

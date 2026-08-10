@@ -153,6 +153,13 @@ class MailRepository @Inject constructor(
             .onFailure { dao.setStarred(account.key, id, wasStarred) }
     }
 
+    /** Authenticated client + URL so the viewer streams media attachments. */
+    fun mediaHttpClient(account: SharedAccount): okhttp3.OkHttpClient =
+        clients.raw(account).okHttpClient
+
+    fun attachmentStreamUrl(account: SharedAccount, messageId: String, index: Int): String =
+        "${clients.raw(account).serverUrl}/api/v1/mail/messages/$messageId/attachments/$index"
+
     /** The mail account a message is sent from: the default, else the first active. */
     suspend fun sendingAccountId(account: SharedAccount): String? {
         val accounts = clients.api(account).accounts().accounts

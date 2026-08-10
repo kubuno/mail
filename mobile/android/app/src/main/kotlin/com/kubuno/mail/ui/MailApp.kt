@@ -267,8 +267,11 @@ fun MailApp(
     viewer?.let { req ->
         BackHandler { viewer = null }
         FileViewer(
-            items = req.attachments.map { ViewerItem(it.display, it.mime, it.size) },
+            items = req.attachments.mapIndexed { i, a ->
+                ViewerItem(a.display, a.mime, a.size, reader.attachmentStreamUrl(req.messageId, i))
+            },
             initialIndex = req.index,
+            mediaHttpClient = reader.mediaHttpClient,
             fetch = { i -> reader.fetchAttachment(req.messageId, i, req.attachments[i].display) },
             onDownload = { i -> reader.openAttachment(req.messageId, i, req.attachments[i].display, req.attachments[i].mime) },
             onOpenExternally = { i -> reader.openAttachment(req.messageId, i, req.attachments[i].display, req.attachments[i].mime) },

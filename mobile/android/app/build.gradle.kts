@@ -23,12 +23,30 @@ android {
         versionName = "0.1.0"
     }
 
+    // Release signing is opt-in: pass -PkubunoKeystore=… (and the passwords) to
+    // sign, otherwise the release APK is unsigned (what the CI publishes). EVERY
+    // Kubuno app MUST be signed with the SAME certificate — the shared-account
+    // model grants access by matching signature.
+    val keystorePath = (findProperty("kubunoKeystore") as String?)?.takeIf { it.isNotBlank() }
+    val keystoreFile = keystorePath?.let { rootProject.file(it) }
+    signingConfigs {
+        if (keystoreFile != null && keystoreFile.exists()) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = findProperty("kubunoKeystorePassword") as String?
+                keyAlias = findProperty("kubunoKeyAlias") as String?
+                keyPassword = findProperty("kubunoKeyPassword") as String?
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8 shrinks and obfuscates; proguard-rules.pro carries the keep-rules
             // audit (serializers, Retrofit/Room/Hilt/UnifiedPush reflection surfaces).
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
