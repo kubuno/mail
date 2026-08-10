@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -15,31 +16,71 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import com.kubuno.android.account.BrokeredClients
 import com.kubuno.android.account.SharedAccount
 import com.kubuno.android.account.SharedAccounts
 import com.kubuno.mail.R
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import javax.inject.Inject
 
 /**
- * Discovers the Kubuno accounts on the device through the system
- * AccountManager — the accounts the drive app (or any sibling) signed in.
+ * Discovers the shared Kubuno accounts and, as a proof that the borrowed-token
+ * path works end to end, makes one real authenticated call (`GET /api/v1/me`)
+ * as the active account — with a token borrowed from the owning app through
+ * the system AccountManager, no refresh token in this process.
  *
- * This is the scaffold's proof that cross-app sharing reaches the mail app:
- * the per-app registry is private, so a consumer app reads the shared
- * accounts here. The real folder/thread UI, and obtaining access tokens for
- * these accounts, land on top of it next.
+ * The folder/thread UI replaces this probe next; the plumbing under it stays.
  */
 @HiltViewModel
 class MailHomeViewModel @Inject constructor(
     sharedAccounts: SharedAccounts,
+    private val brokered: BrokeredClients,
 ) : ViewModel() {
+
     val accounts: List<SharedAccount> = sharedAccounts.list()
+
+    private val _status = MutableStateFlow("…")
+    val status: StateFlow<String> = _status
+
+    init {
+        val account = accounts.firstOrNull()
+        if (account == null) {
+            _status.value = ""
+        } else {
+            probe(account)
+        }
+    }
+
+    /** GET /api/v1/me as [account], authenticated by a borrowed access token. */
+    private fun probe(account: SharedAccount) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val client = brokered.of(account)
+                val request = Request.Builder()
+                    .url(client.serverUrl + "/api/v1/me")
+                    .build()
+                client.okHttpClient.newCall(request).execute().use { it.code }
+            }
+        }
+        _status.value = result.fold(
+            onSuccess = { code -> if (code in 200..299) "Connecté ✓ (HTTP $code)" else "HTTP $code" },
+            onFailure = { "Erreur réseau" },
+        )
+    }
 }
 
 @Composable
 fun MailApp(viewModel: MailHomeViewModel = hiltViewModel()) {
     val active = viewModel.accounts.firstOrNull()
+    val status by viewModel.status.collectAsStateWithLifecycle()
 
     Scaffold { padding ->
         Column(
@@ -63,6 +104,14 @@ fun MailApp(viewModel: MailHomeViewModel = hiltViewModel()) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            if (active != null) {
+                Text(
+                    status,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
     }
 }
