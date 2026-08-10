@@ -75,6 +75,11 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit.kotlinx.serialization)
+
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 

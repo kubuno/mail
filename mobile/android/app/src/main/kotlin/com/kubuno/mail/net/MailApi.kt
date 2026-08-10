@@ -1,6 +1,9 @@
 package com.kubuno.mail.net
 
+import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -34,4 +37,16 @@ interface MailApi {
 
     @GET("api/v1/mail/threads/{id}")
     suspend fun thread(@Path("id") id: String): ThreadDetailDto
+
+    /** Move a thread to another folder (inbox|sent|spam|trash|archive). */
+    @POST("api/v1/mail/threads/{id}/move")
+    suspend fun move(@Path("id") id: String, @Body body: MoveBody)
+
+    /** Soft-delete: the server moves the thread to trash. */
+    @DELETE("api/v1/mail/threads/{id}")
+    suspend fun trash(@Path("id") id: String)
+
+    /** Toggle the star (the server flips it; no explicit set). */
+    @POST("api/v1/mail/threads/{id}/star")
+    suspend fun toggleStar(@Path("id") id: String): StarResult
 }

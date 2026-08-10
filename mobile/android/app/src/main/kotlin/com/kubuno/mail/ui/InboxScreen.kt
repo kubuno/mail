@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.StarBorder
@@ -25,18 +27,23 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kubuno.mail.net.ThreadDto
+import com.kubuno.mail.data.ThreadEntity
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -46,13 +53,31 @@ import java.util.Locale
 @Composable
 fun InboxScreen(
     title: String,
-    state: InboxState,
+    subtitle: String?,
+    hasAccount: Boolean,
+    threads: List<ThreadEntity>,
+    refreshing: Boolean,
     onRefresh: () -> Unit,
+    onArchive: (String) -> Unit,
+    onTrash: (String) -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Column {
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        subtitle?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                },
                 actions = {
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "Rafraîchir")
@@ -62,25 +87,85 @@ fun InboxScreen(
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            when (state) {
-                is InboxState.Loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                is InboxState.NoAccount -> Centered("Aucun compte email configuré")
-                is InboxState.Failed -> Centered("Impossible de charger la boîte de réception")
-                is InboxState.Loaded ->
-                    if (state.threads.isEmpty()) {
+            when {
+                !hasAccount -> Centered("Aucun compte email configuré", Icons.Outlined.Inbox)
+                threads.isEmpty() && refreshing ->
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                else -> PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    if (threads.isEmpty()) {
                         Centered("Aucun message", Icons.Outlined.Inbox)
                     } else {
                         LazyColumn(Modifier.fillMaxSize()) {
-                            items(state.threads, key = { it.id }) { ThreadRow(it) }
+                            items(threads, key = { it.id }) { thread ->
+                                SwipeableThreadRow(
+                                    thread = thread,
+                                    onArchive = { onArchive(thread.id) },
+                                    onTrash = { onTrash(thread.id) },
+                                )
+                            }
                         }
                     }
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Centered(message: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null) {
+private fun SwipeableThreadRow(
+    thread: ThreadEntity,
+    onArchive: () -> Unit,
+    onTrash: () -> Unit,
+) {
+    // Swipe right = archive (green), left = trash (red) — the web's gestures.
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> { onArchive(); true }
+                SwipeToDismissBoxValue.EndToStart -> { onTrash(); true }
+                SwipeToDismissBoxValue.Settled -> false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = { SwipeBackground(dismissState.dismissDirection) },
+    ) {
+        ThreadRow(thread)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
+    val (color, icon, align) = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd ->
+            Triple(Color(0xFF1E8E3E), Icons.Outlined.Archive, Alignment.CenterStart)
+        SwipeToDismissBoxValue.EndToStart ->
+            Triple(Color(0xFFD93025), Icons.Outlined.Delete, Alignment.CenterEnd)
+        SwipeToDismissBoxValue.Settled ->
+            Triple(MaterialTheme.colorScheme.surface, null, Alignment.Center)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(color)
+            .padding(horizontal = 24.dp),
+        contentAlignment = align,
+    ) {
+        icon?.let {
+            Icon(it, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun Centered(message: String, icon: ImageVector? = null) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -100,27 +185,28 @@ private fun Centered(message: String, icon: androidx.compose.ui.graphics.vector.
 
 /**
  * The two-line message row from the web's mobile design (ThreadItem.tsx): a
- * 40dp avatar, the correspondent and date on top, the subject with attachment
- * and star below, then a snippet. Unread rows are bold. 64dp min height, a
- * thumb-sized star. Swipe actions and pull-to-refresh come with M2.
+ * 40dp avatar, the correspondent and date on top, the subject with the star
+ * below, then a snippet. Unread rows are bold; 64dp min height.
  */
 @Composable
-private fun ThreadRow(thread: ThreadDto) {
-    val unread = thread.unread
+private fun ThreadRow(thread: ThreadEntity) {
+    val unread = thread.unreadCount > 0
+    val sender = (thread.senderName?.takeIf { it.isNotBlank() } ?: thread.senderEmail).orEmpty()
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
             .heightIn(min = 64.dp)
             .clickable { /* reader lands in M2 */ }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Avatar(thread.senderDisplay)
+        Avatar(sender)
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    thread.senderDisplay.ifBlank { "(inconnu)" },
+                    sender.ifBlank { "(inconnu)" },
                     fontSize = 15.sp,
                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -129,7 +215,7 @@ private fun ThreadRow(thread: ThreadDto) {
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    formatDate(thread.lastMessageAt),
+                    formatDate(thread.orderKey),
                     fontSize = 12.sp,
                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (unread) MaterialTheme.colorScheme.primary
@@ -167,7 +253,7 @@ private fun ThreadRow(thread: ThreadDto) {
 /** Initial on a colour hashed from the address — the web's 10-colour palette. */
 @Composable
 private fun Avatar(label: String) {
-    val color = AVATAR_COLORS[(hashOf(label) % AVATAR_COLORS.size)]
+    val color = AVATAR_COLORS[hashOf(label) % AVATAR_COLORS.size]
     Box(
         modifier = Modifier.size(40.dp).clip(CircleShape).background(color),
         contentAlignment = Alignment.Center,
@@ -200,8 +286,7 @@ private val DAY_FMT = DateTimeFormatter.ofPattern("d MMM", Locale.FRANCE)
 private fun formatDate(iso: String?): String {
     iso ?: return ""
     return runCatching {
-        val instant = Instant.parse(iso)
-        val zoned = instant.atZone(ZoneId.systemDefault())
+        val zoned = Instant.parse(iso).atZone(ZoneId.systemDefault())
         val now = Instant.now().atZone(ZoneId.systemDefault())
         if (zoned.toLocalDate() == now.toLocalDate()) TIME_FMT.format(zoned)
         else DAY_FMT.format(zoned)

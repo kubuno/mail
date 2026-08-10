@@ -89,6 +89,12 @@ data class ThreadDetailDto(
     val messages: List<EmailMessageDto> = emptyList(),
 )
 
+@Serializable
+data class MoveBody(val folder: String)
+
+@Serializable
+data class StarResult(@SerialName("is_starred") val isStarred: Boolean = false)
+
 /** The delta response — same thread shape, keyed by the modseq cursor. */
 @Serializable
 data class ChangesDto(
