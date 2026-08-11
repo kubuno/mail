@@ -11,10 +11,14 @@ export const SIGNATURE_ATTR = 'data-kb-signature'
 /** Attribute marking the reply/forward quote block. */
 export const QUOTE_ATTR = 'data-kb-quote'
 
-/** Wrap a signature's HTML in a marked, removable container (with a leading gap,
- *  matching the menu insertion). */
+/** Wrap a signature's HTML in a marked, removable container, preceded by two empty
+ *  lines that live OUTSIDE the block — the Gmail layout
+ *  (`<div><br></div><div><br></div><div signature>…</div>`). Keeping the gap
+ *  outside the signature gives the caret a clean editable area above it, and the
+ *  top-left placeholder always lands on an empty line instead of overlapping the
+ *  signature — even if the block's own markup is later normalized. */
 export function signatureBlock(html: string): string {
-  return `<div ${SIGNATURE_ATTR}><br><br>${html}</div>`
+  return `<div><br></div><div><br></div><div ${SIGNATURE_ATTR}>${html}</div>`
 }
 
 /** The body's text with the signature and quote blocks removed — the user's own
@@ -32,6 +36,35 @@ export function logicalBodyText(html: string): string {
 /** True when the body carries no user-typed content (only signature/quote). */
 export function isLogicallyEmpty(html: string): boolean {
   return logicalBodyText(html) === ''
+}
+
+/** Whether the body's top line is clear of visible text. The placeholder overlay
+ *  is pinned to the top-left, so it must not show when a signature or quote ended
+ *  up flush at the very top (e.g. a resumed draft whose leading blank lines were
+ *  normalized away) — otherwise the two texts overlap. Returns true when the first
+ *  visible text sits at least ~one line below the top, or there is no visible text. */
+export function firstLineClear(el: HTMLElement): boolean {
+  const top = el.getBoundingClientRect().top
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    const text = node.textContent
+    if (!text || !text.trim()) continue
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    const rect = range.getBoundingClientRect()
+    // The placeholder sits at top-3 (~12px) and is ~one line tall (~34px bottom),
+    // so the first visible text is "clear" only when it starts below that band.
+    return rect.height === 0 || rect.top - top > 30
+  }
+  return true
+}
+
+/** Show the Gmail-style placeholder only when the body is logically empty AND its
+ *  first line is clear — so it never overlaps a top-flush signature/quote. */
+export function shouldShowPlaceholder(el: HTMLElement | null): boolean {
+  if (!el) return true
+  return isLogicallyEmpty(el.innerHTML) && firstLineClear(el)
 }
 
 const fmtSize = (n: number) =>

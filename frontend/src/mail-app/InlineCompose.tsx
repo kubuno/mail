@@ -19,7 +19,7 @@ import { RecipientField } from '../AddressSuggest'
 import { readKubunoData, kubunoDataToEmailHtml } from '../kubunoData'
 import { useDraftAutosave, type DraftSnapshot } from './useDraftAutosave'
 import { loadPrefs } from '../settings/GeneralTab'
-import { signatureBlock, isLogicallyEmpty, placeCaretAtStart, QUOTE_ATTR, appendDriveLinksHtml } from './composeContent'
+import { signatureBlock, shouldShowPlaceholder, placeCaretAtStart, QUOTE_ATTR, appendDriveLinksHtml } from './composeContent'
 import { useComposeAttachments } from './composeAttachments'
 import { useComposeMentions } from './useComposeMentions'
 import AttachmentBar from './AttachmentChip'
@@ -124,7 +124,7 @@ export default function InlineCompose({
   // signature and the quoted message; hidden as soon as the user types above them.
   const [showPlaceholder, setShowPlaceholder] = useState(true)
   const refreshPlaceholder = useCallback(() => {
-    setShowPlaceholder(isLogicallyEmpty(bodyRef.current?.innerHTML ?? ''))
+    setShowPlaceholder(shouldShowPlaceholder(bodyRef.current))
   }, [])
 
   // Injects the quote INTO the editor (and therefore into the sent mail): full

@@ -23,7 +23,7 @@ import { readKubunoData, kubunoDataToEmailHtml } from './kubunoData'
 import { useDraftAutosave, type DraftSnapshot } from './mail-app/useDraftAutosave'
 import { loadSignatures, defaultSignatureId, resolveSignatureId } from './signatures'
 import { loadPrefs } from './settings/GeneralTab'
-import { signatureBlock, isLogicallyEmpty, placeCaretAtStart, appendDriveLinksHtml, SIGNATURE_ATTR } from './mail-app/composeContent'
+import { signatureBlock, shouldShowPlaceholder, placeCaretAtStart, appendDriveLinksHtml, SIGNATURE_ATTR } from './mail-app/composeContent'
 import { useComposeAttachments } from './mail-app/composeAttachments'
 import { useComposeMentions } from './mail-app/useComposeMentions'
 import AttachmentBar from './mail-app/AttachmentChip'
@@ -147,7 +147,7 @@ export default function ComposeWindow() {
   // types real content above it. Recomputed on mount and on every input.
   const [showPlaceholder, setShowPlaceholder] = useState(true)
   const refreshPlaceholder = useCallback(() => {
-    setShowPlaceholder(isLogicallyEmpty(bodyRef.current?.innerHTML ?? ''))
+    setShowPlaceholder(shouldShowPlaceholder(bodyRef.current))
   }, [])
 
   // ── Auto-save as a draft (Gmail-style) ───────────────────────────────────────
