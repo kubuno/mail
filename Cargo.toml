@@ -38,6 +38,10 @@ rand           = { workspace = true }
 base64         = { workspace = true }
 aes-gcm        = { workspace = true }
 sha2           = { workspace = true }
+# SHA-1 for the Web Key Directory local-part hash (WKD is defined over SHA-1;
+# RustCrypto sha1 0.10 pairs with the sha2 0.10 already in the tree — pure Rust,
+# no OpenSSL). Used only for WKD address hashing, never for message security.
+sha1           = "0.10"
 hex            = { workspace = true }
 toml           = { workspace = true }
 clap           = { workspace = true }
@@ -50,6 +54,42 @@ lettre           = { version = "0.11", default-features = false, features = ["to
 mail-parser      = "0.9"
 ammonia          = "4"
 html2text        = "0.12"
+# Mailbox passwords for the SMTP/IMAP/POP3 servers this module offers.
+argon2           = { workspace = true }
+# SASL SCRAM-SHA-256: PBKDF2-HMAC-SHA256 derivation + HMAC, so the password is
+# never transmitted and a database leak does not expose it. sha2/hmac/stringprep
+# are already in the tree.
+pbkdf2           = { version = "0.12", default-features = false, features = ["hmac"] }
+hmac             = "0.12"
+stringprep       = "0.1"
+# Server-side TLS for the offered SMTP/IMAP/POP3 services. rustls (ring), like
+# the core (axum-server, sqlx) — modern defaults, forward secrecy enforced, no
+# OpenSSL. tokio-rustls 0.26 pairs with rustls 0.23.
+tokio-rustls     = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls           = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile   = "2"
+# Trust anchors for outbound TLS at security level `verify` (Postfix's
+# smtp_tls_security_level=verify). The Mozilla CA set as static data: no OpenSSL,
+# no platform APIs, no extra transitive crates — the lightest option that lets
+# rustls check a real chain, and it is already in the tree via sqlx.
+webpki-roots     = "1"
+# Outbound delivery (vague B): MX resolution + message authentication. Rather
+# than hand-roll DKIM canonicalisation (error-prone, and a wrong space sends
+# mail to spam), use `mail-auth` (Stalwart) for DKIM sign/verify + SPF + DMARC,
+# and `hickory-resolver` (aligned with the core) for MX/DNS.
+# Backend `ring` (not `rust-crypto`): the two are mutually exclusive in
+# mail-auth, and enabling sha1/sha2/rsa without the `rust-crypto` umbrella pulls
+# in RustCrypto code paths whose `Writer` impls are gated off — it does not
+# compile. `ring` + `generate` gives DKIM sign/verify, SPF, DMARC and key
+# generation over the ring backend, which the dkim/authres code targets.
+mail-auth         = { version = "0.7", default-features = false, features = ["ring", "generate"] }
+hickory-resolver  = "0.25"
+# Reading the TLS certificate the admin console reports on: expiry dates and the
+# names it covers. rustls loads a certificate but deliberately exposes neither,
+# and answering "is it expired / does it cover the announced hostname" needs
+# both. Pure Rust, no OpenSSL.
+x509-parser       = "0.18"
+pgp = "0.20.0"
 
 # ─── Workspace mono-crate (deps tierces recopiées du monorepo kubuno/core ;
 #     crates partagées consommées via dépendances git taguées) ───
@@ -66,8 +106,6 @@ rust-version = "1.82"
 [workspace.dependencies]
 # Async
 tokio       = { version = "1",    features = ["full"] }
-# CRDT Yjs côté serveur (consolidation GC des snapshots collab)
-yrs         = "0.23"
 axum        = { version = "0.7",  features = ["macros", "ws", "multipart"] }
 tower       = { version = "0.5",  features = ["full"] }
 tower-http  = { version = "0.6",  features = ["cors", "compression-gzip", "trace", "limit", "fs", "set-header", "timeout"] }
@@ -79,9 +117,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chro
 # Sérialisation
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# Auth & Crypto
-jsonwebtoken = "9"
 argon2       = "0.5"
 aes-gcm      = "0.10"
 rand         = "0.8"
@@ -101,9 +136,7 @@ validator = { version = "0.18", features = ["derive"] }
 # Logging & Tracing
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-appender   = "0.2"
 tokio-util         = { version = "0.7", features = ["io"] }
-kubuno-storage     = { git = "https://github.com/kubuno/core", tag = "storage-v0.1.1", package = "kubuno-storage" }
 kubuno-seccomp     = { git = "https://github.com/kubuno/core", tag = "seccomp-v0.1.1", package = "kubuno-seccomp" }
 
 # Erreurs
@@ -118,10 +151,3 @@ futures = "0.3"
 hex     = "0.4"
 toml    = "0.8"
 clap    = { version = "4", features = ["color", "wrap_help", "derive", "env"] }
-url                 = "2"
-urlencoding         = "2"
-tokio-tungstenite   = { version = "0.24", features = ["native-tls"] }
-async-stream        = "0.3"
-totp-rs             = { version = "5", features = ["gen_secret", "otpauth"] }
-zip                 = "2"
-quick-xml           = { version = "0.37", features = ["serialize"] }

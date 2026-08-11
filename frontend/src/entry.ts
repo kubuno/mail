@@ -11,6 +11,7 @@ import MailCreateMenu from './MailCreateMenu'
 import MailSearchBar from './MailSearchBar'
 import MailSendFileAction from './MailSendFileAction'
 import MailComposeGlobal from './MailComposeGlobal'
+import { registerMailAdmin } from './admin/MailAdminPanel'
 
 export const sdkVersion = SDK_VERSION
 
@@ -22,6 +23,12 @@ export function register() {
   // pour flotter au-dessus de n'importe quel module.
   SlotRegistry.register('files-share-actions', 'mail', MailSendFileAction)
   SlotRegistry.register('app-dialogs', 'mail', MailComposeGlobal)
+
+  // Mail's own admin sections (deliverability diagnostic + DKIM keys), each
+  // declaring which page of `/admin/modules/mail` it belongs to — in the
+  // vocabulary this module's own `module.toml` defines. The core places them
+  // from that declaration and never names `mail` anywhere.
+  registerMailAdmin()
 
   WaffleAppRegistry.register('mail', 'Mail', [
     { id: 'mail', label: 'Mail', Icon: MailLogo, path: '/mail' },
@@ -97,5 +104,6 @@ export function register() {
   RouteRegistry.register('mail/trash',         MailApp)
   RouteRegistry.register('mail/subscriptions', MailApp)
   RouteRegistry.register('mail/label/:id',     MailApp)
+  RouteRegistry.register('mail/folder/*',      MailApp)
   RouteRegistry.register('mail/settings',      MailSettingsPage)
 }

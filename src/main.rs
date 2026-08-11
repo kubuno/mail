@@ -7,7 +7,7 @@ use kubuno_mail::{
     workers::{sync_worker, scheduler_worker},
 };
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -21,6 +21,85 @@ struct Manifest {
     #[serde(default)]
     sidebar_items: Vec<SidebarItemRaw>,
     events:        Option<ManifestEvents>,
+    /// Declarative instance settings, edited in the admin console and read back
+    /// by the module through /internal/modules/settings.
+    #[serde(default)]
+    settings:      Vec<SettingDefRaw>,
+    /// Pages the admin panel of this module is split into (`[[setting_groups]]`).
+    /// Each becomes an entry of the admin menu with its own address; the
+    /// `category` of a setting becomes a tab inside its group.
+    #[serde(default)]
+    setting_groups: Vec<SettingGroupRaw>,
+}
+
+/// One `[[setting_groups]]` entry of module.toml, forwarded verbatim.
+///
+/// `id` is a STABLE, UNTRANSLATED slug: it travels in the URL of the admin page,
+/// which may not change shape with the interface language. The core refuses a
+/// registration whose group id is not a slug, or whose settings point at a group
+/// that was never declared.
+#[derive(Deserialize, Serialize)]
+struct SettingGroupRaw {
+    id:          String,
+    label:       String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon:        Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    position:    Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+/// One `[[settings]]` entry of module.toml, forwarded verbatim at registration
+/// (`type` renamed to match the core's `SettingDef`).
+#[derive(Deserialize, Serialize)]
+struct SettingDefRaw {
+    key:         String,
+    scope:       String,
+    #[serde(rename = "type")]
+    value_type:  String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    values:      Option<Value>,
+    default:     Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    label:       Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    category:    Option<String>,
+    /// Id of a `[[setting_groups]]` entry: which page of the panel this belongs
+    /// to. Absent = ungrouped, as before groups existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group:       Option<String>,
+    #[serde(default)]
+    public:      bool,
+    // ── Presentation metadata ───────────────────────────────────────────────
+    // The panel is schema-driven: these travel to the core untouched and are
+    // what let it render fifty settings without a line of module-specific
+    // front-end code. Anything the core does not understand it ignores, so an
+    // older core still shows the setting, just plainly.
+    /// Fold behind the section's "advanced" disclosure.
+    #[serde(default)]
+    advanced:    bool,
+    /// "info" | "warning" | "danger" — how loudly to warn before changing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    risk:        Option<String>,
+    /// Bounds for `type = "int"`, enforced by the core as well as the panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    min:         Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max:         Option<i64>,
+    /// Suffix shown beside the field ("Mo", "s", "min").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit:        Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    placeholder: Option<String>,
+    /// The string value is a list, one entry per line — render a textarea.
+    #[serde(default)]
+    multiline:   bool,
+    /// Key of a boolean setting of the same module; hidden while it is off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    depends_on:  Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -143,6 +222,14 @@ async fn main() -> Result<()> {
         settings: Arc::new(settings.clone()),
     };
 
+    // Backfill: give every active mailbox created before migration 000025 the
+    // local account that fronts it, so it appears in the account list and the
+    // "From" selector. Idempotent, so it runs on every boot regardless of
+    // `run_migrations`. A global failure is logged and does not block startup.
+    if let Err(e) = kubuno_mail::handlers::addresses::mailboxes::ensure_local_accounts(&state).await {
+        tracing::error!(error = %e, "backfill des comptes locaux (démarrage poursuivi)");
+    }
+
     // Enregistrement auprès du core (avec retry infini)
     let http = Client::new();
     register_with_core(&http, &settings).await;
@@ -185,6 +272,29 @@ async fn main() -> Result<()> {
         let state3 = Arc::new(state.clone());
         tokio::spawn(async move {
             scheduler_worker::run(state3).await;
+        });
+    }
+
+    // SMTP/IMAP/POP3 services. Nothing listens until an administrator switches
+    // one on in the console: the supervisor reads that configuration and
+    // reconciles its listeners with it.
+    {
+        let db     = state.db.clone();
+        let cfg    = settings.clone();
+        let client = http.clone();
+        tokio::spawn(async move {
+            kubuno_mail::server::run(db, cfg, client).await;
+        });
+    }
+
+    // Outbound queue worker: delivers queued mail to remote servers with
+    // retries and DSNs. Idle until an administrator enables outbound sending.
+    {
+        let db     = state.db.clone();
+        let cfg    = settings.clone();
+        let client = http.clone();
+        tokio::spawn(async move {
+            kubuno_mail::server::worker::run(db, cfg, client).await;
         });
     }
 
@@ -234,11 +344,23 @@ async fn register_with_core(http: &Client, settings: &Settings) {
         .map(|e| e.subscribed.clone())
         .unwrap_or_else(|| vec!["UserDeleted".into()]);
 
+    let settings_schema: Value = manifest.as_ref()
+        .map(|m| serde_json::to_value(&m.settings).unwrap_or_else(|_| json!([])))
+        .unwrap_or_else(|| json!([]));
+
+    // Pages of the admin panel. An older core ignores the field, and the module
+    // then keeps the single-page panel it had — nothing here is required.
+    let setting_groups: Value = manifest.as_ref()
+        .map(|m| serde_json::to_value(&m.setting_groups).unwrap_or_else(|_| json!([])))
+        .unwrap_or_else(|| json!([]));
+
     let payload = json!({
         "module_id":         "mail",
         "display_name":      display_name,
         "description":       description,
         "settings_path":     settings_path,
+        "settings_schema":   settings_schema,
+        "setting_groups":    setting_groups,
         "base_url":          base_url,
         "version":           env!("CARGO_PKG_VERSION"),
         "routes":            [{ "method": "*", "path": "/*" }],
@@ -276,4 +398,68 @@ async fn register_with_core(http: &Client, settings: &Settings) {
         }
     }
     unreachable!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The real `module.toml`, parsed by the very structs used at registration.
+    ///
+    /// This is what the core receives, so a typo here would be found by an
+    /// administrator missing a page rather than by a build: the manifest is
+    /// data, and nothing else type-checks it.
+    fn manifest() -> Manifest {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("module.toml");
+        let content = std::fs::read_to_string(&path).expect("module.toml lisible");
+        toml::from_str::<Manifest>(&content).expect("module.toml valide")
+    }
+
+    #[test]
+    fn manifest_declares_its_admin_groups() {
+        let m = manifest();
+        assert!(!m.setting_groups.is_empty(), "aucun groupe déclaré");
+        for g in &m.setting_groups {
+            assert!(!g.label.trim().is_empty(), "groupe '{}' sans libellé", g.id);
+            assert!(
+                g.id.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                "l'id de groupe '{}' n'est pas un slug d'URL",
+                g.id
+            );
+        }
+    }
+
+    /// The same rule the core enforces at registration, checked here so a bad
+    /// manifest fails the module's own build rather than its next start-up.
+    #[test]
+    fn every_setting_group_reference_resolves() {
+        let m = manifest();
+        let ids: Vec<&str> = m.setting_groups.iter().map(|g| g.id.as_str()).collect();
+        for s in &m.settings {
+            if let Some(g) = &s.group {
+                assert!(
+                    ids.contains(&g.as_str()),
+                    "le réglage '{}' pointe le groupe inconnu '{g}'",
+                    s.key
+                );
+            }
+        }
+    }
+
+    /// The registration payload keeps the manifest's own field names — the core
+    /// deserialises `SettingGroup`/`SettingDef` straight from them.
+    #[test]
+    fn groups_serialise_under_the_names_the_core_expects() {
+        let m = manifest();
+        let json = serde_json::to_value(&m.setting_groups).expect("sérialisation");
+        let first = &json[0];
+        assert!(first["id"].is_string() && first["label"].is_string());
+        let settings = serde_json::to_value(&m.settings).expect("sérialisation");
+        assert!(settings
+            .as_array()
+            .expect("tableau")
+            .iter()
+            .any(|s| s["group"].is_string()));
+    }
 }

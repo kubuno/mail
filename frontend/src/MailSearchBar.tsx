@@ -61,11 +61,26 @@ export default function MailSearchBar() {
   const { t, i18n } = useTranslation('mail')
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const { searchQuery, setSearchQuery, setSelectedThread } = useMailStore()
+  const { searchQuery, setSearchQuery, setSelectedThread, advancedSearchSeed, setAdvancedSearchSeed, newFilterNonce } = useMailStore()
 
   const [q, setQ]                 = useState(searchQuery)
   const [open, setOpen]           = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+
+  // A folder filter bar asked to open the advanced panel, seeded with its chips.
+  useEffect(() => {
+    if (advancedSearchSeed) { setOpen(false); setFilterOpen(true) }
+  }, [advancedSearchSeed])
+
+  // The shell's New menu (« Nouveau filtre / règle ») bumps a store nonce we
+  // watch to open the advanced-filter panel, which hosts the rule-creation flow.
+  const prevFilterNonce = useRef(newFilterNonce)
+  useEffect(() => {
+    if (newFilterNonce !== prevFilterNonce.current) {
+      prevFilterNonce.current = newFilterNonce
+      setOpen(false); setFilterOpen(true)
+    }
+  }, [newFilterNonce])
   const [focused, setFocused]     = useState(false)
   const [hi, setHi]               = useState(-1)
   const [debQ, setDebQ]           = useState('')
@@ -487,7 +502,11 @@ export default function MailSearchBar() {
         {expanded && (filterOpen ? (
           <>
             <div style={{ height: 1, background: 'var(--color-border)', margin: '0 16px' }} />
-            <MailFilterPanel onClose={() => setFilterOpen(false)} />
+            <MailFilterPanel
+              key={advancedSearchSeed ? 'seeded' : 'blank'}
+              initial={advancedSearchSeed ?? undefined}
+              onClose={() => { setFilterOpen(false); setAdvancedSearchSeed(null) }}
+            />
           </>
         ) : (
           dropdown

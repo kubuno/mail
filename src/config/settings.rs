@@ -65,9 +65,24 @@ impl DatabaseSettings {
 pub struct MailSettings {
     pub encryption_key:       String,
     pub sync_interval_secs:   u64,
+    /// Messages fetched per batch. The whole mailbox is downloaded batch by
+    /// batch across runs, so this caps memory per batch, not the total.
     pub max_fetch_per_sync:   u32,
+    /// Time budget for one account in one run. Reaching it stops the run
+    /// cleanly; cursors are persisted per batch, so the next run resumes.
+    pub sync_deadline_secs:   u64,
     /// Directory where incoming attachments are written (served by download_attachment).
     pub attachments_dir:      String,
+    /// Public base URL of the Kubuno instance (e.g. "https://dev.kubuno.com"),
+    /// used to build the OAuth redirect URIs. When absent, it is derived from
+    /// the X-Forwarded-Proto / X-Forwarded-Host / Host headers of the request.
+    pub public_base_url:         Option<String>,
+    /// OAuth2 client for Gmail accounts (Google Cloud Console, "Web application").
+    pub google_client_id:        Option<String>,
+    pub google_client_secret:    Option<String>,
+    /// OAuth2 client for Outlook.com / Microsoft 365 accounts (Azure app registration).
+    pub microsoft_client_id:     Option<String>,
+    pub microsoft_client_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -97,6 +112,7 @@ impl Settings {
             .set_default("mail.encryption_key", "")?
             .set_default("mail.sync_interval_secs", 300i64)?
             .set_default("mail.max_fetch_per_sync", 200i64)?
+            .set_default("mail.sync_deadline_secs", 240i64)?
             .set_default("mail.attachments_dir", "/var/lib/kubuno/mail/attachments")?
             .set_default("logging.level", "info")?
             .set_default("logging.format", "pretty")?

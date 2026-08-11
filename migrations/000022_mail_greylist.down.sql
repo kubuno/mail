@@ -1,0 +1,2 @@
+DROP FUNCTION IF EXISTS mail.purge_greylist(INTERVAL, INTERVAL);
+DROP TABLE IF EXISTS mail.greylist;

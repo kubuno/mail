@@ -8,13 +8,29 @@
 //     silently ignore any failure (module absent, not running…), per the
 //     polyrepo rule « ne jamais supposer qu'un module est installé ».
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Users } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '@kubuno/sdk'
 import { mailApi } from './api'
 
 export interface AddressSuggestion {
   email: string
   name?: string
+  /** Present when the suggestion is a recipient group (« liste de diffusion »):
+   *  picking it inserts every member as its own chip. `email` is then a synthetic
+   *  `group:<id>` key, never a real address. */
+  group?: { members: { email: string; name?: string }[] }
+}
+
+/** The user's recipient groups (distribution lists), cached across every address
+ *  field. Silent [] on error, per the polyrepo « never assume a feature exists ». */
+function useRecipientGroups() {
+  const { data } = useQuery({
+    queryKey: ['mail-recipient-groups'],
+    queryFn:  mailApi.listRecipientGroups,
+    staleTime: 60_000,
+  })
+  return data ?? []
 }
 
 type ContactField = { value: string; label?: string | null }
@@ -71,9 +87,30 @@ export function RecipientField({ chips, onChange, placeholder }: {
 }) {
   const [input, setInput]   = useState('')
   const [active, setActive] = useState(-1)
-  const suggestions = useAddressSuggestions(input)
+  const addrSuggestions = useAddressSuggestions(input)
+  const groups = useRecipientGroups()
+  // Matching groups are proposed FIRST (with a group icon); typing a group's
+  // name and selecting it fans out to every member address.
+  const q = input.trim().toLowerCase()
+  const groupMatches: AddressSuggestion[] = q.length >= 1
+    ? groups
+        .filter(g => g.name.toLowerCase().includes(q))
+        .slice(0, 3)
+        .map(g => ({ email: `group:${g.id}`, name: g.name, group: { members: g.members } }))
+    : []
+  const suggestions = [...groupMatches, ...addrSuggestions]
 
   const add = (s?: AddressSuggestion) => {
+    // A group fans out to all its members (deduped against existing chips).
+    if (s?.group) {
+      const have = new Set(chips.map(c => c.email.toLowerCase()))
+      const additions = s.group.members
+        .filter(m => m.email && !have.has(m.email.toLowerCase()))
+        .map(m => ({ email: m.email, name: m.name ?? undefined }))
+      if (additions.length) onChange([...chips, ...additions])
+      setInput(''); setActive(-1)
+      return
+    }
     const v = s ?? (input.trim().includes('@') ? { email: input.trim() } : undefined)
     if (!v) return
     if (!chips.some(c => c.email.toLowerCase() === v.email.toLowerCase())) {
@@ -136,13 +173,29 @@ export function AddressSuggestList({ items, activeIndex, onPick }: {
           onPointerDown={e => { e.preventDefault(); onPick(s) }}
           className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left ${i === activeIndex ? 'bg-surface-2' : 'hover:bg-surface-1'}`}
         >
-          <span className="w-7 h-7 rounded-full bg-primary/15 text-primary text-xs font-medium flex items-center justify-center shrink-0">
-            {(s.name || s.email)[0]?.toUpperCase()}
-          </span>
-          <span className="min-w-0">
-            {s.name && <span className="block text-sm text-text-primary truncate">{s.name}</span>}
-            <span className="block text-xs text-text-secondary truncate">{s.email}</span>
-          </span>
+          {s.group ? (
+            <>
+              <span className="w-7 h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                <Users size={14} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-text-primary truncate">{s.name}</span>
+                <span className="block text-xs text-text-secondary truncate">
+                  {s.group.members.length}&nbsp;{s.group.members.length > 1 ? 'destinataires' : 'destinataire'}
+                </span>
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="w-7 h-7 rounded-full bg-primary/15 text-primary text-xs font-medium flex items-center justify-center shrink-0">
+                {(s.name || s.email)[0]?.toUpperCase()}
+              </span>
+              <span className="min-w-0">
+                {s.name && <span className="block text-sm text-text-primary truncate">{s.name}</span>}
+                <span className="block text-xs text-text-secondary truncate">{s.email}</span>
+              </span>
+            </>
+          )}
         </button>
       ))}
     </div>

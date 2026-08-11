@@ -27,6 +27,27 @@ sync_interval_secs = 300
 # Nombre maximum de mails à fetcher par cycle de sync
 max_fetch_per_sync = 200
 
+# ── OAuth2 (connexion « Se connecter avec Google / Microsoft ») ───────────────
+# Google refuse les mots de passe de compte sur IMAP/SMTP : seul un mot de passe
+# d'application ou OAuth2 fonctionne. Renseigner ces clés active le bouton de
+# connexion OAuth dans les réglages des comptes mail.
+#
+# URL publique de l'instance (base des redirect URIs). Si absente, elle est
+# dérivée des en-têtes X-Forwarded-Host / Host de la requête.
+# public_base_url = "https://dev.kubuno.com"
+#
+# Google Cloud Console → « APIs & Services » → « Credentials » → client OAuth
+# « Web application ». Redirect URI à déclarer :
+#   <public_base_url>/api/v1/mail/oauth/google/callback
+# google_client_id     = ""
+# google_client_secret = ""
+#
+# Portail Azure → « App registrations » (comptes personnels + organisations).
+# Redirect URI à déclarer :
+#   <public_base_url>/api/v1/mail/oauth/microsoft/callback
+# microsoft_client_id     = ""
+# microsoft_client_secret = ""
+
 [logging]
 level  = "info"
 format = "pretty"

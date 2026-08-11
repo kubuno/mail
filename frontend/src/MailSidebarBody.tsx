@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -6,7 +6,7 @@ import {
   Inbox, Send, FileText, Star, ShieldAlert, Trash2,
   ChevronDown, ChevronRight, Plus, Tag, MailOpen,
   Users, Info,
-  Clock, Bookmark, CalendarClock, MailX, type LucideIcon,
+  Clock, Bookmark, CalendarClock, MailX, Folder, type LucideIcon,
 } from 'lucide-react'
 import { SidebarNavItem, useConfirm } from '@kubuno/sdk'
 import { ColorPicker, ConfirmDialog } from '@ui'
@@ -15,6 +15,7 @@ import { mailApi, type Label } from './api'
 import { categoryTo } from './categoryRoute'
 import NewLabelDialog, { type NewLabelResult } from './NewLabelDialog'
 import MailLabelItem, { leafName } from './MailLabelItem'
+import { isThreadDrag, readDraggedThreads, setThreadDropCaption } from './threadDnd'
 
 // Dossiers principaux (toujours visibles)
 const MAIN_FOLDERS = [
@@ -26,7 +27,7 @@ const MAIN_FOLDERS = [
   { id: 'drafts',    key: 'folder_drafts',    label: 'Brouillons',         icon: FileText, path: '/mail/drafts' },
 ] as const
 
-// Catégories de la boîte de réception (classées côté client par expéditeur/sujet)
+// Catégories de la boîte de réception (assignées côté serveur à l'enregistrement)
 const CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'social',        label: 'Réseaux sociaux', icon: Users },
   { id: 'notifications', label: 'Notifications',   icon: Info },
@@ -42,20 +43,43 @@ const MORE_FOLDERS = [
   { id: 'subscriptions', key: 'folder_subscriptions', label: 'Gérer les abonnements', icon: MailX,         path: '/mail/subscriptions' },
 ] as const
 
+// « Plus / Moins » stays where the user left it across a page refresh — a
+// collapsed/expanded sidebar is a deliberate choice, not something to reset on F5.
+const MORE_KEY = 'kubuno_mail_sidebar_more'
+function initShowMore(): boolean {
+  try { return localStorage.getItem(MORE_KEY) === '1' } catch { return false }
+}
+
 export default function MailSidebarBody({ collapsed = false }: { collapsed?: boolean }) {
   const { t } = useTranslation('mail')
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const qc = useQueryClient()
-  const [showMore,   setShowMore]   = useState(false)
+  const [showMore,   setShowMore]   = useState(initShowMore)
   const [showLabels, setShowLabels] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [creating,   setCreating]   = useState(false)
   const [editing,    setEditing]    = useState<Label | null>(null)
   const [subParent,  setSubParent]  = useState<Label | null>(null)
   const [colorFor,   setColorFor]   = useState<Label | null>(null)
+  const [dropFolder, setDropFolder] = useState<string | null>(null)
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
-  const { inboxCategory, setInboxCategory, accounts } = useMailStore()
+  const { inboxCategory, setInboxCategory, accounts, currentImapFolder, setSelectedThread, createLabelNonce } = useMailStore()
+
+  // Clicking any folder / category / label must ALWAYS return to its list, even
+  // when a conversation is open AND even when that folder is already the active
+  // one. The open conversation lives in the store (mirrored to the URL hash via
+  // replaceState, which the router does not see), so re-clicking the active row
+  // is a router no-op that would otherwise leave the reader open. Clearing the
+  // selection here runs on the click itself, whatever the router decides.
+  const showList = () => setSelectedThread(null)
+
+  // The account's own IMAP folders. Cheap query, refreshed like the counts.
+  const { data: customFolders = [] } = useQuery({
+    queryKey: ['mail-custom-folders'],
+    queryFn:  mailApi.listCustomFolders,
+    staleTime: 60_000,
+  })
 
   const { data: accountsData } = useQuery({ queryKey: ['mail-accounts'], queryFn: mailApi.listAccounts })
   const hasAccount = !!(accountsData?.accounts?.length)
@@ -77,13 +101,9 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     const m: Record<string, number> = {}
     for (const th of inboxData?.threads ?? []) {
       if (th.unread_count <= 0) continue
-      const e = th.last_sender_email ?? ''
-      const cat =
-        /twitter|facebook|linkedin|instagram|tiktok|youtube|pinterest|snapchat|meta\.com|x\.com/i.test(e) ? 'social'
-        : /notification|alert|update|security|account|billing/i.test(e) ? 'notifications'
-        : /no.?reply|newsletter|noreply|promo|marketing|info@|hello@|contact@|deals?@|offers?@/i.test(e) ? 'promotions'
-        : 'main'
-      m[cat] = (m[cat] ?? 0) + 1
+      // Category is stored with the message (services::categorize) — nothing to
+      // classify here any more.
+      m[th.category ?? 'main'] = (m[th.category ?? 'main'] ?? 0) + 1
     }
     return m
   }, [inboxData])
@@ -110,6 +130,17 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     accounts.find(a => a.is_default)?.id ?? accounts[0]?.id ?? accountsData?.accounts?.[0]?.id
 
   const onCreateLabel = () => { if (createAccountId) setCreateOpen(true) }
+
+  // The shell's New menu (« Nouveau libellé ») lives in a separate component; it
+  // bumps a store nonce we watch here to open the create-label dialog.
+  const prevLabelNonce = useRef(createLabelNonce)
+  useEffect(() => {
+    if (createLabelNonce !== prevLabelNonce.current) {
+      prevLabelNonce.current = createLabelNonce
+      onCreateLabel()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createLabelNonce])
 
   const onCreateLabelSubmit = async ({ name }: NewLabelResult) => {
     if (!createAccountId) return
@@ -172,6 +203,40 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     refreshLabels()
   }
 
+  /** Folders that accept a dropped conversation, and what the drop does. */
+  const DROP_FOLDERS: Record<string, (threadId: string) => Promise<unknown>> = {
+    inbox:     id => mailApi.moveThread(id, 'inbox'),
+    starred:   id => mailApi.starThread(id),
+    important: id => mailApi.importantThread(id),
+    spam:      id => mailApi.moveThread(id, 'spam'),
+    trash:     id => mailApi.moveThread(id, 'trash'),
+    all:       id => mailApi.moveThread(id, 'archive'),
+  }
+
+  const dropProps = (folderId: string, name: string) =>
+    DROP_FOLDERS[folderId]
+      ? {
+          onDragOver: (e: React.DragEvent) => {
+            if (!isThreadDrag(e)) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            setDropFolder(folderId)
+            setThreadDropCaption(name)
+          },
+          onDragLeave: () => { setDropFolder(null); setThreadDropCaption(null) },
+          onDrop: async (e: React.DragEvent) => {
+            const ids = readDraggedThreads(e)
+            setDropFolder(null)
+            setThreadDropCaption(null)
+            if (!ids.length) return
+            e.preventDefault()
+            for (const id of ids) await DROP_FOLDERS[folderId](id).catch(() => {})
+            qc.invalidateQueries({ queryKey: ['mail-threads'] })
+            qc.invalidateQueries({ queryKey: ['mail-counts'] })
+          },
+        }
+      : {}
+
   // ── Item dossier ──────────────────────────────────────────────────────────
   // The inbox only lights up on the "main" category, otherwise it would
   // stay highlighted alongside the active category (both live on /mail).
@@ -182,18 +247,22 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     <>
       {/* The "New message" button lives in the shell's default New button now
           (NewActions: MailCreateMenu, registered in entry.ts). */}
-      <nav className={`flex-1 overflow-y-auto py-1 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <nav className={`flex-1 overflow-y-auto py-1 space-y-0.5 px-2`}>
         {/* Dossiers principaux */}
         {MAIN_FOLDERS.map(f => (
-          <SidebarNavItem
-            key={f.id} collapsed={collapsed}
-            label={t(f.key, { defaultValue: f.label })}
-            icon={<f.icon size={16} className="flex-shrink-0" />}
-            active={folderActive(f.id, f.path)}
-            // The inbox row IS the "main" category, hence its hash link.
-            to={f.id === 'inbox' ? categoryTo('main') : f.path}
-            badge={badgeFor(f.id)}
-          />
+          <div key={f.id} {...dropProps(f.id, t(f.key, { defaultValue: f.label }))}
+            className={`rounded-full ${dropFolder === f.id ? 'bg-[#fef7e0]' : ''}`}>
+            <SidebarNavItem
+              collapsed={collapsed}
+              label={t(f.key, { defaultValue: f.label })}
+              icon={<f.icon size={16} className="flex-shrink-0" />}
+              active={folderActive(f.id, f.path)}
+              // The inbox row IS the "main" category, hence its hash link.
+              to={f.id === 'inbox' ? categoryTo('main') : f.path}
+              onClick={showList}
+              badge={badgeFor(f.id)}
+            />
+          </div>
         ))}
 
         {/* Catégories de la boîte de réception : filtres CLIENT sur /mail, donc
@@ -206,20 +275,25 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
             icon={<c.icon size={16} className="flex-shrink-0" />}
             active={isInboxView && inboxCategory === c.id}
             to={categoryTo(c.id)}
+            onClick={showList}
             badge={num(catCounts[c.id])}
           />
         ))}
 
         {/* Dossiers secondaires (repliés : tout en icônes) */}
         {(collapsed || showMore) && MORE_FOLDERS.map(f => (
-          <SidebarNavItem
-            key={f.id} collapsed={collapsed}
-            label={t(f.key, { defaultValue: f.label })}
-            icon={<f.icon size={16} className="flex-shrink-0" />}
-            active={pathname === f.path}
-            to={f.path}
-            badge={badgeFor(f.id)}
-          />
+          <div key={f.id} {...dropProps(f.id, t(f.key, { defaultValue: f.label }))}
+            className={`rounded-full ${dropFolder === f.id ? 'bg-[#fef7e0]' : ''}`}>
+            <SidebarNavItem
+              collapsed={collapsed}
+              label={t(f.key, { defaultValue: f.label })}
+              icon={<f.icon size={16} className="flex-shrink-0" />}
+              active={pathname === f.path}
+              to={f.path}
+              onClick={showList}
+              badge={badgeFor(f.id)}
+            />
+          </div>
         ))}
 
         {!collapsed && (
@@ -228,20 +302,48 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
             label={showMore ? t('mail_less') : t('mail_more')}
             icon={showMore ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronRight size={16} className="flex-shrink-0" />}
             active={false}
-            onClick={() => setShowMore(v => !v)}
+            onClick={() => setShowMore(v => {
+              const next = !v
+              try { localStorage.setItem(MORE_KEY, next ? '1' : '0') } catch { /* ignore */ }
+              return next
+            })}
           />
+        )}
+
+        {/* The account's own provider folders, synced like the system ones.
+            Only shown when there are any — most accounts have none. */}
+        {!collapsed && customFolders.length > 0 && (
+          <div className="pt-2 space-y-0.5">
+            <div className="px-3 py-1 text-sm font-bold text-text-secondary">
+              {t('mail_folders', { defaultValue: 'Dossiers' })}
+            </div>
+            {customFolders.map(f => (
+              <SidebarNavItem
+                key={f.name}
+                collapsed={false}
+                label={f.display || leafName(f.name)}
+                icon={<Folder size={16} className="flex-shrink-0" />}
+                active={currentImapFolder === f.name}
+                to={`/mail/folder/${encodeURIComponent(f.name)}`}
+                onClick={showList}
+                badge={f.unread || undefined}
+              />
+            ))}
+          </div>
         )}
 
         {/* Libellés */}
         {!collapsed && (
           <div className="pt-2 space-y-0.5">
-            <div className="flex items-center gap-2 w-full px-3 py-1 text-[10px] font-bold text-text-tertiary uppercase tracking-widest">
+            {/* Section title: plain 14px bold in the shell font. No small caps,
+                no letter-spacing — they read as shouting at this size. */}
+            <div className="flex items-center gap-2 w-full px-3 py-1 text-sm font-bold text-text-secondary">
               {/* Anchors (never <button>) like the rest of the left sidebar;
                   in-page actions so href="#". */}
               <a href="#" role="button" aria-expanded={showLabels}
                 onClick={e => { e.preventDefault(); setShowLabels(v => !v) }}
-                className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer hover:text-text-secondary transition-colors">
-                <ChevronDown className={`w-3 h-3 flex-shrink-0 transition-transform ${showLabels ? '' : '-rotate-90'}`} />
+                className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer hover:text-text-primary transition-colors">
+                <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${showLabels ? '' : '-rotate-90'}`} />
                 <span className="truncate text-left">{t('labels')}</span>
               </a>
               <a href="#" role="button" title={t('label_create', { defaultValue: 'Créer un libellé' })}
@@ -258,6 +360,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
                 unread={num(counts?.labels?.[label.id])}
                 active={pathname === `/mail/label/${label.id}`}
                 to={`/mail/label/${label.id}`}
+                onClick={showList}
                 actions={{
                   onSetColor:    color => patchLabel(label.id, { color }),
                   onPickCustom:  () => setColorFor(label),
@@ -266,17 +369,19 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
                   onRename:      () => setEditing(label),
                   onDelete:      () => onDeleteLabel(label),
                   onAddSubLabel: () => setSubParent(label),
+                  // Dropping a conversation here labels it and archives it,
+                  // exactly like the menu's "Move to".
+                  onDropThread: async threadIds => {
+                    for (const id of threadIds) {
+                      await mailApi.addLabel(id, label.id).catch(() => {})
+                      await mailApi.moveThread(id, 'archive').catch(() => {})
+                    }
+                    qc.invalidateQueries({ queryKey: ['mail-threads'] })
+                    refreshLabels()
+                  },
                 }}
               />
             ))}
-
-            <SidebarNavItem
-              collapsed={false}
-              label={t('label_create', { defaultValue: 'Créer un libellé' })}
-              icon={<Plus size={16} className="flex-shrink-0" />}
-              active={false}
-              onClick={onCreateLabel}
-            />
           </div>
         )}
       </nav>

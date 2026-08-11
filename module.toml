@@ -79,4 +79,754 @@ subscribed = [
     "UserDeleted",
     "ContactUpdated",
 ]
-publishes = []
+# A message landing in a local recipient's inbox is announced to the core as a
+# Custom event, which the core's push mapper turns into a mobile notification.
+publishes = ["mail.received"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Admin panel groups
+# ══════════════════════════════════════════════════════════════════════════════
+# A group is one entry under this module in the admin menu tree, with its own
+# address (/admin/modules/mail/<id>); the `category` of each setting becomes a
+# tab inside it. Forty-eight settings on one page is a wall nobody reads — this
+# is what turns it into five places, each answering one question.
+#
+# `id` is a STABLE, UNTRANSLATED slug because it travels in the URL: an address
+# may not change shape with the interface language. `label` is what is read.
+#
+# A module that declares no group keeps the single-page panel; nothing here is
+# required.
+
+[[setting_groups]]
+id       = "overview"
+label    = "Vue d'ensemble"
+icon     = "Activity"
+position = 1
+description = "L'état du service et ce que les fournisseurs destinataires voient de cette instance."
+
+[[setting_groups]]
+id       = "services"
+label    = "Services"
+icon     = "Server"
+position = 2
+description = "Quels protocoles sont servis, sur quels ports, et sous quel nom."
+
+[[setting_groups]]
+id       = "addresses"
+label    = "Adresses"
+icon     = "AtSign"
+position = 3
+description = "Les boîtes, alias, listes de diffusion et catch-all que cette instance sert. Ce groupe n'a pas de réglage : il gère des objets."
+
+[[setting_groups]]
+id       = "transport"
+label    = "Chiffrement"
+icon     = "Lock"
+position = 4
+description = "Le chiffrement des connexions et ce qu'une même adresse IP a le droit d'ouvrir."
+
+[[setting_groups]]
+id       = "authentication"
+label    = "Authentification"
+icon     = "ShieldCheck"
+position = 5
+description = "Ce qui prouve qu'un message vient bien de son expéditeur — dans les deux sens."
+
+[[setting_groups]]
+id       = "filtering"
+label    = "Filtrage"
+icon     = "Filter"
+position = 6
+description = "Ce qui est refusé, retardé ou classé indésirable avant d'atteindre une boîte."
+
+[[setting_groups]]
+id       = "openpgp"
+label    = "OpenPGP (bout en bout)"
+icon     = "KeyRound"
+position = 7
+description = "Le chiffrement et la signature du CONTENU des messages avec OpenPGP/GPG — distinct du chiffrement des connexions (Chiffrement). Chaque utilisateur gère ses propres clés."
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Mail server — instance settings
+# ══════════════════════════════════════════════════════════════════════════════
+# Edited in the admin console (Modules → Courrier → ⚙), stored in core.settings,
+# read back by the module through /internal/modules/settings and mapped onto
+# `ServerConfig` in src/server/config.rs.
+#
+# Every setting declared here is READ by code that acts on it. A knob that
+# changes nothing is worse than an absent one: it tells an administrator a
+# protection is in place when it is not. Before adding one, wire it.
+#
+# `category` drives the collapsible sections of the panel, in declaration order.
+# `advanced` folds a setting behind the section's "Avancé" disclosure.
+# `risk` = info | warning | danger — danger asks for a confirmation before saving.
+# `depends_on` hides the setting while the named boolean is off.
+#
+# Ports default ABOVE 1024 on purpose: the service runs as the unprivileged
+# `kubuno` user with NoNewPrivileges=true, so it cannot bind 25/143/110. Serving
+# the standard ports means adding AmbientCapabilities=CAP_NET_BIND_SERVICE to
+# the unit, or redirecting them with nftables.
+
+# ── 1. Identité du serveur ────────────────────────────────────────────────────
+
+[[settings]]
+key         = "server_hostname"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Nom d'hôte annoncé"
+description = "Nom présenté dans les bannières SMTP/IMAP/POP3 et dans les en-têtes Received. Il doit correspondre à l'enregistrement PTR de votre adresse IP publique : Gmail et Yahoo rejettent le courrier dont le PTR ne se résout pas en sens inverse. Vide = nom de la machine."
+category    = "Identité du serveur"
+group       = "services"
+placeholder = "mail.example.com"
+risk        = "info"
+
+[[settings]]
+key         = "server_domains"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Domaines d'appoint"
+description = "Liste d'APPOINT, en complément des domaines vérifiés déclarés dans Instance ▸ Domaines — ce sont ces derniers qui font foi. À réserver aux noms qu'aucune preuve DNS ne peut établir (« kubuno.local » en labo, un domaine interne). Une entrée par ligne. Le courrier adressé à un domaine listé ici est distribué SANS que l'instance ait prouvé qu'elle contrôle ce nom ; tout domaine public doit passer par Instance ▸ Domaines."
+category    = "Identité du serveur"
+group       = "services"
+multiline   = true
+placeholder = "kubuno.local"
+risk        = "warning"
+
+[[settings]]
+key         = "server_bind_address"
+scope       = "global"
+type        = "string"
+default     = "127.0.0.1"
+label       = "Adresse d'écoute"
+description = "127.0.0.1 n'expose les services qu'à la machine elle-même — le choix sûr derrière un relais. 0.0.0.0 écoute sur toutes les interfaces et rend l'instance joignable depuis internet : ne le faites qu'avec un certificat valide, un pare-feu, et après avoir publié SPF, DKIM et DMARC."
+category    = "Identité du serveur"
+group       = "services"
+placeholder = "127.0.0.1"
+risk        = "danger"
+
+# ── 2. Réception du courrier (MX) ─────────────────────────────────────────────
+
+[[settings]]
+key         = "smtp_server_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer la réception SMTP"
+description = "Accepte le courrier venant des autres serveurs de messagerie. C'est le rôle MX : aucune authentification n'est demandée, ce sont les politiques de filtrage plus bas qui protègent l'instance."
+category    = "Réception du courrier (MX)"
+group       = "services"
+
+[[settings]]
+key         = "smtp_server_port"
+scope       = "global"
+type        = "int"
+default     = 2525
+min         = 1
+max         = 65535
+label       = "Port de réception"
+description = "25 est le port des échanges entre serveurs ; sous 1024 il exige CAP_NET_BIND_SERVICE. Un port non standard n'est joignable par aucun MTA distant — il ne convient qu'à un relais qui redirige."
+category    = "Réception du courrier (MX)"
+group       = "services"
+depends_on  = "smtp_server_enabled"
+
+[[settings]]
+key         = "server_max_message_mb"
+scope       = "global"
+type        = "int"
+default     = 25
+min         = 1
+max         = 2048
+unit        = "Mo"
+public      = true
+label       = "Taille maximale d'un message"
+description = "Annoncée aux expéditeurs par l'extension SIZE et appliquée pendant DATA. Compte la pièce jointe encodée en base64, soit environ un tiers de plus que le fichier d'origine."
+category    = "Réception du courrier (MX)"
+group       = "services"
+depends_on  = "smtp_server_enabled"
+
+[[settings]]
+key         = "smtp_require_fqdn_helo"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Exiger un HELO pleinement qualifié"
+description = "Refuse un client qui s'annonce sous un nom sans domaine. Filtre une part notable des robots pour un coût nul. Le nom n'est jamais résolu en DNS : beaucoup d'expéditeurs légitimes annoncent un nom sans enregistrement."
+category    = "Réception du courrier (MX)"
+group       = "services"
+depends_on  = "smtp_server_enabled"
+
+[[settings]]
+key         = "smtp_max_recipients"
+scope       = "global"
+type        = "int"
+default     = 100
+min         = 1
+max         = 10000
+label       = "Destinataires maximum par message"
+description = "La RFC 5321 demande d'en accepter au moins 100. Au-delà du seuil, les destinataires suivants reçoivent un refus temporaire et l'expéditeur découpe son envoi."
+category    = "Réception du courrier (MX)"
+group       = "services"
+advanced    = true
+depends_on  = "smtp_server_enabled"
+
+[[settings]]
+key         = "smtp_hopcount_limit"
+scope       = "global"
+type        = "int"
+default     = 50
+min         = 5
+max         = 200
+label       = "En-têtes Received maximum"
+description = "Un message qui porte autant d'en-têtes de trace ne voyage plus, il tourne en boucle entre deux serveurs. Il est alors refusé définitivement, ce qui casse la boucle. C'est la limite de saut de Postfix."
+category    = "Réception du courrier (MX)"
+group       = "services"
+advanced    = true
+depends_on  = "smtp_server_enabled"
+
+[[settings]]
+key         = "smtp_max_errors"
+scope       = "global"
+type        = "int"
+default     = 10
+min         = 1
+max         = 1000
+label       = "Erreurs de protocole tolérées"
+description = "Nombre de réponses négatives dans une même session avant fermeture. Borne l'énumération d'adresses et le test de mots de passe : un client qui n'accumule que des refus n'est pas un client de messagerie."
+category    = "Réception du courrier (MX)"
+group       = "services"
+advanced    = true
+
+[[settings]]
+key         = "trusted_upstreams"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Relais entrants de confiance"
+description = "Liste de réseaux CIDR (un par ligne) dont les connexions entrantes sont des relais internes — un Postfix en amont qui reçoit le courrier public et le réachemine vers cette instance. Pour ces réseaux, l'adresse IP réelle de l'expéditeur n'est pas celle de la connexion mais celle inscrite dans l'en-tête Received ajouté par le relais : c'est sur cette IP réelle que SPF et DMARC sont évalués. Ces relais sont par ailleurs exemptés du greylisting, des listes de blocage d'enveloppe et des limites de connexion par IP. N'y mettez QUE des relais que vous contrôlez : une entrée trop large ferait confiance à des tiers."
+category    = "Réception du courrier (MX)"
+group       = "services"
+multiline   = true
+placeholder = "15.100.1.0/24"
+advanced    = true
+risk        = "warning"
+
+# ── 3. Envoi depuis les clients (soumission) ──────────────────────────────────
+
+[[settings]]
+key         = "submission_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer la soumission (587)"
+description = "Port par lequel les clients de messagerie de vos utilisateurs envoient leur courrier. L'authentification y est toujours obligatoire, et elle n'est acceptée qu'une fois le canal chiffré."
+category    = "Envoi depuis les clients"
+group       = "services"
+
+[[settings]]
+key         = "submission_port"
+scope       = "global"
+type        = "int"
+default     = 587
+min         = 1
+max         = 65535
+label       = "Port de soumission"
+description = "587 est le port standard (RFC 6409). Sous 1024, il exige CAP_NET_BIND_SERVICE."
+category    = "Envoi depuis les clients"
+group       = "services"
+depends_on  = "submission_enabled"
+
+[[settings]]
+key         = "smtps_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer SMTPS (465, TLS implicite)"
+description = "Soumission chiffrée dès le premier octet, sans négociation STARTTLS. Recommandé par la RFC 8314 et attendu par défaut par la plupart des clients modernes. Nécessite un certificat."
+category    = "Envoi depuis les clients"
+group       = "services"
+
+[[settings]]
+key         = "smtps_port"
+scope       = "global"
+type        = "int"
+default     = 465
+min         = 1
+max         = 65535
+label       = "Port SMTPS"
+description = "465 est le port standard du TLS implicite pour la soumission."
+category    = "Envoi depuis les clients"
+group       = "services"
+depends_on  = "smtps_enabled"
+
+# ── 4. Accès IMAP ─────────────────────────────────────────────────────────────
+
+[[settings]]
+key         = "imap_server_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer IMAP (STARTTLS)"
+description = "Permet aux clients de messagerie de lire les boîtes hébergées, avec synchronisation temps réel (IDLE), déplacement atomique (MOVE) et reprise de session (QRESYNC)."
+category    = "Accès IMAP"
+group       = "services"
+
+[[settings]]
+key         = "imap_server_port"
+scope       = "global"
+type        = "int"
+default     = 1143
+min         = 1
+max         = 65535
+label       = "Port IMAP"
+description = "143 est le port standard ; sous 1024 il exige CAP_NET_BIND_SERVICE."
+category    = "Accès IMAP"
+group       = "services"
+depends_on  = "imap_server_enabled"
+
+[[settings]]
+key         = "imaps_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer IMAPS (993, TLS implicite)"
+description = "IMAP chiffré dès la connexion. C'est ce que cherchent en premier les assistants de configuration automatique des clients. Nécessite un certificat."
+category    = "Accès IMAP"
+group       = "services"
+
+[[settings]]
+key         = "imaps_port"
+scope       = "global"
+type        = "int"
+default     = 993
+min         = 1
+max         = 65535
+label       = "Port IMAPS"
+description = "993 est le port standard d'IMAP sur TLS implicite."
+category    = "Accès IMAP"
+group       = "services"
+depends_on  = "imaps_enabled"
+
+[[settings]]
+key         = "imap_idle_timeout_min"
+scope       = "global"
+type        = "int"
+default     = 30
+min         = 5
+max         = 1440
+unit        = "min"
+label       = "Inactivité avant fermeture"
+description = "Durée pendant laquelle une session IMAP sans commande est conservée. La RFC 3501 demande au moins 30 minutes : en dessous, les clients rouvrent une connexion en permanence, ce qui coûte plus cher que de la garder. Ne concerne pas la commande IDLE, bornée séparément à 29 minutes par la RFC 2177."
+category    = "Accès IMAP"
+group       = "services"
+advanced    = true
+
+# ── 5. Accès POP3 ─────────────────────────────────────────────────────────────
+
+[[settings]]
+key         = "pop3_server_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer POP3 (STLS)"
+description = "Relève du courrier par POP3, pour les clients qui ne parlent pas IMAP. POP3 ne synchronise rien : il télécharge. Ne l'activez que si un usage l'impose."
+category    = "Accès POP3"
+group       = "services"
+
+[[settings]]
+key         = "pop3_server_port"
+scope       = "global"
+type        = "int"
+default     = 1110
+min         = 1
+max         = 65535
+label       = "Port POP3"
+description = "110 est le port standard ; sous 1024 il exige CAP_NET_BIND_SERVICE."
+category    = "Accès POP3"
+group       = "services"
+depends_on  = "pop3_server_enabled"
+
+[[settings]]
+key         = "pop3s_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer POP3S (995, TLS implicite)"
+description = "POP3 chiffré dès la connexion. Nécessite un certificat."
+category    = "Accès POP3"
+group       = "services"
+
+[[settings]]
+key         = "pop3s_port"
+scope       = "global"
+type        = "int"
+default     = 995
+min         = 1
+max         = 65535
+label       = "Port POP3S"
+description = "995 est le port standard de POP3 sur TLS implicite."
+category    = "Accès POP3"
+group       = "services"
+depends_on  = "pop3s_enabled"
+
+# ── 6. Chiffrement TLS ────────────────────────────────────────────────────────
+
+[[settings]]
+key         = "tls_cert_path"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Certificat TLS (PEM)"
+description = "Chaîne de certificats servie sur STARTTLS et sur les ports chiffrés. Vide = aucun TLS : les ports 465/993/995 ne démarrent pas et STARTTLS n'est pas annoncé. Le nom du certificat doit couvrir le nom d'hôte annoncé plus haut."
+category    = "Chiffrement TLS"
+group       = "transport"
+placeholder = "/etc/letsencrypt/live/mail.example.com/fullchain.pem"
+
+[[settings]]
+key         = "tls_key_path"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Clé privée TLS (PEM)"
+description = "Clé PKCS#8 ou RSA non chiffrée correspondante. Une clé illisible désactive TLS silencieusement — à vérifier après chaque renouvellement automatique."
+category    = "Chiffrement TLS"
+group       = "transport"
+placeholder = "/etc/letsencrypt/live/mail.example.com/privkey.pem"
+
+[[settings]]
+key         = "tls_min_version"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "tls1.2", label = "TLS 1.2 — compatible avec tous les serveurs" },
+    { value = "tls1.3", label = "TLS 1.3 uniquement — plus sûr, incompatible avec les MTA anciens" },
+]
+default     = "tls1.2"
+label       = "Version TLS minimale"
+description = "TLS 1.3 ferme les faiblesses résiduelles de 1.2, mais un serveur distant qui ne parle que 1.2 ne pourra plus négocier et retombera en clair sur le port de réception : c'est alors une perte nette de chiffrement. N'exigez 1.3 que si vous n'ouvrez pas de port 25."
+category    = "Chiffrement TLS"
+group       = "transport"
+advanced    = true
+risk        = "warning"
+
+# ── 7. Authentification des messages entrants ─────────────────────────────────
+
+[[settings]]
+key         = "spf_fail_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "ignore",     label = "Ne rien faire" },
+    { value = "mark",       label = "Marquer le message" },
+    { value = "quarantine", label = "Classer en indésirable" },
+    { value = "reject",     label = "Refuser le message" },
+]
+default     = "mark"
+label       = "SPF en échec"
+description = "Que faire d'un message dont l'adresse IP n'est pas autorisée par l'enregistrement SPF du domaine expéditeur. Rejeter est conforme, mais casse toute réexpédition (listes de diffusion, alias) : mieux vaut marquer et laisser DMARC trancher."
+category    = "Authentification des messages entrants"
+group       = "authentication"
+
+[[settings]]
+key         = "spf_softfail_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "ignore", label = "Ne rien faire" },
+    { value = "mark",   label = "Marquer le message" },
+]
+default     = "mark"
+label       = "SPF en échec léger"
+description = "Un enregistrement en ~all déclare explicitement ne pas trancher. Rejeter dessus est une erreur de configuration classique — l'option n'est donc pas proposée."
+category    = "Authentification des messages entrants"
+group       = "authentication"
+advanced    = true
+
+[[settings]]
+key         = "dkim_fail_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "ignore",     label = "Ne rien faire" },
+    { value = "mark",       label = "Marquer le message" },
+    { value = "quarantine", label = "Classer en indésirable" },
+    { value = "reject",     label = "Refuser le message" },
+]
+default     = "ignore"
+label       = "DKIM en échec"
+description = "Une signature cassée vient le plus souvent d'un relais qui a modifié le corps du message, pas d'une fraude. Agir sur DKIM seul produit beaucoup de faux positifs ; la décision légitime appartient à DMARC, qui vérifie aussi l'alignement."
+category    = "Authentification des messages entrants"
+group       = "authentication"
+advanced    = true
+
+[[settings]]
+key         = "dmarc_honor_policy"
+scope       = "global"
+type        = "bool"
+default     = true
+label       = "Respecter la politique DMARC des expéditeurs"
+description = "Applique la politique que chaque domaine publie lui-même dans son enregistrement DMARC. Désactiver revient à laisser passer l'usurpation de vos propres domaines comme de ceux de vos correspondants : c'est la protection la plus utile de toute cette section."
+category    = "Authentification des messages entrants"
+group       = "authentication"
+risk        = "warning"
+
+[[settings]]
+key         = "dmarc_reject_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "mark",       label = "Marquer seulement — la politique de l'expéditeur est ignorée" },
+    { value = "quarantine", label = "Classer en indésirable — plus souple que ce qu'il demande" },
+    { value = "reject",     label = "Refuser — ce que l'expéditeur demande" },
+]
+default     = "reject"
+label       = "Quand l'expéditeur publie p=reject"
+description = "Le rejet a lieu à la commande DATA, avant que nous ayons accepté le message : le serveur d'en face produit lui-même l'avis de non-remise, et nous n'envoyons donc jamais de rebond vers une adresse de retour usurpée."
+category    = "Authentification des messages entrants"
+group       = "authentication"
+depends_on  = "dmarc_honor_policy"
+
+[[settings]]
+key         = "dmarc_quarantine_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "mark",       label = "Marquer seulement" },
+    { value = "quarantine", label = "Classer en indésirable — ce que l'expéditeur demande" },
+]
+default     = "quarantine"
+label       = "Quand l'expéditeur publie p=quarantine"
+description = "La mise en quarantaine dépose le message dans le dossier Indésirables du destinataire au lieu de sa boîte de réception."
+category    = "Authentification des messages entrants"
+group       = "authentication"
+depends_on  = "dmarc_honor_policy"
+advanced    = true
+
+# ── 8. Signature et envoi sortant ─────────────────────────────────────────────
+
+[[settings]]
+key         = "outbound_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer l'envoi sortant"
+description = "Autorise la file d'envoi à livrer vers des serveurs distants, avec réessais et avis de non-remise. À n'activer qu'après avoir publié SPF, DKIM et DMARC pour vos domaines et vérifié votre enregistrement PTR : sans cela, votre courrier partira en indésirable et votre adresse IP se fera lister."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+risk        = "warning"
+
+[[settings]]
+key         = "dkim_signing_enabled"
+scope       = "global"
+type        = "bool"
+default     = true
+label       = "Signer les messages sortants (DKIM)"
+description = "Signe chaque message avec la clé du domaine expéditeur. Sans signature, l'échec DMARC est garanti chez les grands fournisseurs, qui rejettent depuis 2024 le courrier de masse non authentifié."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+depends_on  = "outbound_enabled"
+
+[[settings]]
+key         = "dkim_require_signature"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Refuser d'envoyer un message non signé"
+description = "Si aucune clé n'existe pour le domaine expéditeur, la remise est différée au lieu de partir en clair. Évite qu'un domaine ajouté après coup émette pendant des semaines du courrier non authentifié — mais si vous oubliez de générer une clé, sa file se remplit sans partir."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+depends_on  = "outbound_enabled"
+advanced    = true
+risk        = "warning"
+
+[[settings]]
+key         = "outbound_tls_level"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "none",    label = "Aucun — jamais de chiffrement (à réserver à une destination cassée)" },
+    { value = "may",     label = "Opportuniste — chiffre si possible, certificat non vérifié" },
+    { value = "encrypt", label = "Obligatoire — différer plutôt que livrer en clair" },
+    { value = "verify",  label = "Vérifié — chaîne et nom d'hôte validés (le plus strict)" },
+]
+default     = "may"
+label       = "Niveau TLS à la livraison"
+description = "« Opportuniste » chiffre quand c'est possible sans vérifier le certificat : confidentiel face à une écoute passive, pas face à un attaquant actif. « Obligatoire » diffère plutôt que de livrer en clair. « Vérifié » valide en plus la chaîne et le nom d'hôte — le plus sûr, mais il diffère le courrier vers les nombreux serveurs qui présentent encore un certificat inadéquat."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+depends_on  = "outbound_enabled"
+risk        = "warning"
+
+[[settings]]
+key         = "outbound_lifetime_hours"
+scope       = "global"
+type        = "int"
+default     = 120
+min         = 1
+max         = 720
+unit        = "h"
+label       = "Durée de vie en file"
+description = "Combien de temps un message est réessayé avant d'être abandonné et de produire un avis de non-remise. Cinq jours est l'usage : cela laisse passer une panne de week-end chez le destinataire."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+depends_on  = "outbound_enabled"
+advanced    = true
+
+[[settings]]
+key         = "outbound_min_backoff_secs"
+scope       = "global"
+type        = "int"
+default     = 300
+min         = 60
+max         = 7200
+unit        = "s"
+label       = "Délai avant le premier réessai"
+description = "Il double ensuite à chaque tentative, jusqu'au plafond ci-dessous. Un délai trop court fait ressembler vos réessais à du harcèlement et peut vous faire lister."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+depends_on  = "outbound_enabled"
+advanced    = true
+
+[[settings]]
+key         = "outbound_max_backoff_hours"
+scope       = "global"
+type        = "int"
+default     = 4
+min         = 1
+max         = 24
+unit        = "h"
+label       = "Intervalle maximal entre deux réessais"
+description = "Plafond de la progression exponentielle. Au-delà de quelques heures, un incident résolu chez le destinataire met trop longtemps à être remarqué."
+category    = "Signature et envoi sortant"
+group       = "authentication"
+depends_on  = "outbound_enabled"
+advanced    = true
+
+# ── 9. Filtrage et anti-abus ──────────────────────────────────────────────────
+
+[[settings]]
+key         = "greylisting_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer le greylisting"
+description = "Refuse temporairement le tout premier message d'un triplet expéditeur/destinataire/adresse IP inconnu ; un vrai serveur réessaie et passe, un robot sans file d'attente abandonne. Très efficace pour un coût faible, mais il retarde tout premier échange — ce qui casse les codes de connexion à usage unique. Les sessions authentifiées et les expéditeurs autorisés en sont exemptés."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+risk        = "warning"
+
+[[settings]]
+key         = "greylist_delay_secs"
+scope       = "global"
+type        = "int"
+default     = 300
+min         = 30
+max         = 3600
+unit        = "s"
+label       = "Délai avant acceptation"
+description = "Durée pendant laquelle une nouvelle tentative du même triplet est encore refusée. Sous 60 secondes, les robots modernes repassent ; au-delà de 15 minutes, l'attente devient inacceptable pour l'utilisateur."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+depends_on  = "greylisting_enabled"
+
+[[settings]]
+key         = "greylist_window_hours"
+scope       = "global"
+type        = "int"
+default     = 4
+min         = 1
+max         = 168
+unit        = "h"
+label       = "Fenêtre de réessai"
+description = "Durée de validité d'un triplet en attente. Trop courte, un serveur dont les réessais sont espacés recommence à zéro indéfiniment et le message n'arrive jamais."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+depends_on  = "greylisting_enabled"
+advanced    = true
+
+[[settings]]
+key         = "allowlist_senders"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Expéditeurs toujours acceptés"
+description = "Une adresse ou un @domaine par ligne. Court-circuite le greylisting et les listes de blocage — mais jamais DMARC : autoriser un domaine en aveugle en ferait un canal d'hameçonnage parfait."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+multiline   = true
+placeholder = "partenaire@example.com\n@banque.example"
+risk        = "warning"
+
+[[settings]]
+key         = "blocklist_senders"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Expéditeurs bloqués"
+description = "Une adresse par ligne, refusée à la commande MAIL FROM pour toute l'instance — les blocages des utilisateurs restent, eux, propres à chaque boîte. L'adresse d'enveloppe étant trivialement usurpable, cela n'arrête que les nuisances peu sophistiquées."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+multiline   = true
+
+[[settings]]
+key         = "blocklist_domains"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Domaines bloqués"
+description = "Un domaine par ligne. Bloquer un domaine grand public coupe du courrier légitime en masse : à réserver aux domaines dont rien de légitime ne vient."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+multiline   = true
+risk        = "warning"
+
+[[settings]]
+key         = "spam_subject_prefix"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Préfixe de sujet des indésirables"
+description = "Ajouté au sujet d'un message classé indésirable. Modifier le sujet invalide la signature DKIM du message : à n'utiliser que si vous ne réexpédiez pas."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+placeholder = "[Indésirable]"
+advanced    = true
+
+# ── 10. Limites de connexion ──────────────────────────────────────────────────
+
+[[settings]]
+key         = "server_max_conn_per_ip"
+scope       = "global"
+type        = "int"
+default     = 10
+min         = 1
+max         = 10000
+label       = "Connexions simultanées par adresse IP"
+description = "Tous protocoles confondus, contre l'épuisement de ressources. Dix est la valeur de Dovecot. Attention si vos utilisateurs sortent tous derrière une même adresse IP : un client de messagerie ouvre facilement quatre connexions IMAP à lui seul."
+category    = "Limites de connexion"
+group       = "transport"
+
+[[settings]]
+key         = "auth_penalty_enabled"
+scope       = "global"
+type        = "bool"
+default     = true
+label       = "Ralentir les échecs d'authentification"
+description = "Chaque échec successif depuis une même adresse IP est retardé un peu plus (2, 4, 8 puis 15 secondes), comme le fait Dovecot. Désactiver rend le test de mots de passe aussi rapide que le réseau le permet."
+category    = "Limites de connexion"
+group       = "transport"
+risk        = "danger"
+
+# ── 7. OpenPGP (bout en bout) ─────────────────────────────────────────────────
+[[settings]]
+key         = "gpg_enabled"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Activer le chiffrement OpenPGP/GPG"
+description = "Autorise les utilisateurs de cette instance à gérer une paire de clés OpenPGP, puis à signer et chiffrer le contenu de leurs messages (et à vérifier/déchiffrer ceux qu'ils reçoivent). Les clés privées sont conservées chiffrées au repos sur l'instance. Désactivé, l'onglet « Chiffrement » des réglages de messagerie disparaît et aucune opération PGP n'est possible."
+category    = "OpenPGP"
+group       = "openpgp"
+risk        = "info"

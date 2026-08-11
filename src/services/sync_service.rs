@@ -15,40 +15,91 @@ use crate::{
 };
 
 pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCrypto, mail_cfg: &MailSettings) -> Result<()> {
-    let (imap_pass_enc, imap_nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
-        "SELECT imap_password, imap_password_nonce FROM mail.accounts WHERE id = $1"
-    )
-    .bind(account.id)
-    .fetch_one(db)
-    .await?;
+    // A local account has no external server to poll: the instance itself
+    // delivers into it. Attempting an IMAP connection to its empty host would
+    // only log errors in a loop. The worker's selection already excludes these;
+    // this guard makes a stray direct call (manual sync) a no-op too.
+    if account.kind == "local" {
+        return Ok(());
+    }
 
-    let imap_pass = crypto.decrypt(&imap_pass_enc, &imap_nonce)?;
+    // OAuth accounts (Gmail, Microsoft) authenticate with XOAUTH2 and an access
+    // token; password accounts keep the historical LOGIN path untouched.
+    let auth = if account.auth_kind.starts_with("oauth") {
+        let token = crate::services::oauth::valid_access_token(db, crypto, mail_cfg, account.id).await?;
+        imap_service::ImapAuth::Xoauth2(token)
+    } else {
+        let (imap_pass_enc, imap_nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+            "SELECT imap_password, imap_password_nonce FROM mail.accounts WHERE id = $1"
+        )
+        .bind(account.id)
+        .fetch_one(db)
+        .await?;
+
+        let imap_pass =
+            crate::services::app_password_normalize(&account.imap_host, &crypto.decrypt(&imap_pass_enc, &imap_nonce)?);
+        imap_service::ImapAuth::Password(imap_pass)
+    };
 
     let cfg = ImapConfig {
         host:     account.imap_host.clone(),
         port:     account.imap_port as u16,
         security: account.imap_security.clone(),
         username: account.imap_username.clone(),
-        password: imap_pass,
+        auth,
     };
 
     let mut session = imap_service::connect(&cfg)
         .await
         .map_err(|e| anyhow::anyhow!("IMAP connect: {e}"))?;
 
-    for (folder, folder_name) in &[
-        ("INBOX", "inbox"),
-        ("Sent",  "sent"),
-        ("Spam",  "spam"),
-        ("Trash", "trash"),
-    ] {
-        if let Err(e) = sync_folder(db, account, &mut session, folder, folder_name, mail_cfg).await {
+    // Every mailbox the account owns — the five well-known ones AND the user's
+    // own folders — instead of the four hard-coded names we used to sync.
+    let mailboxes = match imap_service::list_mailboxes(&mut session).await {
+        Ok(m) if !m.is_empty() => m,
+        Ok(_) => fallback_mailboxes(),
+        Err(e) => {
+            tracing::warn!(account_id = %account.id, error = %e, "LIST dossiers échoué — repli sur les dossiers standard");
+            fallback_mailboxes()
+        }
+    };
+
+    // The inbox first, then the other well-known folders, then the user's own:
+    // when the time budget runs out mid-run, what matters most is already in.
+    let mut ordered = mailboxes;
+    ordered.sort_by_key(|m| match m.kind {
+        "inbox"  => 0,
+        "sent"   => 1,
+        "drafts" => 2,
+        "custom" => 3,
+        "archive" => 4,
+        "spam"   => 5,
+        _        => 6,
+    });
+
+    let started  = std::time::Instant::now();
+    let deadline = std::time::Duration::from_secs(mail_cfg.sync_deadline_secs.max(30));
+
+    for mb in &ordered {
+        if started.elapsed() >= deadline {
+            tracing::info!(account_id = %account.id, "Budget de synchronisation atteint — la suite au prochain passage");
+            break;
+        }
+        if let Err(e) = sync_folder(db, account, &mut session, mb, mail_cfg, started, deadline).await {
             tracing::warn!(
                 account_id = %account.id,
-                folder,
+                folder = %mb.name,
                 error = %e,
                 "Sync dossier échoué"
             );
+            let _ = sqlx::query(
+                "UPDATE mail.folder_sync SET last_error = $1 WHERE account_id = $2 AND imap_folder = $3",
+            )
+            .bind(e.to_string())
+            .bind(account.id)
+            .bind(&mb.name)
+            .execute(db)
+            .await;
         }
     }
 
@@ -63,37 +114,223 @@ pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCryp
     Ok(())
 }
 
+/// Servers that refuse LIST still get the classic five folders.
+fn fallback_mailboxes() -> Vec<imap_service::MailboxInfo> {
+    ["INBOX", "Sent", "Drafts", "Spam", "Trash"]
+        .iter()
+        .map(|n| imap_service::MailboxInfo {
+            name: n.to_string(),
+            kind: match *n {
+                "INBOX" => "inbox",
+                "Sent"  => "sent",
+                "Drafts" => "drafts",
+                "Spam"  => "spam",
+                _       => "trash",
+            },
+        })
+        .collect()
+}
+
+/// Synchronises one mailbox, in full.
+///
+/// Two passes over `mail.folder_sync`'s cursors: forward from `uid_high` for
+/// what arrived since last time, then backwards from `uid_low` to bring down
+/// the history. Both walk in batches of `max_fetch_per_sync`, newest batch
+/// first, and every batch commits its own cursor — so a run cut short by the
+/// time budget loses nothing and the next one picks up exactly where it
+/// stopped. Repeated runs converge on the whole mailbox being stored, without
+/// any single run holding more than one batch in memory.
 async fn sync_folder(
     db: &PgPool,
     account: &EmailAccount,
     session: &mut imap_service::ImapSession,
-    imap_folder: &str,
-    folder_name: &str,
+    mailbox: &imap_service::MailboxInfo,
     mail_cfg: &MailSettings,
+    started: std::time::Instant,
+    deadline: std::time::Duration,
 ) -> Result<()> {
-    let last_uid: Option<i64> = sqlx::query_scalar(
-        "SELECT MAX(imap_uid) FROM mail.messages WHERE account_id = $1 AND imap_folder = $2"
-    )
-    .bind(account.id)
-    .bind(imap_folder)
-    .fetch_one(db)
-    .await
-    .unwrap_or(None);
+    let imap_folder = mailbox.name.as_str();
+    let folder_name = mailbox.kind;
+    let batch = mail_cfg.max_fetch_per_sync.max(1) as usize;
 
-    let since_uid = last_uid.map(|u| u as u32);
-    // Honour the configured cap (`mail.max_fetch_per_sync`) instead of a hard-coded 100.
-    let max_fetch = mail_cfg.max_fetch_per_sync.max(1);
-    let raw_messages = imap_service::fetch_recent(session, imap_folder, max_fetch, since_uid).await?;
+    let exists = imap_service::select_folder(session, imap_folder).await?;
 
-    for raw in raw_messages {
-        if let Err(e) = store_message(db, account, &raw.body, raw.uid, imap_folder, folder_name, &mail_cfg.attachments_dir).await {
-            tracing::warn!(uid = raw.uid, folder = imap_folder, error = %e, "Stockage message échoué");
+    // Self-heal: a mailbox first taken for a user folder (server silent on
+    // special-use, or its name only readable once decoded) and now recognised
+    // as a system one moves its messages over. Only rows still marked 'custom'
+    // are touched — a message the classifier or a filter moved elsewhere keeps
+    // where it was put.
+    if folder_name != "custom" {
+        match sqlx::query(
+            "UPDATE mail.messages SET folder = $3 \
+             WHERE account_id = $1 AND imap_folder = $2 AND folder = 'custom'",
+        )
+        .bind(account.id)
+        .bind(imap_folder)
+        .bind(folder_name)
+        .execute(db)
+        .await
+        {
+            Ok(r) if r.rows_affected() > 0 => tracing::info!(
+                folder = imap_folder, kind = folder_name, moved = r.rows_affected(),
+                "Dossier reclassé"
+            ),
+            Ok(_)  => {}
+            Err(e) => tracing::error!(error = %e, folder = imap_folder, "Reclassement du dossier échoué"),
         }
     }
 
+    let state: Option<(Option<i64>, Option<i64>, bool)> = sqlx::query_as(
+        "SELECT uid_low, uid_high, backfill_done FROM mail.folder_sync \
+         WHERE account_id = $1 AND imap_folder = $2",
+    )
+    .bind(account.id)
+    .bind(imap_folder)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, folder = imap_folder, "Lecture état de synchronisation");
+        e
+    })?;
+
+    let (mut uid_low, mut uid_high, mut backfill_done) = state.unwrap_or((None, None, false));
+
+    if exists == 0 {
+        save_folder_state(db, account.id, imap_folder, folder_name, uid_low, uid_high, true, 0).await;
+        return Ok(());
+    }
+
+    let mut stored = 0usize;
+
+    // ── Forward: everything newer than the highest UID we already hold ────────
+    let forward_range = match uid_high {
+        Some(h) => format!("{}:*", h + 1),
+        None    => "1:*".to_string(),
+    };
+    let mut fresh = imap_service::uid_list(session, &forward_range).await?;
+    fresh.retain(|u| uid_high.is_none_or(|h| *u as i64 > h));
+
+    for chunk in fresh.rchunks(batch) {
+        stored += store_batch(db, account, session, chunk, imap_folder, folder_name, mail_cfg).await;
+        uid_high = Some(uid_high.unwrap_or(0).max(chunk.iter().copied().max().unwrap_or(0) as i64));
+        if uid_low.is_none() {
+            uid_low = chunk.iter().copied().min().map(|u| u as i64);
+        }
+        save_folder_state(db, account.id, imap_folder, folder_name, uid_low, uid_high, backfill_done, stored).await;
+        if started.elapsed() >= deadline {
+            return Ok(());
+        }
+    }
+
+    // ── Backfill: walk down from the lowest UID we hold, batch by batch ───────
+    if !backfill_done {
+        let low = uid_low.unwrap_or(0);
+        if low <= 1 {
+            backfill_done = true;
+        } else {
+            let older = imap_service::uid_list(session, &format!("1:{}", low - 1)).await?;
+            if older.is_empty() {
+                backfill_done = true;
+            } else {
+                let mut exhausted = true;
+                for chunk in older.rchunks(batch) {
+                    stored += store_batch(db, account, session, chunk, imap_folder, folder_name, mail_cfg).await;
+                    uid_low = chunk.iter().copied().min().map(|u| u as i64).min(uid_low);
+                    save_folder_state(db, account.id, imap_folder, folder_name, uid_low, uid_high, false, stored).await;
+                    if started.elapsed() >= deadline {
+                        exhausted = false;
+                        break;
+                    }
+                }
+                backfill_done = exhausted;
+            }
+        }
+    }
+
+    save_folder_state(db, account.id, imap_folder, folder_name, uid_low, uid_high, backfill_done, stored).await;
+    if stored > 0 {
+        tracing::info!(
+            account_id = %account.id, folder = imap_folder, stored, backfill_done,
+            "Dossier synchronisé"
+        );
+    }
     Ok(())
 }
 
+/// Fetches one batch of UIDs and stores each message. Returns how many were
+/// handled; a single bad message never aborts the batch.
+async fn store_batch(
+    db: &PgPool,
+    account: &EmailAccount,
+    session: &mut imap_service::ImapSession,
+    uids: &[u32],
+    imap_folder: &str,
+    folder_name: &str,
+    mail_cfg: &MailSettings,
+) -> usize {
+    let raws = match imap_service::fetch_uids(session, uids).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(folder = imap_folder, error = %e, "FETCH lot échoué");
+            return 0;
+        }
+    };
+    let mut n = 0;
+    for raw in raws {
+        match store_message(
+            db, account, &raw.body, raw.uid, imap_folder, folder_name,
+            raw.seen, raw.flagged, &mail_cfg.attachments_dir,
+        )
+        .await
+        {
+            Ok(()) => n += 1,
+            Err(e) => tracing::warn!(uid = raw.uid, folder = imap_folder, error = %e, "Stockage message échoué"),
+        }
+    }
+    n
+}
+
+/// Persists the folder cursors. Called after every batch: the cursor must
+/// survive a run that is cut short.
+#[allow(clippy::too_many_arguments)]
+async fn save_folder_state(
+    db: &PgPool,
+    account_id: Uuid,
+    imap_folder: &str,
+    folder: &str,
+    uid_low: Option<i64>,
+    uid_high: Option<i64>,
+    backfill_done: bool,
+    stored: usize,
+) {
+    if let Err(e) = sqlx::query(
+        r#"INSERT INTO mail.folder_sync
+             (account_id, imap_folder, folder, uid_low, uid_high, backfill_done, messages_synced, last_error, last_sync_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,NOW())
+           ON CONFLICT (account_id, imap_folder) DO UPDATE SET
+             folder          = EXCLUDED.folder,
+             uid_low         = LEAST(COALESCE(mail.folder_sync.uid_low, EXCLUDED.uid_low), EXCLUDED.uid_low),
+             uid_high        = GREATEST(COALESCE(mail.folder_sync.uid_high, EXCLUDED.uid_high), EXCLUDED.uid_high),
+             backfill_done   = EXCLUDED.backfill_done,
+             messages_synced = mail.folder_sync.messages_synced + EXCLUDED.messages_synced,
+             last_error      = NULL,
+             last_sync_at    = NOW()"#,
+    )
+    .bind(account_id)
+    .bind(imap_folder)
+    .bind(folder)
+    .bind(uid_low)
+    .bind(uid_high)
+    .bind(backfill_done)
+    .bind(stored as i32)
+    .execute(db)
+    .await
+    {
+        tracing::error!(error = %e, folder = imap_folder, "Écriture état de synchronisation échouée");
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // one message = envelope + flags + placement
 async fn store_message(
     db: &PgPool,
     account: &EmailAccount,
@@ -101,6 +338,8 @@ async fn store_message(
     uid: u32,
     imap_folder: &str,
     folder_name: &str,
+    seen: bool,
+    flagged: bool,
     attachments_dir: &str,
 ) -> Result<()> {
     let exists: bool = sqlx::query_scalar(
@@ -154,12 +393,63 @@ async fn store_message(
         _                           => None,
     };
 
-    // En-tête List-Unsubscribe (RFC 2369) → permet la gestion des abonnements.
-    let list_unsubscribe = match parsed.header("List-Unsubscribe") {
-        Some(HeaderValue::Text(t))     => Some(t.to_string()),
-        Some(HeaderValue::TextList(l)) => l.first().map(|s| s.to_string()),
-        _                              => None,
+    // Non-standard headers: look them up ourselves rather than through
+    // `header(name)`. Unknown names go down mail-parser's raw branch and the
+    // typed lookup came back empty, which is why List-Unsubscribe was never
+    // stored and the whole "unsubscribe" feature stayed inert.
+    let raw_header = |name: &str| -> Option<String> {
+        parsed
+            .headers()
+            .iter()
+            .find(|h| h.name().eq_ignore_ascii_case(name))
+            .and_then(|h| match &h.value {
+                HeaderValue::Text(t)     => Some(t.to_string()),
+                HeaderValue::TextList(l) => l.first().map(|s| s.to_string()),
+                HeaderValue::Address(a)  => a.first().and_then(|x| x.address()).map(str::to_string),
+                _                        => None,
+            })
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
     };
+
+    let list_unsubscribe = raw_header("List-Unsubscribe");
+
+    // Reply-To, when it differs from the From address.
+    let reply_to = parsed
+        .reply_to()
+        .and_then(|a| a.first())
+        .and_then(|a| a.address())
+        .map(str::to_string);
+
+    // "Mailed by": the envelope sender's domain — Return-Path first, then the
+    // domain SPF authenticated, and finally the From domain.
+    let domain_of = |addr: &str| addr.rsplit('@').next().map(|d| d.trim_end_matches('>').to_string());
+    let mailed_by = raw_header("Return-Path")
+        .and_then(|rp| domain_of(&rp))
+        .or_else(|| {
+            raw_header("Received-SPF").and_then(|spf| {
+                spf.split("domain of ")
+                    .nth(1)
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .and_then(|d| domain_of(d).or_else(|| Some(d.to_string())))
+            })
+        });
+
+    // "Signed by": the d= tag of the DKIM signature.
+    let signed_by = raw_header("DKIM-Signature").and_then(|dkim| {
+        dkim.split(';')
+            .map(str::trim)
+            .find_map(|tag| tag.strip_prefix("d=").map(|d| d.trim().to_string()))
+    });
+
+    // "Security": the last hop is encrypted when the topmost Received line was
+    // handed over through ESMTPS / a TLS version.
+    let security = raw_header("Received")
+        .filter(|r| {
+            let r = r.to_ascii_lowercase();
+            r.contains("esmtps") || r.contains("tls") || r.contains("using tlsv")
+        })
+        .map(|_| "tls".to_string());
 
     let subject = parsed.subject().unwrap_or("(sans sujet)").to_string();
 
@@ -183,39 +473,9 @@ async fn store_message(
 
     let body_text     = parsed.body_text(0).map(|s| s.into_owned());
     let body_html_raw = parsed.body_html(0).map(|s| s.into_owned());
-    let body_html = body_html_raw.as_deref().map(|h| {
-        ammonia::Builder::default()
-            // Préserver les blocs <style> et les balises structurelles
-            .rm_clean_content_tags(&["style"])
-            .add_tags(&["style", "head", "html", "body", "font", "center"])
-            // Attributs génériques présents sur presque tous les éléments HTML email
-            .add_generic_attributes(&[
-                "style", "class", "id", "dir", "lang",
-                "align", "valign",
-                "bgcolor", "background", "color",
-                "width", "height",
-                "role", "aria-label", "aria-hidden",
-            ])
-            // <a> : autoriser target et name (ancres). PAS `rel` : ammonia 4.x panique
-            // si `rel` est listé ici alors que `link_rel` (défaut: noopener noreferrer)
-            // l'ajoute déjà automatiquement aux liens.
-            .add_tag_attributes("a", &["target", "name"])
-            // <img> : attributs legacy HTML emails + lazy loading
-            .add_tag_attributes("img", &["border", "hspace", "vspace", "loading"])
-            // <font> : couleur, police, taille (emails anciens / Outlook)
-            .add_tag_attributes("font", &["color", "face", "size"])
-            // <table> : attributs courants HTML email
-            .add_tag_attributes("table", &["cellpadding", "cellspacing", "border", "bgcolor", "background", "summary"])
-            .add_tag_attributes("tr",    &["bgcolor", "valign", "height"])
-            .add_tag_attributes("td",    &["cellpadding", "cellspacing", "bgcolor", "background", "nowrap", "valign", "width", "height"])
-            .add_tag_attributes("th",    &["cellpadding", "cellspacing", "bgcolor", "background", "nowrap", "valign", "width", "height"])
-            // <body> : couleurs de fond legacy
-            .add_tag_attributes("body",  &["bgcolor", "background", "text", "link", "alink", "vlink"])
-            // Autoriser data: (images base64 inline) et cid: (pièces jointes inline MIME)
-            .add_url_schemes(&["data", "cid"])
-            .clean(h)
-            .to_string()
-    });
+    let body_html = body_html_raw
+        .as_deref()
+        .map(crate::services::html_sanitize::sanitize_email_html);
 
     let snippet = body_text
         .as_deref()
@@ -278,12 +538,23 @@ async fn store_message(
     let f_body    = body_text.clone();
     let f_to      = to_addresses.to_string();
 
+    // Inbox category, decided ONCE here and read back by every listing.
+    let category = crate::services::categorize::for_sender(&f_from);
+
+    // OpenPGP: an encrypted or signed message must be decrypted / verified AT READ
+    // TIME with the reader's key, but the store never keeps original MIME — so for
+    // PGP messages only we preserve the raw RFC 5322 bytes. NULL for ordinary mail.
+    let pgp_raw: Option<&[u8]> =
+        crate::services::pgp_mime::looks_like_pgp(raw).then_some(raw);
+
     let inserted = sqlx::query(
         r#"INSERT INTO mail.messages
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
             from_name, from_email, to_addresses, cc_addresses, attachments,
-            subject, body_text, body_html, is_read, folder, sent_at, list_unsubscribe, received_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())
+            subject, body_text, body_html, is_read, folder, sent_at, list_unsubscribe,
+            reply_to, mailed_by, signed_by, security, category, is_starred, received_at, pgp_raw)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+                   $21,$22,$23,$24,$25,$26,COALESCE($19, NOW()),$27)
            ON CONFLICT (account_id, imap_folder, imap_uid) DO NOTHING"#,
     )
     .bind(msg_id)
@@ -302,10 +573,19 @@ async fn store_message(
     .bind(&subject)
     .bind(body_text)
     .bind(body_html)
-    .bind(false)
+    // Read state comes from the server's \Seen flag: backfilling a mailbox must
+    // not resurrect years of mail as unread.
+    .bind(seen)
     .bind(folder_name)
     .bind(sent_at)
     .bind(list_unsubscribe)
+    .bind(reply_to)
+    .bind(mailed_by)
+    .bind(signed_by)
+    .bind(security)
+    .bind(category)
+    .bind(flagged)
+    .bind(pgp_raw)
     .execute(db)
     .await?;
 
@@ -350,6 +630,25 @@ async fn store_message(
                               &f_from, f_name.as_deref(), &f_subject, f_body.as_deref(), &f_to).await;
     }
 
+    // Autocrypt (Level 1): a message advertises the sender's public key in an
+    // `Autocrypt:` header. Learn it passively (source='autocrypt') so we can
+    // encrypt back later — only on a genuinely new message.
+    if inserted.rows_affected() > 0 {
+        let autocrypt_headers: Vec<String> = parsed
+            .headers()
+            .iter()
+            .filter(|h| h.name().eq_ignore_ascii_case("Autocrypt"))
+            .filter_map(|h| match &h.value {
+                HeaderValue::Text(t) => Some(t.to_string()),
+                HeaderValue::TextList(l) => l.first().map(|s| s.to_string()),
+                _ => None,
+            })
+            .collect();
+        if !autocrypt_headers.is_empty() {
+            process_autocrypt(db, account.user_id, &f_from, autocrypt_headers).await;
+        }
+    }
+
     // Classifieur bayésien anti-spam.
     if inserted.rows_affected() > 0 {
         if folder_name == "spam" {
@@ -392,24 +691,84 @@ async fn store_message(
         }
     }
 
+    // Thread roll-up. Counts are RECOMPUTED rather than incremented: backfill
+    // stores messages out of order and a filter may already have marked one
+    // read, so a running total would drift. The sender, snippet and date only
+    // move when this message really is the newest of the thread — otherwise
+    // downloading a 2019 message would relabel the conversation with it.
+    let msg_at = sent_at.unwrap_or_else(Utc::now);
     sqlx::query(
-        "UPDATE mail.threads
-         SET message_count     = message_count + 1,
-             unread_count      = unread_count + 1,
-             snippet           = COALESCE($2, snippet),
-             last_sender_name  = $3,
-             last_sender_email = $4,
-             last_message_at   = GREATEST(last_message_at, NOW())
-         WHERE id = $1",
+        "UPDATE mail.threads t
+         SET message_count     = (SELECT COUNT(*) FROM mail.messages m
+                                  WHERE m.thread_id = t.id AND m.is_deleted = FALSE),
+             unread_count      = (SELECT COUNT(*) FROM mail.messages m
+                                  WHERE m.thread_id = t.id AND m.is_deleted = FALSE AND m.is_read = FALSE),
+             has_attachments   = t.has_attachments OR $5,
+             snippet           = CASE WHEN $6 >= t.last_message_at THEN COALESCE($2, t.snippet) ELSE t.snippet END,
+             last_sender_name  = CASE WHEN $6 >= t.last_message_at THEN $3 ELSE t.last_sender_name END,
+             last_sender_email = CASE WHEN $6 >= t.last_message_at THEN $4 ELSE t.last_sender_email END,
+             -- Category follows the newest message, unless the user pinned the
+             -- thread to a tab by dropping it there.
+             category          = CASE WHEN t.category_pinned THEN t.category
+                                      WHEN $6 >= t.last_message_at THEN $7
+                                      ELSE COALESCE(t.category, $7) END,
+             last_message_at   = GREATEST(t.last_message_at, $6)
+         WHERE t.id = $1",
     )
     .bind(thread_id)
     .bind(snippet)
     .bind(from_name_clone)
     .bind(from_email_clone)
+    .bind(has_attachments)
+    .bind(msg_at)
+    .bind(category)
     .execute(db)
     .await?;
 
     Ok(())
+}
+
+/// Learn the sender's OpenPGP key from an `Autocrypt:` header (Level 1) and store
+/// it as a correspondent key (source='autocrypt'). Never overwrites a manually
+/// imported or WKD-fetched key — those are higher trust. Per the spec, a message
+/// carrying more than one Autocrypt header, or whose `addr` does not match the
+/// From address, is ignored.
+///
+/// Recency limitation: without a per-contact Autocrypt timestamp column, an
+/// out-of-order backfill could refresh an autocrypt-sourced key with an older
+/// message's key. The source gate confines this to keys we already learned
+/// passively; user/WKD keys are unaffected.
+async fn process_autocrypt(db: &PgPool, user_id: Uuid, from_email: &str, headers: Vec<String>) {
+    // Exactly one Autocrypt header is honoured; zero or several ⇒ ignore.
+    let [value] = headers.as_slice() else { return };
+    let Some(header) = crate::services::autocrypt::parse(value) else { return };
+    // The advertised address must be the message's From (Autocrypt §2.1).
+    if !header.addr.eq_ignore_ascii_case(from_email) {
+        return;
+    }
+    let Ok((armored, fingerprint, _emails)) =
+        crate::services::pgp::import_public_bytes(&header.keydata)
+    else {
+        return;
+    };
+    let res = sqlx::query(
+        r#"INSERT INTO mail.pgp_contacts (user_id, email, fingerprint, public_key, source)
+           VALUES ($1, $2, $3, $4, 'autocrypt')
+           ON CONFLICT (user_id, lower(email))
+           DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
+                         public_key  = EXCLUDED.public_key,
+                         source      = 'autocrypt'
+           WHERE mail.pgp_contacts.source IN ('autocrypt', 'attached')"#,
+    )
+    .bind(user_id)
+    .bind(header.addr.to_lowercase())
+    .bind(&fingerprint)
+    .bind(&armored)
+    .execute(db)
+    .await;
+    if let Err(e) = res {
+        tracing::warn!(error = %e, "Stockage clé Autocrypt échoué");
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // threading needs the full envelope context

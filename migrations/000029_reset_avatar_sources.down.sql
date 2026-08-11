@@ -1,0 +1,1 @@
+-- Nothing to undo: the table is a cache, refilled on demand.

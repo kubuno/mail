@@ -1,0 +1,57 @@
+/**
+ * Row marker artwork (40x40 PNG @2x), embedded as data URIs: the priority mark,
+ * the follow star and the selection box, each in two states.
+ *
+ * Inlined rather than shipped as files: the module build emits only
+ * entry.js/entry.css, so a separate asset would not be packaged — and an inline
+ * copy keeps the icon working without any request to an external host.
+ */
+export const PRIORITY_MARK_OUTLINE = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAABFklEQVR4AWIYBaMA0F4d3CAMw1AAXYERGKUi8beP3QBG6AZ0' +
+  'A9iAbtAROgIjdISOAPKJFjig6JtTvuQLhy8nT6E1NTXfkxRjVjyYI4o5GY6UBZum2WXI4sXkWcxsz7lFpNZL+SNTJPWlSMRs' +
+  'v+3RLo7aclPSlYE+jJpB5IdNijmMmkHktx9KzSBKwPAnaoyEw/KpGQ/moLlb9wBoQ6hFMftvJV1+c2tq74mhBnrOfyNGyoIi' +
+  'ctoyly1obwsm1VtJz0eps75KMZd2Zch93eM3SuDNw+bUhiNDwXvotE5CUODSMkhcIYSW8YlKQBtGy3gY4bQ+pSQZOMe/WpVr' +
+  '6UHDaPkjE5WWOpCFSMtf7mBy+n2Lmpqampon+o4V/gWrYIUAAAAASUVORK5CYII='
+
+export const PRIORITY_MARK_FILLED = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAArklEQVR4Ae3WsQ3CMBQE0GtgBlgEwRBsgRgJiRVo/YPoUTq2' +
+  'QGlo8TfpjDxD/KUr7klp45Pssz9iiYiIfA3XbKgLv48nHBGh3rB2w9gh5K8k7BDBH9hmw9Qh5DsP2CBCSThkw7w0pBue9YUV' +
+  'Irjh3BbpEPLCXprqA07spZnLHXv20kztX+ylGduuUJemnWv+gPxbzF8S/muG/6Lmf+r4hwX+cYt/YGUa+eOJiIj8Afwc7/hh' +
+  'YTWMAAAAAElFTkSuQmCC'
+
+export const FOLLOW_STAR_OUTLINE = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAB7UlEQVR4Ae1Wi03DMBBlBEZghI5g1ffTl27QbEA3oBvABKQb' +
+  'lA06QkboCNkA0JNk6p4qkhASGSknnZSPfT77vXvnu8UWW2yxi5FZIKNQbIJR6BCV6yKTM7MHUvkklTaEcF8evCovSBBOIvvi' +
+  'EmSVM5JLp1hWcswVEstdVR/LgVe48QmS8qkcackTE27TMySnCGlJCUXVOiq/Xt65LkJakge8GwU8zy45WJyZVyKyYbOKlZ/A' +
+  's1ucu/4uR4zFPNABMUYlTSLPgAaLQDoSp7o8mmxTDHeK3j1fG6yFjZDqrjNB7C5iMAL09Khy9nH6bixHYNDJksn+9o75hBNG' +
+  'MaBjsHEVmFd+Pr7hH8ZgLDaNudiMj4v/bvrvkgTkgG+UJLmTxRojZSRufFBwZXAcFJVDI4ps/qyCPTQopiGF5znraDFJkvBj' +
+  'F7FZtXZzGsQal03/Cm8H3XJMDogx583lvQe8360Qc2ftvb5Y0PrMwbdW2uW9et6rlVFI0KMQUJm+gMC3XKbmvBy0SdtynuXJ' +
+  'iMjWd5VJOQhNzKUiXQo6/IhTn4WHaEk/N37drY0rL0e+rc3CP78ooLvSzKx6nTeTaeCtGwgKpa+4T8pDFIOHs+9cDzs2NRn/' +
+  'PJxd5mBH2/uYhIe4143YuYNd3+4WW+yf2BfK3SI5uCgSUAAAAABJRU5ErkJggg=='
+
+export const FOLLOW_STAR_FILLED = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAB1UlEQVR4Ae2XNbgVMRSEB3d3p6TDtcEdOtzdraLEpUYb3KV7' +
+  'JHlSUeKUeIe77ObiLGdweZ6bfbb/983VZM6sRZCQkJDwm5RB75RCL5RWQo2jFEojNhutJNz7bzJoidJGoLFewkWUNViL0kR0' +
+  'GtUl2COG+6GH/A2lhdBgOoP9JYWppenhuPRPQOo8SgNvNPoxUG4qFUOOBDmRV8ASH3JSCm0kxId8AsY35LzNQker0E2KDhHN' +
+  'DBVWy7tmkPwUaGRYg4WBwkTRgDcKnZxCi8kyMT4lOms1bsv7cxbypIei66wlOsHaKIjnmagvjbNpELOyWbuwA28Vq7E7rnCs' +
+  'xZrFeUJXiT55DEfvVXDBKoy1GoGHsxbQO11TWRcxvZfGgPfoiXRiM9A6VLjqGo4e9IIPohzUCQ3OFDcc+9IDPrEacx3uu7lx' +
+  'zL0HHC7xAfjGatxxOIN34th3RC6ih899x3jXgPTweXm351P8RWCwlOLnvNrRA77IYxz8LNr7RqEpfsDP/I3/5TYOwgdcafw3' +
+  'LxtczG9Zz//Y5t/5l14+dm4j/ijy1BrMi9ahMgqAbdiWfX72p5ePB2QTj55Lo1cajVBE2Id96UEvH/ffVpuJrnCEHvRCGSEh' +
+  '4Ssij0UHw0rc1wAAAABJRU5ErkJggg=='
+
+export const SELECT_BOX_BLANK = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoBAMAAAB+0KVeAAAAFVBMVEUAAABVVVVDR0dER0ZER0ZFRkZER0boYpSeAAAAB3RS' +
+  'TlMABpDz/5HvIJ/nQwAAADRJREFUeAFjGHAgZOICB86KUMEQFyTgChVMQRZ0gwq6OCCMYnEZ0oKjgphRjJkYsCebgQYA200n' +
+  'c1NQiNkAAAAASUVORK5CYII='
+
+export const SELECT_BOX_CHECKED = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAABL0lEQVR4Ae3YNVbGQBQFYLzDZS10SN67b3L+OhvAWQJdKmpo' +
+  'cIdNsAK8Yx1oi/vFNXLC3Lh/8WTKfHx8ipooimoCszExnIrhMqHm9GYbN9v6NlCBcVpRos3Ntr4NFMNh0jBqDr8N5BWUJRTe' +
+  'hgd64L8FhmFYJw7rEkp77oAiUi/Axv16jhmZHZBxhk1az4UAA7kAdnZ2Nqhh6wVuOLVTDKAtcBi57i1/Cyem24xTs6HEbxLG' +
+  'qWH/bppOMrJUKjWKww7jAqeDqd7FCoy+eI/O3CBvcYZdGn/OuMSB9BlWKQ5rPF0dlsSwxzi+IVIDMjIAVnkeYZxZf+YP6jiO' +
+  'K8Sw/BKnpn2Zv0kYGZgtPl1z6M3Nq46RCswJ0OM/FrIDeqAHZv/bWYAf96yLPgoaHx+fK45ZmKAW3rcFAAAAAElFTkSuQmCC'
+
+export const SELECT_BOX_PARTIAL = 'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAACgAAAAoBAMAAAB+0KVeAAAAGFBMVEUAAABVVVVDR0dER0ZER0ZFRkZER0ZERkbwUipQAAAA' +
+  'CHRSTlMABpDz/5Hvf/1NDO0AAABASURBVHgBYxhwIGTiAgfOilDBEBck4AoVTEEWdIMKujggjGJxGYKC5WCAJgjxIz5BTO3D' +
+  'IEAwoxgzMWBPNgMNAD2+MDfBRDhFAAAAAElFTkSuQmCC'

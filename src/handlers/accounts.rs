@@ -21,10 +21,10 @@ pub async fn list_accounts(
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
     let accounts = sqlx::query_as::<_, EmailAccount>(
-        r#"SELECT id, user_id, name, email_address,
+        r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
-                  smtp_host, smtp_port, smtp_security, smtp_username,
+                  smtp_host, smtp_port, smtp_security, smtp_username, auth_kind,
                   is_default, is_active, last_sync_at, last_error,
                   created_at, updated_at
            FROM mail.accounts WHERE user_id = $1 ORDER BY created_at"#,
@@ -129,10 +129,10 @@ pub async fn get_account(
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<EmailAccount>, MailError> {
     let account = sqlx::query_as::<_, EmailAccount>(
-        r#"SELECT id, user_id, name, email_address,
+        r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
-                  smtp_host, smtp_port, smtp_security, smtp_username,
+                  smtp_host, smtp_port, smtp_security, smtp_username, auth_kind,
                   is_default, is_active, last_sync_at, last_error,
                   created_at, updated_at
            FROM mail.accounts WHERE id = $1 AND user_id = $2"#,
@@ -154,7 +154,7 @@ pub async fn test_existing_account(
 ) -> Result<Json<serde_json::Value>, MailError> {
     // Charger les credentials chiffrés depuis la DB
     let row = sqlx::query(
-        r#"SELECT incoming_protocol,
+        r#"SELECT incoming_protocol, auth_kind,
                   imap_host, imap_port, imap_security, imap_username,
                   imap_password, imap_password_nonce,
                   smtp_host, smtp_port, smtp_security, smtp_username,
@@ -171,13 +171,22 @@ pub async fn test_existing_account(
         .map_err(|_| MailError::Crypto)?;
 
     use sqlx::Row;
+    let auth_kind: String = row.try_get("auth_kind").unwrap_or_else(|_| "password".into());
     let imap_enc:   Vec<u8> = row.try_get("imap_password").map_err(anyhow::Error::from)?;
     let imap_nonce: Vec<u8> = row.try_get("imap_password_nonce").map_err(anyhow::Error::from)?;
     let smtp_enc:   Vec<u8> = row.try_get("smtp_password").map_err(anyhow::Error::from)?;
     let smtp_nonce: Vec<u8> = row.try_get("smtp_password_nonce").map_err(anyhow::Error::from)?;
 
-    let imap_pass = crypto.decrypt(&imap_enc, &imap_nonce).map_err(|_| MailError::Crypto)?;
-    let smtp_pass = crypto.decrypt(&smtp_enc, &smtp_nonce).map_err(|_| MailError::Crypto)?;
+    let db_imap_host: String = row.try_get("imap_host").map_err(anyhow::Error::from)?;
+    let db_smtp_host: String = row.try_get("smtp_host").map_err(anyhow::Error::from)?;
+    let imap_pass = crate::services::app_password_normalize(
+        &db_imap_host,
+        &crypto.decrypt(&imap_enc, &imap_nonce).map_err(|_| MailError::Crypto)?,
+    );
+    let smtp_pass = crate::services::app_password_normalize(
+        &db_smtp_host,
+        &crypto.decrypt(&smtp_enc, &smtp_nonce).map_err(|_| MailError::Crypto)?,
+    );
 
     // Les champs serveur viennent du formulaire (peuvent avoir été modifiés),
     // les mots de passe viennent de la DB si le formulaire les a laissés vides
@@ -199,7 +208,21 @@ pub async fn test_existing_account(
         smtp_password: if dto.smtp_password.is_empty() { smtp_pass } else { dto.smtp_password },
     };
 
-    run_connection_test(effective).await
+    // OAuth accounts (Gmail, Microsoft): the passwords above are placeholders —
+    // authenticate the same steps with a fresh access token over XOAUTH2.
+    let oauth_token = if auth_kind.starts_with("oauth") {
+        Some(
+            crate::services::oauth::valid_access_token(
+                &state.db, &crypto, &state.settings.mail, account_id,
+            )
+            .await
+            .map_err(|e| MailError::Validation(e.to_string()))?,
+        )
+    } else {
+        None
+    };
+
+    run_connection_test(effective, oauth_token).await
 }
 
 pub async fn update_account(
@@ -431,8 +454,13 @@ async fn test_tcp_connect(host: &str, port: u16) -> (bool, Option<String>) {
 
 // ── Main test dispatcher ─────────────────────────────────────────────────────
 
-async fn run_connection_test(dto: TestConnectionDto) -> Result<Json<serde_json::Value>, MailError> {
-    use lettre::{transport::smtp::authentication::Credentials, AsyncSmtpTransport, Tokio1Executor};
+/// When `oauth_token` is Some, both IMAP and SMTP authenticate with XOAUTH2
+/// using that access token instead of the DTO passwords. The reported steps
+/// (connection / authentication) stay identical either way.
+async fn run_connection_test(
+    dto: TestConnectionDto,
+    oauth_token: Option<String>,
+) -> Result<Json<serde_json::Value>, MailError> {
     let timeout = std::time::Duration::from_secs(10);
 
     let protocol      = dto.incoming_protocol.as_deref().unwrap_or("imap");
@@ -454,7 +482,10 @@ async fn run_connection_test(dto: TestConnectionDto) -> Result<Json<serde_json::
             port:     incoming_port,
             security: dto.imap_security.clone().unwrap_or_else(|| "ssl".into()),
             username: dto.imap_username.clone(),
-            password: dto.imap_password.clone(),
+            auth:     match &oauth_token {
+                Some(token) => imap_service::ImapAuth::Xoauth2(token.clone()),
+                None        => imap_service::ImapAuth::Password(dto.imap_password.clone()),
+            },
         };
         match tokio::time::timeout(timeout, imap_service::connect(&imap_cfg)).await {
             Ok(Ok(session)) => { imap_service::logout(session).await; (true, None) }
@@ -467,16 +498,17 @@ async fn run_connection_test(dto: TestConnectionDto) -> Result<Json<serde_json::
     let (smtp_auth_ok, smtp_auth_err) = if !smtp_conn_ok {
         (false, Some("Serveur inaccessible".into()))
     } else {
-        let creds = Credentials::new(dto.smtp_username.clone(), dto.smtp_password.clone());
-        let transport_result: anyhow::Result<AsyncSmtpTransport<Tokio1Executor>> =
-            match dto.smtp_security.as_deref().unwrap_or("starttls") {
-                "ssl" => AsyncSmtpTransport::<Tokio1Executor>::relay(&dto.smtp_host)
-                    .map_err(anyhow::Error::from)
-                    .map(|b| b.port(smtp_port).credentials(creds).build()),
-                _ => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&dto.smtp_host)
-                    .map_err(anyhow::Error::from)
-                    .map(|b| b.port(smtp_port).credentials(creds).build()),
-            };
+        let smtp_cfg = crate::services::smtp_service::SmtpConfig {
+            host:       dto.smtp_host.clone(),
+            port:       smtp_port,
+            security:   dto.smtp_security.clone().unwrap_or_else(|| "starttls".into()),
+            username:   dto.smtp_username.clone(),
+            password:   oauth_token.clone().unwrap_or_else(|| dto.smtp_password.clone()),
+            xoauth2:    oauth_token.is_some(),
+            from_name:  String::new(),
+            from_email: String::new(),
+        };
+        let transport_result = crate::services::smtp_service::build_transport(&smtp_cfg);
         match transport_result {
             Err(e) => (false, Some(e.to_string())),
             Ok(transport) => match tokio::time::timeout(timeout, transport.test_connection()).await {
@@ -506,7 +538,7 @@ pub async fn test_connection(
     _user: AuthUser,
     Json(dto): Json<TestConnectionDto>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    run_connection_test(dto).await
+    run_connection_test(dto, None).await
 }
 
 pub async fn trigger_sync(
@@ -515,10 +547,10 @@ pub async fn trigger_sync(
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
     let account = sqlx::query_as::<_, EmailAccount>(
-        r#"SELECT id, user_id, name, email_address,
+        r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
-                  smtp_host, smtp_port, smtp_security, smtp_username,
+                  smtp_host, smtp_port, smtp_security, smtp_username, auth_kind,
                   is_default, is_active, last_sync_at, last_error,
                   created_at, updated_at
            FROM mail.accounts WHERE id = $1 AND user_id = $2"#,
@@ -528,6 +560,14 @@ pub async fn trigger_sync(
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Compte {account_id}")))?;
+
+    // A local account is served by the instance itself — there is no external
+    // mailbox to poll, so a manual sync is a no-op rather than a failed IMAP dial.
+    if account.kind == "local" {
+        return Ok(Json(serde_json::json!({
+            "message": "Ce compte est une boîte locale de l'instance : il n'y a rien à synchroniser"
+        })));
+    }
 
     let db2 = state.db.clone();
     let key  = state.settings.mail.encryption_key.clone();

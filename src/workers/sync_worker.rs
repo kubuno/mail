@@ -21,13 +21,13 @@ pub async fn run(state: Arc<AppState>) {
 
 async fn sync_all_accounts(state: &AppState, crypto: &MailCrypto) {
     let accounts = match sqlx::query_as::<_, crate::models::EmailAccount>(
-        r#"SELECT id, user_id, name, email_address,
+        r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
-                  smtp_host, smtp_port, smtp_security, smtp_username,
+                  smtp_host, smtp_port, smtp_security, smtp_username, auth_kind,
                   is_default, is_active, last_sync_at, last_error,
                   created_at, updated_at
-           FROM mail.accounts WHERE is_active = TRUE"#,
+           FROM mail.accounts WHERE is_active = TRUE AND kind <> 'local'"#,
     )
     .fetch_all(&state.db)
     .await
@@ -42,12 +42,16 @@ async fn sync_all_accounts(state: &AppState, crypto: &MailCrypto) {
     for account in accounts {
         // Borne dure : une opération IMAP bloquée ne doit jamais figer le worker
         // (et donc tous les autres comptes) indéfiniment. L'échec est enregistré.
+        // Hard stop above the service's own time budget: the service stops
+        // itself cleanly at `sync_deadline_secs`, this only catches an IMAP
+        // call wedged with no progress at all.
+        let hard_limit = Duration::from_secs(state.settings.mail.sync_deadline_secs + 120);
         let fut = crate::services::sync_service::sync_account(&state.db, &account, crypto, &state.settings.mail);
-        let outcome = tokio::time::timeout(Duration::from_secs(180), fut).await;
+        let outcome = tokio::time::timeout(hard_limit, fut).await;
         let err: Option<String> = match outcome {
             Ok(Ok(()))  => None,
             Ok(Err(e))  => Some(e.to_string()),
-            Err(_)      => Some("Délai de synchronisation dépassé (180 s)".to_string()),
+            Err(_)      => Some(format!("Délai de synchronisation dépassé ({} s)", hard_limit.as_secs())),
         };
         if let Some(msg) = err {
             tracing::warn!(account_id = %account.id, error = %msg, "Sync compte échoué");

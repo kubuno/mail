@@ -200,6 +200,9 @@ pub async fn add_thread_label(
     .execute(&state.db)
     .await?;
 
+    // Surface the label change to delta-sync clients: it touched only
+    // mail.thread_labels, which the modseq-based delta would otherwise miss.
+    crate::handlers::threads::bump_thread_modseq(&state.db, user.id, thread_id).await;
     Ok(Json(serde_json::json!({ "message": "Label ajouté" })))
 }
 
@@ -226,5 +229,6 @@ pub async fn remove_thread_label(
         .execute(&state.db)
         .await?;
 
+    crate::handlers::threads::bump_thread_modseq(&state.db, user.id, thread_id).await;
     Ok(Json(serde_json::json!({ "message": "Label retiré" })))
 }

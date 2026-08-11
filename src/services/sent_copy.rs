@@ -14,7 +14,8 @@ use crate::models::{EmailAccount, SendMailDto};
 
 /// Stores the sent message (thread + message, folder='sent') atomically.
 /// Attachments are written to `attachments_dir` so download works like for
-/// synced messages.
+/// synced messages. Returns the thread id the copy was filed under, so the
+/// caller can attach the composer's labels to it.
 pub async fn store_sent_copy(
     db: &PgPool,
     account: &EmailAccount,
@@ -22,7 +23,7 @@ pub async fn store_sent_copy(
     body_html: &str,
     message_id: &str,
     attachments_dir: &str,
-) -> Result<()> {
+) -> Result<Uuid> {
     let body_text = html2text::from_read(body_html.as_bytes(), 80);
     let snippet: String = body_text
         .split_whitespace()
@@ -142,5 +143,5 @@ pub async fn store_sent_copy(
     .await?;
 
     tx.commit().await?;
-    Ok(())
+    Ok(thread_id)
 }

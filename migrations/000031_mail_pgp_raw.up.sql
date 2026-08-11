@@ -1,0 +1,11 @@
+-- Preserve the original MIME of PGP messages, so they can be decrypted / verified
+-- AT READ TIME with the reader's own key.
+--
+-- The store otherwise parses every message apart (bodies in columns, attachments
+-- as files) and never keeps the raw MIME (see server/store.rs). That is fatal for
+-- OpenPGP: a multipart/encrypted body carries only ciphertext (no text/html to
+-- store), and a multipart/signed body can only be verified against the EXACT
+-- signed bytes. So for PGP messages only — detected during sync — we keep the raw
+-- RFC 5322 bytes here. NULL for every ordinary message, so the storage cost is
+-- borne solely by encrypted / signed mail.
+ALTER TABLE mail.messages ADD COLUMN IF NOT EXISTS pgp_raw BYTEA;

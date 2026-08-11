@@ -12,12 +12,18 @@ interface UndoSendState {
   schedule: (payload: SendMailDto, onFire: () => void, delayMs?: number) => void
   /** Annule l'envoi en attente et renvoie le brouillon pour ré-ouvrir la rédaction. */
   cancel: () => SendMailDto | null
+  /** The delayed send fires AFTER the compose window is closed, so a failure has
+   *  nowhere to show — this surfaces it as an error toast instead of vanishing. */
+  error: string | null
+  failed: (message: string) => void
+  dismissError: () => void
 }
 
 export const useUndoSendStore = create<UndoSendState>((set, get) => ({
   payload:  null,
   duration: 5000,
   _timer:   null,
+  error:    null,
   schedule: (payload, onFire, delayMs = 5000) => {
     const prev = get()._timer
     if (prev) clearTimeout(prev)
@@ -30,4 +36,6 @@ export const useUndoSendStore = create<UndoSendState>((set, get) => ({
     set({ payload: null, _timer: null })
     return payload
   },
+  failed:       (message) => set({ error: message }),
+  dismissError: () => set({ error: null }),
 }))

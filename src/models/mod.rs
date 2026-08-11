@@ -10,6 +10,12 @@ pub struct EmailAccount {
     pub user_id:        Uuid,
     pub name:           String,
     pub email_address:  String,
+    /// "external" (an IMAP/SMTP account at another provider) or "local" (a hosted
+    /// mailbox of this instance — the instance itself is the server).
+    pub kind:           String,
+    /// The hosted mailbox this account fronts, when `kind = 'local'`; NULL for an
+    /// external account or once the mailbox has been deleted.
+    pub mailbox_id:     Option<Uuid>,
     pub incoming_protocol: String,
     pub imap_host:      String,
     pub imap_port:      i32,
@@ -19,6 +25,8 @@ pub struct EmailAccount {
     pub smtp_port:      i32,
     pub smtp_security:  String,
     pub smtp_username:  String,
+    /// "password" | "oauth_google" | "oauth_microsoft"
+    pub auth_kind:      String,
     pub is_default:     bool,
     pub is_active:      bool,
     pub last_sync_at:   Option<DateTime<Utc>>,
@@ -111,6 +119,28 @@ pub struct EmailMessage {
     pub created_at:     DateTime<Utc>,
     pub spam_score:     Option<f32>,
     pub list_unsubscribe: Option<String>,
+    /// Provenance shown in the message details panel.
+    pub mailed_by: Option<String>,
+    pub signed_by: Option<String>,
+    pub security:  Option<String>,
+    /// DMARC verdict of this message; only "pass" lets the reader show the
+    /// sender's BRAND logo (see services::avatars).
+    pub auth_dmarc: Option<String>,
+    // ── OpenPGP verdict, computed at read time (not stored columns) ────────────
+    /// The body was OpenPGP-encrypted (and, when a key was available, decrypted
+    /// in place before this message was returned).
+    #[sqlx(default)]
+    #[serde(default)]
+    pub pgp_encrypted: bool,
+    /// The signature verdict when the message was signed: `Some(true)` verified,
+    /// `Some(false)` present but invalid / unverifiable, `None` unsigned.
+    #[sqlx(default)]
+    #[serde(default)]
+    pub pgp_signature_valid: Option<bool>,
+    /// Fingerprint of the key a valid signature was checked against.
+    #[sqlx(default)]
+    #[serde(default)]
+    pub pgp_signer_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -152,6 +182,15 @@ pub struct SendMailDto {
     pub draft_id:     Option<Uuid>,
     pub scheduled_at: Option<DateTime<Utc>>,   // si présent → envoi programmé
     pub attachments:  Option<Vec<AttachmentInput>>,
+    /// OpenPGP: sign and/or encrypt the message with PGP/MIME (see services::pgp_mime).
+    #[serde(default)]
+    pub sign:         Option<bool>,
+    #[serde(default)]
+    pub encrypt:      Option<bool>,
+    /// Labels the composer picked; applied to the Sent copy's thread after send.
+    /// Only ids owned by the sender are honoured (see handlers::messages).
+    #[serde(default)]
+    pub label_ids:    Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -235,9 +274,26 @@ pub struct ThreadListQuery {
     pub important:  Option<bool>,
     pub snoozed:    Option<bool>,
     pub unread:     Option<bool>,
+    /// Inbox tab filter: main | social | notifications | promotions.
+    pub category:   Option<String>,
+    /// Narrows `folder=custom` down to one of the account's own IMAP folders,
+    /// named exactly as the provider spells it.
+    pub imap_folder: Option<String>,
     pub limit:      Option<i64>,
     pub before:     Option<DateTime<Utc>>,
     pub search:     Option<String>,
+    /// Act on another user's mailbox (account delegation). When set, the request
+    /// is scoped to that grantor's mailbox, but only if an ACCEPTED delegation
+    /// names the caller as delegate (enforced by `resolve_acting_user`).
+    pub on_behalf_of: Option<Uuid>,
+}
+
+/// Query carrying only the optional account-delegation target, for routes whose
+/// sole variable input is "act on whose mailbox?" (e.g. GET /threads/:id,
+/// GET /counts). See `services::delegation::resolve_acting_user`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct OnBehalfQuery {
+    pub on_behalf_of: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

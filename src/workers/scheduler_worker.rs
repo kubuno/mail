@@ -62,33 +62,15 @@ async fn send_one(
     subject: &str, body_html: &str, reply_to_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let account = sqlx::query_as::<_, EmailAccount>(
-        r#"SELECT id, user_id, name, email_address, incoming_protocol,
+        r#"SELECT id, user_id, name, email_address, kind, mailbox_id, incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
-                  smtp_host, smtp_port, smtp_security, smtp_username,
+                  smtp_host, smtp_port, smtp_security, smtp_username, auth_kind,
                   is_default, is_active, last_sync_at, last_error, created_at, updated_at
            FROM mail.accounts WHERE id = $1"#,
     )
     .bind(account_id)
     .fetch_one(&state.db)
     .await?;
-
-    let (enc, nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
-        "SELECT smtp_password, smtp_password_nonce FROM mail.accounts WHERE id = $1",
-    )
-    .bind(account_id)
-    .fetch_one(&state.db)
-    .await?;
-    let pass = crypto.decrypt(&enc, &nonce)?;
-
-    let cfg = SmtpConfig {
-        host:       account.smtp_host.clone(),
-        port:       account.smtp_port as u16,
-        security:   account.smtp_security.clone(),
-        username:   account.smtp_username.clone(),
-        password:   pass,
-        from_name:  account.name.clone(),
-        from_email: account.email_address.clone(),
-    };
 
     let to:  Vec<EmailAddress> = serde_json::from_value(to_v.clone()).unwrap_or_default();
     let cc:  Vec<EmailAddress> = serde_json::from_value(cc_v.clone()).unwrap_or_default();
@@ -105,9 +87,57 @@ async fn send_one(
         draft_id:      None,
         scheduled_at:  None,
         attachments:   None,
+        sign:          None,
+        encrypt:       None,
+        label_ids:     None,
     };
 
-    let message_id = smtp_service::send_message(&cfg, &dto, subject, body_html).await?;
+    // A local account is served by the instance itself (no external SMTP relay);
+    // an external account keeps the historical credentials path. Same split as
+    // the interactive send (handlers::messages::send_message).
+    //
+    // Scheduled sends are not PGP-protected in this wave (the sign/encrypt flags
+    // and keys are not carried through the drafts queue) — pass None for `pgp`.
+    // The Autocrypt header IS still advertised: it is independent of encryption
+    // and lets correspondents learn our key from a scheduled message too.
+    let autocrypt =
+        crate::handlers::messages::sender_autocrypt_key(state, account.user_id, &account.email_address).await;
+    let message_id = if account.kind == "local" {
+        // A scheduled send is the account owner's own; no delegated `Sender:`.
+        crate::services::outgoing::send_from_local_account(state, &account, &dto, subject, body_html, None, autocrypt.as_deref(), None)
+            .await
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?
+    } else {
+        // OAuth accounts send with XOAUTH2 (access token); password accounts keep
+        // the historical credentials path.
+        let (secret, xoauth2) = if account.auth_kind.starts_with("oauth") {
+            let token = crate::services::oauth::valid_access_token(
+                &state.db, crypto, &state.settings.mail, account.id,
+            ).await?;
+            (token, true)
+        } else {
+            let (enc, nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+                "SELECT smtp_password, smtp_password_nonce FROM mail.accounts WHERE id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&state.db)
+            .await?;
+            (crypto.decrypt(&enc, &nonce)?, false)
+        };
+
+        let cfg = SmtpConfig {
+            host:       account.smtp_host.clone(),
+            port:       account.smtp_port as u16,
+            security:   account.smtp_security.clone(),
+            username:   account.smtp_username.clone(),
+            password:   secret,
+            xoauth2,
+            from_name:  account.name.clone(),
+            from_email: account.email_address.clone(),
+        };
+
+        smtp_service::send_message(&cfg, &dto, subject, body_html, None, autocrypt.as_deref(), None).await?
+    };
 
     // Local Sent copy (same behaviour as direct sends); the mail already left,
     // so only log on failure.

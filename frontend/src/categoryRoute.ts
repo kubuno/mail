@@ -2,7 +2,7 @@
 // /mail/#category/promotions. They are a client-side filter over the inbox, so
 // they must not create server routes — but they still deserve a real, shareable
 // link (the sidebar and the inbox tabs are anchors, never buttons).
-import type { MailCategory } from './MailApp'
+import type { MailCategory } from './mail-app/categories'
 
 export const CATEGORY_IDS = ['main', 'promotions', 'social', 'notifications'] as const
 

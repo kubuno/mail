@@ -69,10 +69,12 @@ function LineInput({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function MailFilterPanel({ onClose }: { onClose: () => void }) {
+export default function MailFilterPanel({ onClose, initial }: { onClose: () => void; initial?: Partial<Filters> }) {
   const { t } = useTranslation('mail')
   const { setSearchQuery } = useMailStore()
-  const [f, setF] = useState<Filters>({ ...INIT })
+  // Opened from a folder filter bar's « Recherche avancée » → pre-fill with the
+  // chip values (same field names as `Filters`).
+  const [f, setF] = useState<Filters>({ ...INIT, ...initial })
 
   const SIZE_OPS = [
     { value: 'larger',  label: t('mail_filter_larger') },

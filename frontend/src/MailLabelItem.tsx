@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { MoreVertical, Tag } from 'lucide-react'
 import { MenuDropdown, useMenuDropdown, type MenuItem } from '@ui'
 import type { Label, LabelListVisibility, LabelMsgVisibility } from './api'
+import { isThreadDrag, readDraggedThreads, setThreadDropCaption } from './threadDnd'
 
 /** Swatches offered in the "Label colour" submenu (Gmail-like palette). */
 export const LABEL_PALETTE = [
@@ -21,6 +22,8 @@ export interface LabelActions {
   onRename:         () => void
   onDelete:         () => void
   onAddSubLabel:    () => void
+  /** Conversations were dropped on this label. */
+  onDropThread:     (threadIds: string[]) => void
 }
 
 /**
@@ -30,16 +33,20 @@ export interface LabelActions {
  * hover affordance: the unread badge gives way to a ⋮ opening the label menu.
  */
 export default function MailLabelItem({
-  label, unread, active, to, actions,
+  label, unread, active, to, actions, onClick,
 }: {
   label:   Label
   unread?: number
   active:  boolean
   to:      string
   actions: LabelActions
+  /** Fired on the row link — used to close an open conversation so the label's
+   *  list is what shows, even when this label is already the active one. */
+  onClick?: () => void
 }) {
   const { t } = useTranslation('mail')
   const [hovered, setHovered] = useState(false)
+  const [dropTarget, setDropTarget] = useState(false)
   const menu = useMenuDropdown()
 
   const listVis: LabelListVisibility = label.list_visibility ?? 'show'
@@ -48,7 +55,7 @@ export default function MailLabelItem({
 
   const ACTIVE_BG = 'var(--color-primary-light, #d3e3fd)'
   const HOVER_BG  = 'color-mix(in srgb, var(--color-primary) 12%, white)'
-  const background = active ? ACTIVE_BG : hovered || menu.isOpen ? HOVER_BG : 'transparent'
+  const background = dropTarget ? '#fef7e0' : active ? ACTIVE_BG : hovered || menu.isOpen ? HOVER_BG : 'transparent'
 
   // The trailing slot is either the unread badge or the ⋮ — never both, so the
   // row never changes width when the pointer enters it.
@@ -155,8 +162,25 @@ export default function MailLabelItem({
         to={to}
         aria-label={label.name}
         aria-current={active ? 'page' : undefined}
+        onClick={onClick}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        onDragOver={e => {
+          if (!isThreadDrag(e)) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          setDropTarget(true)
+          setThreadDropCaption(leafName(label.name))
+        }}
+        onDragLeave={() => { setDropTarget(false); setThreadDropCaption(null) }}
+        onDrop={e => {
+          const ids = readDraggedThreads(e)
+          setDropTarget(false)
+          setThreadDropCaption(null)
+          if (!ids.length) return
+          e.preventDefault()
+          actions.onDropThread(ids)
+        }}
         className={`relative flex items-center h-10 gap-3 w-full px-3 rounded-full text-sm text-left
           transition-colors cursor-pointer no-underline outline-none
           focus-visible:ring-2 focus-visible:ring-primary
