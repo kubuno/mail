@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { openImagePicker } from '@kubuno/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FloatingWindow, Dropdown, FontSizeField, MenuDropdown, useIsMobile, serializeMentions, type MenuItem, type MenuDropdownPos } from '@ui'
+import { FloatingWindow, Dropdown, FontSizeField, MenuDropdown, DatePicker, Button, useIsMobile, serializeMentions, type MenuItem, type MenuDropdownPos } from '@ui'
 
 // Web-safe families for the compose toolbar (applied via execCommand('fontName')).
 const MAIL_FONTS = ['Arial', 'Verdana', 'Trebuchet MS', 'Tahoma', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS']
@@ -141,6 +141,19 @@ export default function ComposeWindow() {
   // cleared right after the init effect — the mount effect below reads the ref.
   const scheduleOnMountRef = useRef(!!composeInitial?.schedule)
   const scheduleBtnRef = useRef<HTMLButtonElement>(null)
+  // Position of the "Schedule send" menu: below the send group and left-aligned
+  // with the « Envoyer » button when there is room, otherwise flipped above it —
+  // never covering the button, always kept on-screen.
+  const scheduleMenuPos = (): MenuDropdownPos => {
+    const group = scheduleBtnRef.current?.parentElement
+    const r = (group ?? scheduleBtnRef.current)?.getBoundingClientRect()
+    if (!r) return { top: 0, left: 0 }
+    const GAP = 6, MENU_H = 168, MIN_W = 232
+    const below = r.bottom + GAP
+    const top = below + MENU_H <= window.innerHeight ? below : Math.max(8, r.top - MENU_H - GAP)
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - MIN_W))
+    return { top, left }
+  }
 
   // Gmail-style placeholder: shown while the body is "logically empty" — i.e. it
   // holds nothing but the auto-inserted signature. It hides as soon as the user
@@ -239,10 +252,8 @@ export default function ComposeWindow() {
   useEffect(() => {
     if (!scheduleOnMountRef.current) return
     const id = requestAnimationFrame(() => {
-      const btn = scheduleBtnRef.current
-      if (!btn) return
-      const r = btn.getBoundingClientRect()
-      setSendMenuPos({ top: r.top - 4, left: r.left - 200 })
+      if (!scheduleBtnRef.current) return
+      setSendMenuPos(scheduleMenuPos())
     })
     return () => cancelAnimationFrame(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -591,6 +602,9 @@ export default function ComposeWindow() {
   })
 
   const [sendMenuPos, setSendMenuPos] = useState<MenuDropdownPos | null>(null)
+  // Custom "pick a date & time" scheduling dialog.
+  const [customSchedule, setCustomSchedule] = useState(false)
+  const [customDT, setCustomDT] = useState<string | null>(null)
   const schedulePresets = () => {
     const now = new Date()
     const later   = new Date(now); later.setHours(now.getHours() + 2, 0, 0, 0)
@@ -795,7 +809,7 @@ export default function ComposeWindow() {
           </button>
           <button
             ref={scheduleBtnRef}
-            onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setSendMenuPos(p => p ? null : { top: r.top - 4, left: r.left - 200 }) }}
+            onClick={() => setSendMenuPos(p => p ? null : scheduleMenuPos())}
             disabled={sendMut.isPending || !to.length || !accountId}
             title={t('schedule_send', { defaultValue: 'Programmer l\'envoi' })}
             className="flex items-center h-9 px-1.5 bg-primary text-white rounded-r-lg border-l border-white/25 hover:bg-primary-hover disabled:opacity-50 transition-colors ml-px"
@@ -809,8 +823,41 @@ export default function ComposeWindow() {
               items={[
                 { type: 'label', text: t('schedule_send', { defaultValue: 'Programmer l\'envoi' }) },
                 ...schedulePresets().map<MenuItem>(p => ({ type: 'action', label: p.label, onClick: () => sendMut.mutate(p.at) })),
+                { type: 'separator' },
+                { type: 'action', label: t('schedule_custom', { defaultValue: 'Date et heure personnalisées…' }),
+                  onClick: () => { setSendMenuPos(null); setCustomDT(null); setCustomSchedule(true) } },
               ]}
             />
+          )}
+          {customSchedule && (
+            <div className="fixed inset-0 z-[9999] bg-black/30 flex items-center justify-center p-4"
+              onClick={() => setCustomSchedule(false)}>
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-[360px] p-5" onClick={e => e.stopPropagation()}>
+                <h3 className="text-sm font-medium text-text-primary mb-3">
+                  {t('schedule_custom_title', { defaultValue: 'Programmer à une date précise' })}
+                </h3>
+                <DatePicker
+                  mode="datetime"
+                  value={customDT}
+                  onChange={setCustomDT}
+                  minDate={new Date().toISOString().slice(0, 10)}
+                  minuteStep={5}
+                  clearable
+                  placeholder={t('schedule_custom_ph', { defaultValue: 'Choisir une date et une heure' })}
+                />
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button variant="ghost" onClick={() => setCustomSchedule(false)}>
+                    {t('common_cancel', { defaultValue: 'Annuler' })}
+                  </Button>
+                  <Button
+                    disabled={!customDT || sendMut.isPending}
+                    onClick={() => { if (customDT) { sendMut.mutate(new Date(customDT).toISOString()); setCustomSchedule(false) } }}
+                  >
+                    {t('schedule_send', { defaultValue: 'Programmer l\'envoi' })}
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 
