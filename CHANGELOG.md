@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-19
+
 ### Changed
 
 - Theme tokens: two colours for navigation labels (`--color-text-nav`,
@@ -21,4 +23,5 @@ number at release time, and CI publishes that section as the GitHub Release note
 - Search bar background now comes from the `--color-search-bg` token (unified at `#e9eef6`)
   rather than a hard-coded colour.
 
-[Unreleased]: https://github.com/kubuno/mail/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/kubuno/mail/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/kubuno/mail/releases/tag/v0.1.6
