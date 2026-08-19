@@ -25,16 +25,21 @@ const INITIAL_POP_IMAP: PopImapSettings = {
 
 // ── Forwarding, POP & IMAP tab ────────────────────────────────────────────────
 //
-// Gmail's "Forwarding and POP/IMAP", adapted to a self-hosted instance: Kubuno
-// runs its OWN SMTP/IMAP/POP3 services, so "Configure your client" points at
-// this instance and reuses the mailbox-credential flow (the "Accès client" tab)
-// for the dedicated password.
+// The usual "Forwarding and POP/IMAP" tab, adapted to a self-hosted instance:
+// Kubuno runs its OWN SMTP/IMAP/POP3 services, so "Configure your client" points
+// at this instance and reuses the mailbox-credential flow (the "Accès client"
+// tab) for the dedicated password.
 //
 // The FORWARDING rules (destinations + keep/archive) live on the server — they
 // must, so incoming mail can be re-sent while the user is offline — and are
 // loaded/saved through /mail/forwarding. The POP/IMAP fetch & deletion policies
 // still only live in localStorage (see forwardingPrefs.ts); those remain flagged
 // inline via Callout until the mail server honours them.
+//
+// Automatic forwarding can be switched off for the whole instance by the
+// administrator. The server carries that policy on the same payload; when it is
+// off the editor is disabled and says so, rather than letting a user configure a
+// rule the delivery side will refuse to fire.
 
 /** Section title separating groups of related settings (matches GeneralTab). */
 function Section({ title }: { title: string }) {
@@ -130,6 +135,9 @@ export function ForwardingTab() {
   const [saveError, setSaveError] = useState('')
   const [newAddr, setNewAddr] = useState('')
   const [addrError, setAddrError] = useState<string | null>(null)
+  // Assumed allowed until the server says otherwise: showing "forbidden" during
+  // the first paint would be a lie on the majority of instances.
+  const [forwardingAllowed, setForwardingAllowed] = useState(true)
 
   // Both halves live on the server: the forwarding rules (so mail is re-sent
   // while the user is offline) and the POP/IMAP policy (enforced by the
@@ -148,6 +156,8 @@ export function ForwardingTab() {
           })),
           forwardKeep: cfg.forwardKeep,
         }))
+        // Absent on an older server, which means "no such policy" — allowed.
+        setForwardingAllowed(cfg.forwardingAllowed !== false)
       })
       .catch(() => { /* keep the localStorage value if the server is unreachable */ })
     mailApi.getPopImap()
@@ -221,18 +231,31 @@ export function ForwardingTab() {
         })}
       >
         <div className="space-y-3">
+          {!forwardingAllowed && (
+            <p className="text-sm text-text-tertiary">
+              {t('mail_fwd_disabled_by_admin', {
+                defaultValue: 'Le transfert automatique est désactivé par l’administrateur de l’instance. Les règles existantes ne recopient plus aucun message ; vous pouvez encore les supprimer.',
+              })}
+            </p>
+          )}
           <div className="flex flex-wrap items-start gap-2">
             <div className="min-w-[240px]">
               <Input
                 type="email"
                 value={newAddr}
+                disabled={!forwardingAllowed}
                 onChange={e => { setNewAddr(e.target.value); setAddrError(null) }}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addForward() } }}
                 placeholder={t('mail_fwd_address_placeholder', { defaultValue: 'nom@exemple.com' })}
               />
               {addrError && <p className="text-xs text-danger mt-1">{addrError}</p>}
             </div>
-            <Button variant="secondary" icon={<Plus size={16} />} onClick={addForward}>
+            <Button
+              variant="secondary"
+              icon={<Plus size={16} />}
+              disabled={!forwardingAllowed}
+              onClick={addForward}
+            >
               {t('mail_fwd_add_address', { defaultValue: 'Ajouter une adresse de transfert' })}
             </Button>
           </div>
@@ -247,6 +270,9 @@ export function ForwardingTab() {
                 <li key={a.id} className="flex items-center gap-3 px-3 py-2">
                   <Checkbox
                     checked={a.enabled}
+                    // Never re-enable a rule the instance forbids; deleting one
+                    // stays possible, which is the action a user still needs.
+                    disabled={!forwardingAllowed && !a.enabled}
                     onChange={v => toggleForward(a.id, v)}
                     label={a.email}
                   />

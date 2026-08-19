@@ -11,6 +11,7 @@ pub mod forwarding;
 pub mod labels;
 pub mod mailbox;
 pub mod messages;
+pub mod migration;
 pub mod oauth;
 pub mod pgp;
 pub mod pop_imap;

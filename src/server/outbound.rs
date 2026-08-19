@@ -73,11 +73,20 @@ pub struct Policy<'a> {
 }
 
 impl<'a> Policy<'a> {
-    pub fn from_config(cfg: &'a ServerConfig) -> Self {
-        Self {
-            hostname: &cfg.hostname,
-            tls:      cfg.outbound_tls,
-        }
+    /// The policy for one destination domain, applying the per-destination TLS
+    /// list on top of the general level.
+    ///
+    /// The list can only make a delivery STRICTER (`max`): a domain named there
+    /// is one the operator refuses to write to in the clear — the general level
+    /// must never be able to soften that, and a level already stricter than
+    /// `Encrypt` (i.e. `Verify`) must not be weakened either.
+    pub fn for_domain(cfg: &'a ServerConfig, domain: &str) -> Self {
+        let tls = if cfg.tls_required_for(domain) {
+            cfg.outbound_tls.max(OutboundTls::Encrypt)
+        } else {
+            cfg.outbound_tls
+        };
+        Self { hostname: &cfg.hostname, tls }
     }
 }
 
@@ -1452,6 +1461,30 @@ mod tests {
         for level in [OutboundTls::May, OutboundTls::Encrypt, OutboundTls::Verify] {
             assert!(tls_connector(level).is_some(), "connecteur manquant pour {level:?}");
         }
+    }
+
+    /// The per-destination TLS list may only tighten a delivery, never loosen
+    /// one — a domain listed there is one we refuse to write to in the clear.
+    #[test]
+    fn a_listed_domain_is_never_delivered_to_in_the_clear() {
+        let base = ServerConfig {
+            tls_required_domains: vec!["banque.example".to_string()],
+            outbound_tls: OutboundTls::May,
+            ..ServerConfig::default()
+        };
+        assert_eq!(Policy::for_domain(&base, "banque.example").tls, OutboundTls::Encrypt);
+        assert_eq!(Policy::for_domain(&base, "mx.banque.example").tls, OutboundTls::Encrypt);
+        // Everyone else keeps the general level.
+        assert_eq!(Policy::for_domain(&base, "ailleurs.net").tls, OutboundTls::May);
+
+        // An already-stricter general level is not weakened by the list.
+        let strict = ServerConfig { outbound_tls: OutboundTls::Verify, ..base.clone() };
+        assert_eq!(Policy::for_domain(&strict, "banque.example").tls, OutboundTls::Verify);
+
+        // Even "never encrypt" loses against an explicit per-destination rule.
+        let never = ServerConfig { outbound_tls: OutboundTls::None, ..base };
+        assert_eq!(Policy::for_domain(&never, "banque.example").tls, OutboundTls::Encrypt);
+        assert_eq!(Policy::for_domain(&never, "ailleurs.net").tls, OutboundTls::None);
     }
 
     /// The verified name is the MX we connect to. A name rustls cannot express

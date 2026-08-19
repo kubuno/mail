@@ -41,8 +41,9 @@ use crate::server::limits::Tarpit;
 use crate::server::{
     auth::{self, Mailbox},
     authres::{self, AuthVerdict},
+    compliance,
     config::{PolicyAction, ServerConfig},
-    deliver, greylist, hygiene, log_session, queue,
+    deliver, greylist, hygiene, journal, log_session, queue,
     resolve::{self, LocalDelivery, Outcome},
     scram,
     tls::{MailStream, TlsMode, UpgradeError},
@@ -630,6 +631,22 @@ impl Session {
                 );
                 return self.reply("550 5.7.1 Sender address rejected by policy").await;
             }
+
+            // Delivery restriction: when the operator has declared the only
+            // domains this instance exchanges mail with, anything else is
+            // refused here — before a byte of the message is transferred, and
+            // permanently, so the sending server tells its user why. Our own
+            // domains and the null return path are never restricted (see
+            // `inbound_sender_allowed`).
+            if !cfg.inbound_sender_allowed(sender) {
+                tracing::warn!(
+                    sender = %sanitize_token(sender),
+                    "SMTP : expéditeur hors des domaines autorisés (restriction de remise)"
+                );
+                return self
+                    .reply("550 5.7.1 Sender domain not authorised by this instance's delivery restriction")
+                    .await;
+            }
         }
 
         // Anti-spoofing (RFC 6409): an authenticated user may only send AS
@@ -752,6 +769,18 @@ impl Session {
                     }
                 }
                 for address in expansion.remote {
+                    // An alias of ours that forwards outside is an OUTGOING hop,
+                    // and the delivery restriction governs it. The local
+                    // deliveries of the same expansion still happen: the rule
+                    // stops mail from leaving, it does not make an address
+                    // undeliverable.
+                    if !cfg.outbound_recipient_allowed(&address) {
+                        tracing::warn!(
+                            forward_to = %sanitize_token(&address),
+                            "SMTP : réexpédition d'alias hors des domaines autorisés — abandonnée"
+                        );
+                        continue;
+                    }
                     if !self.remote_rcpts.contains(&address) {
                         self.remote_rcpts.push(address);
                     }
@@ -769,6 +798,19 @@ impl Session {
                 // An authenticated submitter sending to a remote domain: accept
                 // the recipient and queue it for outbound delivery at end of DATA
                 // (the worker delivers with retries + DSN once outbound is on).
+                //
+                // …unless the operator restricted whom this instance may write
+                // to. Refusing at RCPT is what lets the sender's own client show
+                // which address was refused, instead of a bounce arriving later.
+                if !cfg.outbound_recipient_allowed(&recipient) {
+                    tracing::warn!(
+                        recipient = %sanitize_token(&recipient),
+                        "SMTP : destinataire hors des domaines autorisés (restriction de remise)"
+                    );
+                    return self
+                        .reply("550 5.7.1 Recipient domain not authorised by this instance's delivery restriction")
+                        .await;
+                }
                 self.named_rcpts += 1;
                 if !self.remote_rcpts.contains(&recipient) {
                     self.remote_rcpts.push(recipient);
@@ -848,7 +890,10 @@ impl Session {
         }
 
         let rcpts = std::mem::take(&mut self.rcpts);
-        let remote_rcpts = std::mem::take(&mut self.remote_rcpts);
+        // Mutable because a content-policy quarantine drops the outward hop: a
+        // message we judge unfit for one of our own inboxes must not be
+        // forwarded on to somebody else's.
+        let mut remote_rcpts = std::mem::take(&mut self.remote_rcpts);
         let sender = self.sender.clone().unwrap_or_default();
         let user_id = self.mailbox.as_ref().map(|m| m.user_id);
         self.reset_envelope();
@@ -881,6 +926,36 @@ impl Session {
                 "SMTP : boucle de courrier détectée — message refusé définitivement");
             self.reply("554 5.4.6 Routing loop detected, too many Received headers").await?;
             return Ok(None);
+        }
+
+        // The sender's daily allowance, checked BEFORE anything is delivered or
+        // queued. A refusal that came after the local copies were filed would
+        // make the client retry a message it had already half-delivered, so the
+        // one safe place for this check is here — nothing has happened yet.
+        //
+        // Temporary (4xx) on purpose: an allowance is a rolling window, so the
+        // message becomes sendable again on its own. A 5xx would bounce for good
+        // something that is merely early.
+        if cfg.send_max_recipients_per_day > 0 && !remote_rcpts.is_empty() {
+            if let Some(sender_id) = user_id {
+                match queue::recipients_queued_last_24h(db, sender_id).await {
+                    Ok(used) if used.saturating_add(remote_rcpts.len() as i64)
+                        > cfg.send_max_recipients_per_day =>
+                    {
+                        tracing::warn!(
+                            used, asked = remote_rcpts.len(), limit = cfg.send_max_recipients_per_day,
+                            "SMTP : quota d'envoi quotidien atteint — message différé"
+                        );
+                        self.reply("452 4.5.3 Daily sending quota exceeded, try again later").await?;
+                        return Ok(None);
+                    }
+                    Ok(_) => {}
+                    // The count is a protection, not a gate: a database hiccup
+                    // must not stop legitimate mail. It is logged and the send
+                    // proceeds.
+                    Err(e) => tracing::error!(error = %e, "Quota d'envoi : comptage impossible — envoi autorisé"),
+                }
+            }
         }
 
         // A submission client (an end-user's mail app) may legitimately leave out
@@ -946,6 +1021,52 @@ impl Session {
                 PolicyAction::Ignore => stamped,
             }
         };
+
+        // Attachment and content compliance, in BOTH directions. These rules are
+        // the operator's, not the sending domain's, so an authenticated
+        // submitter is judged by them exactly like a foreign MX — that is the
+        // whole point of a rule that forbids a file type: it must stop the file
+        // coming in *and* going out.
+        //
+        // The reason is logged, never put in the reply: it can quote a filename,
+        // and an SMTP reply line is neither the place for attacker-chosen text
+        // nor for the non-ASCII a filename may carry.
+        // Set when a quarantine emptied the outward hop, so a message with no
+        // local recipient left is refused permanently (550) rather than deferred
+        // (451): the sender must stop retrying something we will never relay.
+        let mut relay_quarantined = false;
+        if let Some(verdict) = compliance::scan(cfg, &message) {
+            let refuse = verdict.action == PolicyAction::Reject
+                // On submission there is no Spam folder to quarantine into: the
+                // message is the sender's own and it must simply not leave.
+                || (verdict.action == PolicyAction::Quarantine && self.submission);
+            if refuse {
+                tracing::warn!(
+                    peer = %peer, sender = %sanitize_token(&sender), reason = %verdict.reason,
+                    "SMTP : message refusé par la conformité du contenu"
+                );
+                self.reply("550 5.7.0 Message rejected by the instance content policy").await?;
+                return Ok(None);
+            }
+            if verdict.action == PolicyAction::Quarantine {
+                disposition = deliver::Disposition::Spam;
+                if !remote_rcpts.is_empty() {
+                    // An alias of ours that forwards outside would carry the
+                    // message to a third party we have just judged unfit for our
+                    // own inboxes. Quarantine means quarantine.
+                    tracing::warn!(
+                        dropped = remote_rcpts.len(),
+                        "SMTP : réexpédition abandonnée — message mis en quarantaine par la conformité"
+                    );
+                    remote_rcpts.clear();
+                    relay_quarantined = true;
+                }
+                tracing::warn!(
+                    peer = %peer, sender = %sanitize_token(&sender), reason = %verdict.reason,
+                    "SMTP : message classé indésirable par la conformité du contenu"
+                );
+            }
+        }
 
         // Deliver to each LOCAL recipient (into our own store). These are the
         // ADDRESSES THE MESSAGE RESOLVED TO, not the ones the client named: an
@@ -1017,11 +1138,24 @@ impl Session {
         }
 
         if delivered == 0 && queued == 0 {
+            if relay_quarantined {
+                // Nothing was stored and nothing will be relayed: the only
+                // recipients were outward hops we deliberately dropped. A 4xx
+                // here would have the sender retry a message we will never pass
+                // on, for as long as its queue lifetime lasts.
+                self.reply("550 5.7.0 Message rejected by the instance content policy").await?;
+                return Ok(None);
+            }
             // Temporary on purpose: a sender that retries is far better than a
             // message we have quietly lost.
             self.reply("451 4.3.0 Message could not be stored, try again later").await?;
             return Ok(Some("Aucun destinataire servi".to_string()));
         }
+
+        // Journalling, once per accepted message and only once it IS accepted:
+        // an archive of messages we refused would be a record of things that
+        // never happened. Best-effort — it never changes the reply below.
+        journal::archive(db, cfg, attachments_dir(), &sender, &message).await;
 
         let id = last_id.map(|id| id.to_string()).unwrap_or_default();
         tracing::info!(peer = %peer, sender = %sender, delivered, queued, "SMTP : message accepté");

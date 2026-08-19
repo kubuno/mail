@@ -55,7 +55,7 @@ export default function ThreadContextMenu({
     { type: 'action', icon: <Forward size={15} />,  label: t('mail_forward'),   onClick: actions.onForward },
     { type: 'separator' },
     { type: 'action', icon: <Archive size={15} />, label: t('archive', { defaultValue: 'Archiver' }), onClick: actions.onArchive },
-    { type: 'action', icon: <Trash2 size={15} />,  label: t('delete'), onClick: actions.onDelete },
+    { type: 'action', icon: <Trash2 size={15} />,  label: t('delete'), shortcut: 'Suppr', onClick: actions.onDelete },
     {
       type: 'action',
       icon: unread ? <MailOpen size={15} /> : <MailIcon size={15} />,

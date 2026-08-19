@@ -492,7 +492,7 @@ export default function MailSearchBar() {
           boxShadow:    '0 4px 20px rgba(0,0,0,0.16)',
           overflow:     'hidden',
         } : {
-          background:   isActive ? '#ffffff' : '#eaeef5',
+          background:   isActive ? '#ffffff' : 'var(--color-search-bg)',
           boxShadow:    isActive ? '0 1px 3px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.1)' : 'none',
           border:       `1px solid ${isActive ? '#e0e0e0' : 'transparent'}`,
           borderRadius: '9999px',

@@ -117,7 +117,10 @@ async fn deliver_one(
     let outcome = if let Some(relay) = relay {
         outbound::deliver_via_relay(&c.recipient, &c.envelope_from, &to_send, relay, &cfg.hostname).await
     } else {
-        let policy = outbound::Policy::from_config(cfg);
+        // Per-destination policy: a domain the operator listed as
+        // encryption-only is never delivered to in the clear, whatever the
+        // general level says.
+        let policy = outbound::Policy::for_domain(cfg, &c.domain);
         outbound::deliver(&c.recipient, &c.domain, &c.envelope_from, &to_send, &policy).await
     };
 

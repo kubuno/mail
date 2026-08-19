@@ -25,7 +25,7 @@
 use crate::{
     errors::MailError,
     models::{EmailAccount, SendMailDto},
-    server::{config, deliver, hygiene, queue, resolve},
+    server::{compliance, config, deliver, hygiene, journal, queue, resolve},
     services::smtp_service,
     state::AppState,
 };
@@ -44,22 +44,48 @@ pub async fn send_from_local_account(
     autocrypt_key: Option<&str>,
     sender: Option<&str>,
 ) -> Result<String, MailError> {
-    // Build the RFC 5322 message once — the same bytes feed local delivery and
-    // the outbound queue. `sender` (a delegate's address) is stamped as the
-    // `Sender:` header for a delegated send; None for a self-send.
-    let (email, message_id) =
-        smtp_service::build_email(&account.name, &account.email_address, dto, subject, body_html, pgp, autocrypt_key, sender)
-            .map_err(|e| MailError::Smtp(e.to_string()))?;
-    let raw = email.formatted();
-
-    // The live server configuration: which domains are ours, and whether outbound
-    // delivery is switched on. Read from the core rather than a local copy.
+    // The live server configuration: which domains are ours, whether outbound
+    // delivery is switched on, and what the instance's compliance rules are.
+    // Read from the core rather than a local copy — and read FIRST, because the
+    // administrator's footer belongs inside the body we are about to build (and
+    // therefore inside the PGP signature, when there is one).
     let http = reqwest::Client::new();
     let cfg = config::fetch(&http, &state.settings).await.ok_or_else(|| {
         MailError::Internal(anyhow::anyhow!(
             "Configuration du serveur de messagerie illisible : impossible d'envoyer depuis une boîte locale"
         ))
     })?;
+
+    // The instance's footer (legal mention, disclaimer). No-op when none is
+    // configured. The plain-text alternative is derived from this HTML by the
+    // builder, so one insertion covers both parts of the message.
+    let body_html = compliance::with_footer(body_html, &cfg.append_footer_html);
+
+    // Build the RFC 5322 message once — the same bytes feed local delivery and
+    // the outbound queue. `sender` (a delegate's address) is stamped as the
+    // `Sender:` header for a delegated send; None for a self-send.
+    let (email, message_id) =
+        smtp_service::build_email(&account.name, &account.email_address, dto, subject, &body_html, pgp, autocrypt_key, sender)
+            .map_err(|e| MailError::Smtp(e.to_string()))?;
+    let raw = email.formatted();
+
+    // Attachment and content compliance, applied to what the user is about to
+    // send. The same rules that keep a forbidden file OUT must keep it IN; a
+    // rule enforced only on reception is half a rule.
+    //
+    // Both non-trivial verdicts mean the same thing here — the message must not
+    // leave — so the user is told now, while they can still fix it, rather than
+    // discovering it from a bounce.
+    if let Some(verdict) = compliance::scan(&cfg, &raw) {
+        tracing::warn!(
+            from = %account.email_address, reason = %verdict.reason,
+            "Envoi refusé par la conformité du contenu"
+        );
+        return Err(MailError::Validation(format!(
+            "Message refusé par la politique de contenu de l'instance : {}.",
+            verdict.reason
+        )));
+    }
 
     let envelope_from = account.email_address.trim().to_ascii_lowercase();
 
@@ -123,6 +149,33 @@ pub async fn send_from_local_account(
         ));
     }
 
+    // The delivery restriction, if the operator declared one. Naming the refused
+    // address is deliberate: the sender chose it and can change it, and the list
+    // itself is not a secret — it is a policy they are subject to.
+    if let Some(refused) = remote.iter().find(|address| !cfg.outbound_recipient_allowed(address)) {
+        return Err(MailError::Validation(format!(
+            "Le domaine du destinataire « {refused} » ne fait pas partie des domaines autorisés par l'administrateur."
+        )));
+    }
+
+    // The sender's daily allowance, measured on what has actually been queued
+    // for the internet over the last 24 hours. Checked before anything is
+    // delivered, so a refusal never leaves half a send behind.
+    if cfg.send_max_recipients_per_day > 0 && !remote.is_empty() {
+        match queue::recipients_queued_last_24h(&state.db, account.user_id).await {
+            Ok(used) if used.saturating_add(remote.len() as i64) > cfg.send_max_recipients_per_day => {
+                return Err(MailError::Validation(format!(
+                    "Quota d'envoi quotidien atteint : {used} destinataires externes sur les {} autorisés par 24 heures. Réessayez plus tard.",
+                    cfg.send_max_recipients_per_day
+                )));
+            }
+            Ok(_) => {}
+            // A counting failure must not block legitimate mail; it is logged
+            // and the send proceeds.
+            Err(e) => tracing::error!(error = %e, "Quota d'envoi : comptage impossible — envoi autorisé"),
+        }
+    }
+
     // ── Local recipients: file straight into their mailboxes ────────────────
     let mut delivered = 0usize;
     for delivery in &local {
@@ -181,6 +234,13 @@ pub async fn send_from_local_account(
             "Aucun destinataire n'a pu être servi"
         )));
     }
+
+    // Journalling, once the send has actually happened. Best-effort: it never
+    // fails a message that has already left.
+    journal::archive(
+        &state.db, &cfg, &state.settings.mail.attachments_dir, &envelope_from, &raw,
+    )
+    .await;
 
     Ok(message_id)
 }

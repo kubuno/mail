@@ -41,6 +41,28 @@ jobs:
         with:
           name: kubuno-mail-deb
           path: dist/*.deb
+      # Release notes come from CHANGELOG.md (section stamped by _tools/release.sh),
+      # not from a commit summary: they are written when the change is made.
+      - name: extract release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python3 - "${GITHUB_REF_NAME#v}" << 'PY'
+          import re, sys, pathlib
+          version = sys.argv[1]
+          src = pathlib.Path('CHANGELOG.md')
+          notes = ''
+          if src.exists():
+              text = src.read_text(encoding='utf-8')
+              m = re.search(rf'^## \[{re.escape(version)}\][^\n]*$', text, re.M)
+              if m:
+                  rest = text[m.end():]
+                  nxt = re.search(r'^## \[', rest, re.M)
+                  chunk = rest[:nxt.start()] if nxt else rest
+                  # Drop the trailing reference-link block ([1.2.3]: https://…)
+                  notes = re.sub(r'(?m)^\[[^\]]+\]:\s*http\S*$', '', chunk).strip()
+          pathlib.Path('RELEASE_NOTES.md').write_text(notes, encoding='utf-8')
+          print(notes or '(no notes for this version)')
+          PY
 
       # ── Release (sur tag) ──
       - name: release
@@ -48,3 +70,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.deb
+          body_path: RELEASE_NOTES.md

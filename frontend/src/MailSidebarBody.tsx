@@ -246,7 +246,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
   return (
     <>
       {/* The "New message" button lives in the shell's default New button now
-          (NewActions: MailCreateMenu, registered in entry.ts). */}
+          (MenuItem[] contributed to 'shell.new-actions' in entry.ts). */}
       <nav className={`flex-1 overflow-y-auto py-1 space-y-0.5 px-2`}>
         {/* Dossiers principaux */}
         {MAIN_FOLDERS.map(f => (

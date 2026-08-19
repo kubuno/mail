@@ -20,7 +20,9 @@ import ThreadReaderToolbar from './ThreadReaderToolbar'
 
 export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) => void }) {
   const { t } = useTranslation('mail')
-  const { selectedThread, setSelectedThread, currentFolder } = useMailStore()
+  // `composeOpen`: a floating composer is a surface of its own — the reader's
+  // shortcuts must not act on the conversation behind it.
+  const { selectedThread, setSelectedThread, currentFolder, composeOpen } = useMailStore()
   const qc = useQueryClient()
   const [inlineMode, setInlineMode] = useState<'reply' | 'forward' | null>(null)
   // Which messages are open. Held HERE rather than in each card so the
@@ -199,7 +201,8 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
     if (next) setSelectedThread(next.id)
   }
 
-  // Reader shortcuts: Escape/u=back, e=archive, #/Backspace=delete, r=reply, f=forward.
+  // Reader shortcuts: Escape/u=back, e=archive, #/Backspace/Delete=delete,
+  // r=reply, f=forward.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!plainKey(e) || !selectedThread || !data) return
@@ -209,6 +212,8 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
         case 'e': e.preventDefault(); mailApi.moveThread(thread.id, 'archive').then(() => {
           setSelectedThread(null); qc.invalidateQueries({ queryKey: ['mail-threads'] }); qc.invalidateQueries({ queryKey: ['mail-counts'] })
         }); break
+        // Same deletion as the toolbar's trash button, on the open conversation.
+        case 'Delete': if (composeOpen) break; e.preventDefault(); deleteMut.mutate(thread.id); break
         case '#': case 'Backspace': e.preventDefault(); deleteMut.mutate(thread.id); break
         case 'r': { e.preventDefault(); const m = messages[messages.length - 1]; if (m) { setInlineMode('reply'); setInlineMsg(m) } break }
         case 'f': { e.preventDefault(); const m = messages[messages.length - 1]; if (m) { setInlineMode('forward'); setInlineMsg(m) } break }
@@ -216,7 +221,7 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedThread, data, deleteMut, qc, setSelectedThread])
+  }, [selectedThread, data, deleteMut, qc, setSelectedThread, composeOpen])
 
   const isMobile = useIsMobile()
 

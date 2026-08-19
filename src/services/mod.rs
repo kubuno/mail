@@ -11,6 +11,7 @@ pub mod sent_copy;
 pub mod crypto;
 pub mod html_sanitize;
 pub mod imap_service;
+pub mod import_service;
 pub mod pgp;
 pub mod pgp_mime;
 pub mod oauth;

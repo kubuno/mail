@@ -390,6 +390,12 @@ export interface ForwardAddressConfig {
 export interface ForwardingConfig {
   forwardAddresses: ForwardAddressConfig[]
   forwardKeep:      boolean
+  /**
+   * Whether the instance allows automatic forwarding at all. Read-only: the
+   * server rejects saving an enabled rule when it is false, and stops firing
+   * the rules that already exist. Optional so an older server reads as "allowed".
+   */
+  forwardingAllowed?: boolean
 }
 
 /**

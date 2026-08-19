@@ -141,10 +141,17 @@ position = 6
 description = "Ce qui est refusé, retardé ou classé indésirable avant d'atteindre une boîte."
 
 [[setting_groups]]
+id       = "compliance"
+label    = "Conformité"
+icon     = "ClipboardCheck"
+position = 7
+description = "Ce que les messages ont le droit de transporter, avec qui l'instance échange, et combien de temps les dossiers Indésirables et Corbeille sont conservés."
+
+[[setting_groups]]
 id       = "openpgp"
 label    = "OpenPGP (bout en bout)"
 icon     = "KeyRound"
-position = 7
+position = 8
 description = "Le chiffrement et la signature du CONTENU des messages avec OpenPGP/GPG — distinct du chiffrement des connexions (Chiffrement). Chaque utilisateur gère ses propres clés."
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -176,7 +183,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Nom d'hôte annoncé"
-description = "Nom présenté dans les bannières SMTP/IMAP/POP3 et dans les en-têtes Received. Il doit correspondre à l'enregistrement PTR de votre adresse IP publique : Gmail et Yahoo rejettent le courrier dont le PTR ne se résout pas en sens inverse. Vide = nom de la machine."
+description = "Nom présenté dans les bannières SMTP/IMAP/POP3 et dans les en-têtes Received. Il doit correspondre à l'enregistrement PTR de votre adresse IP publique : les grands fournisseurs de messagerie rejettent le courrier dont le PTR ne se résout pas en sens inverse. Vide = nom de la machine."
 category    = "Identité du serveur"
 group       = "services"
 placeholder = "mail.example.com"
@@ -471,6 +478,19 @@ category    = "Accès POP3"
 group       = "services"
 depends_on  = "pop3s_enabled"
 
+# ── 5 bis. Accès des utilisateurs ─────────────────────────────────────────────
+
+[[settings]]
+key         = "allow_auto_forwarding"
+scope       = "global"
+type        = "bool"
+default     = true
+label       = "Autoriser le transfert automatique"
+description = "Permet à chaque utilisateur de faire recopier automatiquement tout son courrier entrant vers une autre adresse, depuis ses réglages de messagerie. Désactiver ferme la porte dans les deux sens : l'onglet ne permet plus d'activer de règle, ET les règles déjà en place cessent de recopier quoi que ce soit — sans quoi les boîtes déjà configurées continueraient d'exporter le courrier de l'organisation. Le transfert manuel d'un message, lui, reste toujours possible."
+category    = "Accès des utilisateurs"
+group       = "services"
+risk        = "warning"
+
 # ── 6. Chiffrement TLS ────────────────────────────────────────────────────────
 
 [[settings]]
@@ -508,6 +528,20 @@ label       = "Version TLS minimale"
 description = "TLS 1.3 ferme les faiblesses résiduelles de 1.2, mais un serveur distant qui ne parle que 1.2 ne pourra plus négocier et retombera en clair sur le port de réception : c'est alors une perte nette de chiffrement. N'exigez 1.3 que si vous n'ouvrez pas de port 25."
 category    = "Chiffrement TLS"
 group       = "transport"
+advanced    = true
+risk        = "warning"
+
+[[settings]]
+key         = "tls_required_domains"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Domaines à chiffrement obligatoire"
+description = "Un domaine par ligne : le courrier qui leur est destiné n'est JAMAIS livré en clair, quel que soit le « Niveau TLS à la livraison » réglé plus bas. Un serveur distant qui refuse de négocier TLS ne reçoit rien — le message reste en file et repart plus tard, jusqu'à expiration. C'est ce qu'on réserve aux correspondants dont les échanges ne doivent pas transiter en clair (banque, santé, avocat). Les sous-domaines d'une entrée sont couverts."
+category    = "Chiffrement TLS"
+group       = "transport"
+multiline   = true
+placeholder = "banque.example\ncabinet-medical.fr"
 advanced    = true
 risk        = "warning"
 
@@ -794,6 +828,22 @@ group       = "filtering"
 placeholder = "[Indésirable]"
 advanced    = true
 
+# ── 9 bis. Limites d'envoi ────────────────────────────────────────────────────
+
+[[settings]]
+key         = "send_max_recipients_per_day"
+scope       = "global"
+type        = "int"
+default     = 0
+min         = 0
+max         = 1000000
+label       = "Destinataires externes par utilisateur et par jour"
+description = "Plafond glissant sur 24 heures, compté sur ce qui part réellement vers l'extérieur (les destinataires internes ne comptent pas). Au-delà, l'envoi est REFUSÉ TEMPORAIREMENT : le message n'est pas perdu, il redevient envoyable au fil du temps. C'est la protection contre un compte compromis qui se met à émettre en masse — sans elle, la première chose que fait un mot de passe volé est de brûler la réputation de votre adresse IP. 0 = aucune limite."
+category    = "Limites d'envoi"
+group       = "filtering"
+unit        = "dest./j"
+risk        = "warning"
+
 # ── 10. Limites de connexion ──────────────────────────────────────────────────
 
 [[settings]]
@@ -817,6 +867,174 @@ label       = "Ralentir les échecs d'authentification"
 description = "Chaque échec successif depuis une même adresse IP est retardé un peu plus (2, 4, 8 puis 15 secondes), comme le fait Dovecot. Désactiver rend le test de mots de passe aussi rapide que le réseau le permet."
 category    = "Limites de connexion"
 group       = "transport"
+risk        = "danger"
+
+# ── 11. Conformité des pièces jointes ─────────────────────────────────────────
+# Ces règles s'appliquent DANS LES DEUX SENS — à la réception comme à l'envoi.
+# Une règle qui n'empêche qu'un fichier d'entrer n'est qu'une demi-règle : le
+# même type de fichier doit aussi ne pas pouvoir sortir.
+
+[[settings]]
+key         = "attachment_blocked_extensions"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Extensions de pièces jointes refusées"
+description = "Une extension par ligne, avec ou sans le point. Un message qui porte une pièce jointe de ce type subit l'action choisie plus bas, à la réception comme à l'envoi. ⚠️ Le contrôle porte sur le NOM du fichier, pas sur son contenu réel : un exécutable renommé « facture.pdf » passe. C'est une barrière contre les envois de masse peu soignés, pas contre un adversaire déterminé."
+category    = "Conformité des pièces jointes"
+group       = "compliance"
+multiline   = true
+placeholder = "exe\nscr\ncom\npif\nvbs\njs\njar\nmsi"
+risk        = "warning"
+
+[[settings]]
+key         = "attachment_max_mb"
+scope       = "global"
+type        = "int"
+default     = 0
+min         = 0
+max         = 2048
+unit        = "Mo"
+label       = "Taille maximale d'une pièce jointe"
+description = "S'applique à CHAQUE fichier pris séparément, en plus de la taille maximale du message entier réglée dans Services. Utile quand on accepte des messages volumineux mais qu'on veut que les gros fichiers passent par le partage de fichiers plutôt que par la boîte de réception. 0 = pas de limite par fichier."
+category    = "Conformité des pièces jointes"
+group       = "compliance"
+
+[[settings]]
+key         = "attachment_block_encrypted"
+scope       = "global"
+type        = "bool"
+default     = false
+label       = "Refuser les archives protégées par mot de passe"
+description = "Une archive ZIP chiffrée ne peut être ouverte par aucun analyseur — c'est précisément pour cela qu'elle sert à transporter des logiciels malveillants, avec le mot de passe donné dans le corps du message. Le contrôle lit l'indicateur de chiffrement de l'archive ; il ne couvre que la famille ZIP, les autres formats de conteneur ne sont pas reconnus."
+category    = "Conformité des pièces jointes"
+group       = "compliance"
+
+[[settings]]
+key         = "attachment_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "quarantine", label = "Classer en indésirable — le destinataire peut encore le récupérer" },
+    { value = "reject",     label = "Refuser le message — l'expéditeur est prévenu" },
+]
+default     = "reject"
+label       = "Que faire d'un message concerné"
+description = "« Refuser » agit pendant la session SMTP, avant que l'instance ait accepté le message : c'est le serveur d'en face qui produit l'avis de non-remise, et l'expéditeur sait tout de suite. À l'envoi, les deux valeurs reviennent au même — un message que l'utilisateur compose ne part pas et il en est averti immédiatement."
+category    = "Conformité des pièces jointes"
+group       = "compliance"
+
+# ── 12. Conformité du contenu ─────────────────────────────────────────────────
+
+[[settings]]
+key         = "content_blocked_expressions"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Expressions interdites"
+description = "Une expression par ligne (une virgule est un caractère ordinaire, pas un séparateur). La recherche est insensible à la casse et porte sur le sujet ainsi que sur les deux versions du corps, texte et HTML. Attention aux mots courts : « bal » se retrouve dans « emballage ». Une expression de plusieurs mots est bien plus sûre."
+category    = "Conformité du contenu"
+group       = "compliance"
+multiline   = true
+placeholder = "confidentiel défense\nne pas diffuser"
+risk        = "warning"
+
+[[settings]]
+key         = "content_action"
+scope       = "global"
+type        = "enum"
+values      = [
+    { value = "quarantine", label = "Classer en indésirable — le destinataire peut encore le récupérer" },
+    { value = "reject",     label = "Refuser le message — l'expéditeur est prévenu" },
+]
+default     = "quarantine"
+label       = "Que faire d'un message concerné"
+description = "Le classement en indésirable est le choix prudent : une correspondance sur un mot est bien plus faillible qu'une pièce jointe interdite, et un faux positif refusé est un message définitivement perdu."
+category    = "Conformité du contenu"
+group       = "compliance"
+
+# ── 13. Pied de page ──────────────────────────────────────────────────────────
+
+[[settings]]
+key         = "append_footer_html"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Pied de page ajouté aux messages"
+description = "Mention légale ou avertissement de confidentialité ajouté à la fin des messages rédigés depuis l'interface web par les boîtes hébergées sur cette instance. Le texte est inséré tel quel : des balises HTML simples (<b>, <a>, <br>) sont acceptées. La version texte du message est dérivée du HTML, le pied de page apparaît donc dans les deux. ⚠️ Les messages envoyés depuis un logiciel de messagerie (Thunderbird, Outlook…) par le port de soumission ne sont PAS modifiés : le serveur n'a alors qu'un message déjà assemblé et signé, et le réécrire invaliderait sa signature."
+category    = "Pied de page"
+group       = "compliance"
+multiline   = true
+placeholder = "Ce message et ses pièces jointes sont confidentiels."
+
+# ── 14. Restriction de remise ─────────────────────────────────────────────────
+
+[[settings]]
+key         = "restrict_inbound_domains"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Domaines expéditeurs autorisés"
+description = "Un domaine par ligne. Renseigné, il ferme l'instance : SEULS ces domaines peuvent lui écrire, tout le reste est refusé pendant la session SMTP avec un message explicite. Vos propres domaines et les avis de non-remise ne sont jamais concernés, et les sous-domaines d'une entrée sont couverts. Vide (le défaut) = l'instance reçoit de tout le monde."
+category    = "Restriction de remise"
+group       = "compliance"
+multiline   = true
+placeholder = "partenaire.example\nclient.example"
+risk        = "danger"
+
+[[settings]]
+key         = "restrict_outbound_domains"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Domaines destinataires autorisés"
+description = "Un domaine par ligne. Renseigné, les utilisateurs ne peuvent plus écrire QU'À ces domaines — et les alias qui réexpédient ailleurs cessent de le faire. Le refus arrive à la composition ou à la commande RCPT, donc l'expéditeur voit tout de suite quelle adresse est en cause. Vide (le défaut) = aucune restriction."
+category    = "Restriction de remise"
+group       = "compliance"
+multiline   = true
+placeholder = "partenaire.example"
+risk        = "danger"
+
+# ── 15. Conservation des messages ─────────────────────────────────────────────
+
+[[settings]]
+key         = "spam_retention_days"
+scope       = "global"
+type        = "int"
+default     = 0
+min         = 0
+max         = 3650
+unit        = "j"
+label       = "Purger les indésirables après"
+description = "Les messages classés indésirables plus anciens que ce délai sont supprimés définitivement, avec leurs pièces jointes. Trente jours est l'usage. Ne concerne que les boîtes hébergées par cette instance : les comptes externes relevés en IMAP sont une copie de ce qui vit chez le fournisseur, et les purger ne ferait que les retélécharger. 0 = ne jamais purger."
+category    = "Conservation des messages"
+group       = "compliance"
+risk        = "warning"
+
+[[settings]]
+key         = "trash_retention_days"
+scope       = "global"
+type        = "int"
+default     = 0
+min         = 0
+max         = 3650
+unit        = "j"
+label       = "Vider la corbeille après"
+description = "Même principe pour la corbeille. Sans délai, un message « supprimé » reste indéfiniment sur le disque de l'instance — ce que l'utilisateur qui l'a jeté ne suppose pas. La suppression est définitive et sans confirmation : c'est une tâche de fond."
+category    = "Conservation des messages"
+group       = "compliance"
+risk        = "danger"
+
+[[settings]]
+key         = "archive_address"
+scope       = "global"
+type        = "string"
+default     = ""
+label       = "Adresse d'archivage de tout le courrier"
+description = "Une boîte HÉBERGÉE par cette instance qui reçoit une copie de chaque message accepté ou envoyé par les services SMTP — de quoi satisfaire une obligation de conservation même si un utilisateur vide la sienne. Ce que la copie couvre : le courrier entrant, celui qu'un logiciel de messagerie soumet, et celui rédigé dans l'interface web. Ce qu'elle ne couvre PAS : les comptes externes relevés en IMAP (ce courrier ne passe pas par nos services) et les messages automatiques de l'instance (réponses d'absence, avis de non-remise). ⚠️ Cette boîte reçoit TOUT le courrier de l'organisation : réservez-la, et n'y configurez ni transfert ni réponse d'absence. Vide = aucun archivage."
+category    = "Conservation des messages"
+group       = "compliance"
+placeholder = "archives@example.com"
 risk        = "danger"
 
 # ── 7. OpenPGP (bout en bout) ─────────────────────────────────────────────────

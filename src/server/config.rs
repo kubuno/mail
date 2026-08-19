@@ -2,9 +2,12 @@
 //! in the console.
 //!
 //! The values live in `core.settings` (declared by `module.toml`'s `[[settings]]`
-//! blocks) and are read back through `/internal/modules/settings` — the module's
-//! own schema may not touch the core's tables, and a background listener has no
-//! user token to use the public config route.
+//! blocks) and are read back through `/internal/modules/mail/settings` — the
+//! module's own schema may not touch the core's tables, and a background listener
+//! has no user token to use the public config route. The module is named in the
+//! URL rather than left to be derived from the secret, so the read works on an
+//! instance that shares one master secret between modules as well as on one that
+//! issues a distinct derived secret per module.
 //!
 //! Every field here is reachable from the admin panel, and every field here is
 //! read by code that acts on it. A setting that changes nothing is worse than an
@@ -376,6 +379,53 @@ pub struct ServerConfig {
     pub dmarc_reject_action: PolicyAction,
     pub dmarc_quarantine_action: PolicyAction,
 
+    // ── Content and attachment compliance ───────────────────────────────────
+    /// Filename extensions (no dot, lower case) refused as attachments. Read on
+    /// the DECLARED name, not on the file's magic bytes.
+    pub attachment_blocked_extensions: Vec<String>,
+    /// Size ceiling for ONE attachment, in bytes. `0` = no per-attachment
+    /// ceiling (the whole-message ceiling still applies).
+    pub attachment_max_bytes:          usize,
+    /// Refuse a password-protected ZIP: nothing can scan its contents.
+    pub attachment_block_encrypted:    bool,
+    /// What an attachment rule match costs.
+    pub attachment_action:             PolicyAction,
+    /// Expressions (lower case) refused in the subject or in either body part.
+    pub content_blocked_expressions:   Vec<String>,
+    /// What a content rule match costs.
+    pub content_action:                PolicyAction,
+    /// HTML appended to the body of messages composed on this instance. Empty =
+    /// nothing appended.
+    pub append_footer_html:            String,
+
+    // ── Delivery restriction ────────────────────────────────────────────────
+    /// When non-empty, ONLY these sender domains may deliver mail here. Our own
+    /// domains are always allowed — the restriction is about the outside world.
+    pub restrict_inbound_domains:  Vec<String>,
+    /// When non-empty, mail may ONLY be sent to these recipient domains. Our own
+    /// domains are always allowed.
+    pub restrict_outbound_domains: Vec<String>,
+
+    // ── Sending limits ──────────────────────────────────────────────────────
+    /// Recipients one user may be delivered to over a rolling 24 hours. `0` =
+    /// no limit. Counted on the outbound queue, so it bounds what actually
+    /// leaves the instance, not what was typed.
+    pub send_max_recipients_per_day: i64,
+
+    // ── End-user access ─────────────────────────────────────────────────────
+    /// Users may set up automatic forwarding of their incoming mail. Off means
+    /// existing rules stop firing AND no new one can be enabled.
+    pub allow_auto_forwarding: bool,
+
+    // ── Retention ───────────────────────────────────────────────────────────
+    /// Days a message stays in Spam before it is purged. `0` = never purged.
+    pub spam_retention_days:  i64,
+    /// Days a message stays in Trash before it is purged. `0` = never purged.
+    pub trash_retention_days: i64,
+    /// Mailbox of this instance that receives a copy of every message the SMTP
+    /// services accept or send. Empty = no journalling.
+    pub archive_address:      String,
+
     // ── Anti-spam at the connection level ───────────────────────────────────
     pub greylisting_enabled:     bool,
     pub greylist_delay_secs:     i64,
@@ -402,6 +452,11 @@ pub struct ServerConfig {
     /// the large providers past a few thousand messages a day.
     pub dkim_require_signature:  bool,
     pub outbound_tls:            OutboundTls,
+    /// Destination domains for which transport encryption is MANDATORY,
+    /// whatever `outbound_tls` says. A subdomain of a listed domain matches too.
+    /// Postfix's per-destination TLS policy, reduced to the one decision that
+    /// matters: never in the clear to these.
+    pub tls_required_domains:    Vec<String>,
     /// How long a message may stay in the queue being retried before it is
     /// bounced. Postfix's `maximal_queue_lifetime`, in hours.
     pub outbound_lifetime_hours: i64,
@@ -446,6 +501,25 @@ impl Default for ServerConfig {
             dmarc_reject_action:     PolicyAction::Reject,
             dmarc_quarantine_action: PolicyAction::Quarantine,
 
+            attachment_blocked_extensions: Vec::new(),
+            attachment_max_bytes:          0,
+            attachment_block_encrypted:    false,
+            attachment_action:             PolicyAction::Reject,
+            content_blocked_expressions:   Vec::new(),
+            content_action:                PolicyAction::Quarantine,
+            append_footer_html:            String::new(),
+
+            restrict_inbound_domains:  Vec::new(),
+            restrict_outbound_domains: Vec::new(),
+
+            send_max_recipients_per_day: 0,
+
+            allow_auto_forwarding: true,
+
+            spam_retention_days:  0,
+            trash_retention_days: 0,
+            archive_address:      String::new(),
+
             greylisting_enabled:   false,
             greylist_delay_secs:   300,
             greylist_window_hours: 4,
@@ -458,6 +532,7 @@ impl Default for ServerConfig {
             dkim_signing_enabled:      true,
             dkim_require_signature:    false,
             outbound_tls:              OutboundTls::May,
+            tls_required_domains:      Vec::new(),
             outbound_lifetime_hours:   120,
             outbound_min_backoff_secs: 300,
             outbound_max_backoff_hours: 4,
@@ -556,6 +631,40 @@ impl ServerConfig {
         matches_list(&self.allowlist_senders, address)
     }
 
+    /// True when a message from `address` may be accepted at all.
+    ///
+    /// An empty list (the default) allows everyone. Our own domains always
+    /// pass: the restriction is about the outside world, and a rule that cut
+    /// internal mail would be a foot-gun with no upside. A null return path
+    /// (a bounce) is never restricted either — refusing a delivery report would
+    /// hide the failures of our own outgoing mail.
+    pub fn inbound_sender_allowed(&self, address: &str) -> bool {
+        if self.restrict_inbound_domains.is_empty() || address.trim().is_empty() {
+            return true;
+        }
+        self.is_local_domain(address) || domain_listed(&self.restrict_inbound_domains, address)
+    }
+
+    /// True when a message may be sent to `address`. Same rules, other way.
+    pub fn outbound_recipient_allowed(&self, address: &str) -> bool {
+        if self.restrict_outbound_domains.is_empty() || address.trim().is_empty() {
+            return true;
+        }
+        self.is_local_domain(address) || domain_listed(&self.restrict_outbound_domains, address)
+    }
+
+    /// True when delivery to this destination domain must be encrypted, whatever
+    /// the general outbound level says. A subdomain of a listed domain matches.
+    pub fn tls_required_for(&self, domain: &str) -> bool {
+        let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+        if domain.is_empty() {
+            return false;
+        }
+        self.tls_required_domains
+            .iter()
+            .any(|listed| domain == *listed || domain.ends_with(&format!(".{listed}")))
+    }
+
     /// True when this envelope sender is refused instance-wide, by address or
     /// by domain.
     pub fn is_blocklisted(&self, address: &str) -> bool {
@@ -589,6 +698,23 @@ fn matches_list(list: &[String], address: &str) -> bool {
     })
 }
 
+/// True when `address`'s domain — or one of its parent domains — is in `list`.
+/// The entries are already lower-cased and stripped of a leading `@` by the
+/// settings reader.
+fn domain_listed(list: &[String], address: &str) -> bool {
+    let domain = match address.trim().rsplit_once('@') {
+        Some((_, d)) => d.trim_end_matches('>').trim_end_matches('.').to_ascii_lowercase(),
+        // Not an address: treat the whole string as a domain, which is what a
+        // caller holding a bare destination domain passes.
+        None => address.trim().trim_end_matches('.').to_ascii_lowercase(),
+    };
+    if domain.is_empty() {
+        return false;
+    }
+    list.iter()
+        .any(|listed| domain == *listed || domain.ends_with(&format!(".{listed}")))
+}
+
 fn default_hostname() -> String {
     std::env::var("HOSTNAME")
         .ok()
@@ -619,7 +745,7 @@ fn last_instance_domains() -> &'static RwLock<Vec<InstanceDomain>> {
 /// Two calls per cycle, never more: the settings, then the domain registry.
 /// Neither is per-domain — the registry answers whole.
 pub async fn fetch(http: &reqwest::Client, settings: &Settings) -> Option<ServerConfig> {
-    let url = format!("{}/internal/modules/settings", settings.core.url);
+    let url = format!("{}/internal/modules/mail/settings", settings.core.url);
     let response = http
         .get(&url)
         .header("X-Internal-Secret", settings.core.internal_secret.as_str())
@@ -794,6 +920,39 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
             .unwrap_or_default()
     };
 
+    // A list of domains: same shape as `list_of`, with the two decorations an
+    // operator naturally types stripped (`@example.com`, `example.com.`) so a
+    // match never fails on punctuation.
+    let domain_list_of = |key: &str| -> Vec<String> {
+        list_of(key)
+            .into_iter()
+            .map(|entry| entry.trim_start_matches('@').trim_end_matches('.').to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect()
+    };
+    // A list of filename extensions. `.exe`, `exe` and `*.exe` all mean the
+    // same thing to a human; they must mean the same thing here too.
+    let extension_list_of = |key: &str| -> Vec<String> {
+        list_of(key)
+            .into_iter()
+            .map(|entry| entry.trim_start_matches('*').trim_start_matches('.').to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect()
+    };
+    // Free-text expressions, one per line. Unlike the address lists these are
+    // NOT split on commas — a comma is an ordinary character in a phrase — and
+    // they are lower-cased once here so the scan compares like with like.
+    let expression_list_of = |key: &str| -> Vec<String> {
+        str_of(key)
+            .map(|raw| {
+                raw.lines()
+                    .map(|line| line.trim().to_lowercase())
+                    .filter(|line| !line.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
     // Trusted upstream relays: CIDR networks, one per line. An entry that does
     // not parse is dropped with a warning rather than silently — a mistyped
     // network that matched nothing would quietly cancel the exemption it was
@@ -909,6 +1068,34 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
         dmarc_reject_action:     action_of("dmarc_reject_action", defaults.dmarc_reject_action),
         dmarc_quarantine_action: action_of("dmarc_quarantine_action", defaults.dmarc_quarantine_action),
 
+        attachment_blocked_extensions: extension_list_of("attachment_blocked_extensions"),
+        attachment_max_bytes: settings
+            .get("attachment_max_mb")
+            .and_then(Value::as_i64)
+            .filter(|mb| (0..=2048).contains(mb))
+            .map(|mb| mb as usize * 1024 * 1024)
+            .unwrap_or(defaults.attachment_max_bytes),
+        attachment_block_encrypted: bool_of("attachment_block_encrypted", defaults.attachment_block_encrypted),
+        attachment_action:          action_of("attachment_action", defaults.attachment_action),
+        content_blocked_expressions: expression_list_of("content_blocked_expressions"),
+        content_action:              action_of("content_action", defaults.content_action),
+        append_footer_html:          str_of("append_footer_html").unwrap_or_default(),
+
+        restrict_inbound_domains:  domain_list_of("restrict_inbound_domains"),
+        restrict_outbound_domains: domain_list_of("restrict_outbound_domains"),
+
+        send_max_recipients_per_day: int_of(
+            "send_max_recipients_per_day", 0, 1_000_000, defaults.send_max_recipients_per_day,
+        ),
+
+        allow_auto_forwarding: bool_of("allow_auto_forwarding", defaults.allow_auto_forwarding),
+
+        spam_retention_days:  int_of("spam_retention_days", 0, 3_650, defaults.spam_retention_days),
+        trash_retention_days: int_of("trash_retention_days", 0, 3_650, defaults.trash_retention_days),
+        archive_address: str_of("archive_address")
+            .map(|raw| raw.to_ascii_lowercase())
+            .unwrap_or_default(),
+
         greylisting_enabled:   bool_of("greylisting_enabled", defaults.greylisting_enabled),
         greylist_delay_secs:   int_of("greylist_delay_secs", 30, 3_600, defaults.greylist_delay_secs),
         greylist_window_hours: int_of("greylist_window_hours", 1, 168, defaults.greylist_window_hours),
@@ -923,6 +1110,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
         outbound_tls: str_of("outbound_tls_level")
             .and_then(|raw| OutboundTls::parse(&raw))
             .unwrap_or(defaults.outbound_tls),
+        tls_required_domains: domain_list_of("tls_required_domains"),
         outbound_lifetime_hours: int_of("outbound_lifetime_hours", 1, 720, defaults.outbound_lifetime_hours),
         outbound_min_backoff_secs: int_of("outbound_min_backoff_secs", 60, 7_200, defaults.outbound_min_backoff_secs),
         outbound_max_backoff_hours: int_of("outbound_max_backoff_hours", 1, 24, defaults.outbound_max_backoff_hours),
@@ -1251,5 +1439,97 @@ mod tests {
         // An empty envelope sender (a bounce) matches nothing.
         assert!(!cfg.is_blocklisted(""));
         assert!(!cfg.is_allowlisted(""));
+    }
+
+    // ── Delivery restriction, mandatory TLS, compliance lists ───────────────
+
+    /// The default must let everything through: a restriction nobody asked for
+    /// would silently cut an instance off from the internet.
+    #[test]
+    fn an_empty_restriction_allows_everyone() {
+        let cfg = from_settings(&json!({}));
+        assert!(cfg.inbound_sender_allowed("anyone@elsewhere.net"));
+        assert!(cfg.outbound_recipient_allowed("anyone@elsewhere.net"));
+    }
+
+    #[test]
+    fn a_restriction_allows_the_listed_domains_their_subdomains_and_our_own() {
+        let mut cfg = from_settings(&json!({
+            "restrict_inbound_domains":  "@Partenaire.FR\nclient.example.",
+            "restrict_outbound_domains": "partenaire.fr",
+            "server_domains":            "kubuno.local",
+        }));
+        cfg.set_instance_domains(vec![declared("toiledev.com", true)]);
+
+        assert!(cfg.inbound_sender_allowed("marie@partenaire.fr"));
+        assert!(cfg.inbound_sender_allowed("marie@compta.partenaire.fr"));
+        assert!(cfg.inbound_sender_allowed("x@client.example"));
+        // Our own domains are never cut off by the restriction.
+        assert!(cfg.inbound_sender_allowed("admin@toiledev.com"));
+        assert!(cfg.inbound_sender_allowed("admin@kubuno.local"));
+        // …and a bounce (null return path) is never restricted.
+        assert!(cfg.inbound_sender_allowed(""));
+        assert!(!cfg.inbound_sender_allowed("spam@ailleurs.net"));
+        // A near-miss must not match by suffix alone.
+        assert!(!cfg.inbound_sender_allowed("x@fauxpartenaire.fr"));
+
+        assert!(cfg.outbound_recipient_allowed("marie@partenaire.fr"));
+        assert!(!cfg.outbound_recipient_allowed("marie@ailleurs.net"));
+    }
+
+    #[test]
+    fn mandatory_tls_matches_a_domain_and_its_subdomains() {
+        let cfg = from_settings(&json!({ "tls_required_domains": "Banque.example\n@sante.fr" }));
+        assert!(cfg.tls_required_for("banque.example"));
+        assert!(cfg.tls_required_for("mx.banque.example"));
+        assert!(cfg.tls_required_for("sante.fr"));
+        assert!(!cfg.tls_required_for("autre.example"));
+        assert!(!cfg.tls_required_for("fausse-banque.example"));
+        assert!(!cfg.tls_required_for(""));
+    }
+
+    /// The three decorations an operator types for an extension all mean the
+    /// same thing.
+    #[test]
+    fn blocked_extensions_are_normalised() {
+        let cfg = from_settings(&json!({ "attachment_blocked_extensions": ".EXE\n*.scr\nvbs" }));
+        assert_eq!(cfg.attachment_blocked_extensions, vec!["exe", "scr", "vbs"]);
+    }
+
+    /// A phrase may contain a comma; the expression list must not be split on
+    /// one the way the address lists are.
+    #[test]
+    fn blocked_expressions_keep_their_commas_and_are_lower_cased() {
+        let cfg = from_settings(&json!({
+            "content_blocked_expressions": "Confidentiel, Défense\n\n  Ne Pas Diffuser  ",
+        }));
+        assert_eq!(
+            cfg.content_blocked_expressions,
+            vec!["confidentiel, défense", "ne pas diffuser"]
+        );
+    }
+
+    #[test]
+    fn the_new_protections_default_to_off_and_survive_a_missing_payload() {
+        let cfg = from_settings(&json!({}));
+        assert!(cfg.attachment_blocked_extensions.is_empty());
+        assert_eq!(cfg.attachment_max_bytes, 0);
+        assert!(!cfg.attachment_block_encrypted);
+        assert_eq!(cfg.send_max_recipients_per_day, 0);
+        assert_eq!(cfg.spam_retention_days, 0);
+        assert_eq!(cfg.trash_retention_days, 0);
+        // …except the two that must NOT silently loosen: forwarding stays as it
+        // was, and a matched rule defaults to the strict action.
+        assert!(cfg.allow_auto_forwarding);
+        assert_eq!(cfg.attachment_action, PolicyAction::Reject);
+        assert_eq!(cfg.content_action, PolicyAction::Quarantine);
+    }
+
+    #[test]
+    fn the_attachment_ceiling_is_read_in_megabytes() {
+        let cfg = from_settings(&json!({ "attachment_max_mb": 5 }));
+        assert_eq!(cfg.attachment_max_bytes, 5 * 1024 * 1024);
+        // Out of range → the compiled default (no ceiling), never a wild value.
+        assert_eq!(from_settings(&json!({ "attachment_max_mb": 99_999 })).attachment_max_bytes, 0);
     }
 }

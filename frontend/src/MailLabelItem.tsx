@@ -54,7 +54,7 @@ export default function MailLabelItem({
   const color = label.color ?? '#5f6368'
 
   const ACTIVE_BG = 'var(--color-primary-light, #d3e3fd)'
-  const HOVER_BG  = 'color-mix(in srgb, var(--color-primary) 12%, white)'
+  const HOVER_BG  = 'var(--kb-sidebar-hover, #e8eaed)'  // host-owned token: one hover colour product-wide
   const background = dropTarget ? '#fef7e0' : active ? ACTIVE_BG : hovered || menu.isOpen ? HOVER_BG : 'transparent'
 
   // The trailing slot is either the unread badge or the ⋮ — never both, so the

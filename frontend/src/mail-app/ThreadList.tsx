@@ -260,7 +260,9 @@ export default function ThreadList() {
       window.open(url, '_blank', 'noopener')
     }
   }
-  const { setPendingCompose, setSearchQuery } = useMailStore()
+  // `composeOpen` / the two manager modals are read only to keep the keyboard
+  // shortcuts from acting on the list hidden behind them.
+  const { setPendingCompose, setSearchQuery, composeOpen, templatesOpen, groupsOpen } = useMailStore()
   const { data: labelsData } = useQuery({ queryKey: ['mail-labels'], queryFn: mailApi.listLabels })
   // Right-click menu on a row.
   const ctxMenu = useMenuDropdown()
@@ -319,10 +321,22 @@ export default function ThreadList() {
       }
       else if (e.key === 'e' && hid) { e.preventDefault(); doArchive([hid]) }
       else if ((e.key === '#' || e.key === 'Backspace') && hid) { e.preventDefault(); doDelete([hid]) }
+      // Delete: exactly what the row menu's "Supprimer" does — the ticked
+      // conversations when the selection is not empty, the highlighted row
+      // otherwise. Never while a composer, a manager modal, the row menu or a
+      // preview is up: they own the keyboard.
+      else if (e.key === 'Delete') {
+        if (composeOpen || templatesOpen || groupsOpen || ctxMenu.pos || ctxCreateLabel || preview) return
+        const ids = checkedIds.size > 0 ? [...checkedIds] : hid ? [hid] : []
+        if (ids.length === 0) return
+        e.preventDefault()
+        doDelete(ids)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [threads, highlightedId, selectedThread]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [threads, highlightedId, selectedThread, checkedIds, composeOpen, templatesOpen, groupsOpen,
+      ctxMenu.pos, ctxCreateLabel, preview]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-w-0">

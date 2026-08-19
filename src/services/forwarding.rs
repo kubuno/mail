@@ -259,6 +259,15 @@ pub async fn maybe_forward(
         return;
     }
 
+    // The instance's switch. Checked HERE rather than only when a rule is
+    // saved: turning automatic forwarding off must stop the rules that already
+    // exist — otherwise closing the door leaves every mailbox that had already
+    // walked through it still copying company mail outside.
+    if !cfg.allow_auto_forwarding {
+        tracing::debug!("Transfert : désactivé par l'administrateur de l'instance");
+        return;
+    }
+
     let rules = match load(db, recipient_user_id).await {
         Ok(rules) => rules,
         Err(e) => {
@@ -282,6 +291,15 @@ pub async fn maybe_forward(
     let mut any_forwarded = false;
     let mut want_archive = false;
     for rule in &active {
+        // A forward is an outgoing hop, so the instance's delivery restriction
+        // governs it like any other. No-op when no restriction is configured.
+        if !cfg.outbound_recipient_allowed(&rule.forward_to) {
+            tracing::warn!(
+                to = %rule.forward_to,
+                "Transfert : destination hors des domaines autorisés — abandonné"
+            );
+            continue;
+        }
         let guard = ForwardGuardInput {
             already_forwarded: incoming.already_forwarded,
             auto_submitted:    incoming.auto_submitted,

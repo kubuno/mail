@@ -1,4 +1,5 @@
 use axum::{
+    middleware,
     routing::{delete, get, patch, post, put},
     Router,
 };
@@ -9,10 +10,12 @@ use crate::{
         accounts, avatar,
         addresses::{aliases, directory, domains, lists, mailboxes},
         delegation,
-        diagnostics, dkim, drafts, filters, folders, forwarding, labels, mailbox, messages, oauth, pgp,
+        diagnostics, dkim, drafts, filters, folders, forwarding, labels, mailbox, messages,
+        migration, oauth, pgp,
         pop_imap, recipient_groups, relay,
         send_as, spam, templates, threads, vacation, wkd,
     },
+    middleware::require_internal_secret,
     state::AppState,
 };
 
@@ -21,6 +24,16 @@ pub fn build(state: AppState) -> Router {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
+
+    // Core-to-module only: mailbox migration from a third-party IMAP server.
+    // These take a source password and write into an arbitrary user's mailbox,
+    // so they sit on their own sub-router behind the shared-secret guard and
+    // are NEVER reachable with a user session.
+    let internal = Router::new()
+        .route("/internal/migration/probe", post(migration::probe))
+        .route("/internal/migration/run",   post(migration::run))
+        .layer(middleware::from_fn_with_state(state.clone(), require_internal_secret))
+        .with_state(state.clone());
 
     Router::new()
         // Accounts
@@ -150,6 +163,7 @@ pub fn build(state: AppState) -> Router {
         .route("/spam/train",            post(spam::train))
         // Settings (renvoie vers la page settings du frontend)
         .route("/settings",              get(|| async { axum::Json(serde_json::json!({ "module": "mail" })) }))
-        .layer(cors)
         .with_state(state)
+        .merge(internal)
+        .layer(cors)
 }

@@ -298,6 +298,17 @@ async fn main() -> Result<()> {
         });
     }
 
+    // Retention purge: ages Spam and Trash out of the hosted mailboxes. Idle
+    // until an administrator sets a delay — both default to "never".
+    {
+        let db     = state.db.clone();
+        let cfg    = settings.clone();
+        let client = http.clone();
+        tokio::spawn(async move {
+            kubuno_mail::server::retention::run(db, cfg, client).await;
+        });
+    }
+
     // Serveur HTTP
     let addr = format!("{}:{}", settings.server.host, settings.server.port);
     let listener = tokio::net::TcpListener::bind(&addr)

@@ -330,8 +330,13 @@ async fn save_folder_state(
     }
 }
 
+/// Shared with the migration importer (`services::import_service`): copying a
+/// mailbox in from another provider must go through the very same ingestion
+/// pipeline as a normal sync — parsing, threading, attachments, filters,
+/// spam scoring and the `(account_id, imap_folder, imap_uid)` dedup — so an
+/// imported mailbox is indistinguishable from a synced one.
 #[allow(clippy::too_many_arguments)] // one message = envelope + flags + placement
-async fn store_message(
+pub(crate) async fn store_message(
     db: &PgPool,
     account: &EmailAccount,
     raw: &[u8],

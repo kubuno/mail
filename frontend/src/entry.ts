@@ -1,13 +1,13 @@
 /** Bundle MODULE mail — chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
 import { Inbox, Star, Send, FileText } from 'lucide-react'
-import { RouteRegistry, WaffleAppRegistry, ModuleSettingsRegistry, NotificationRegistry, FaviconRegistry, SlotRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
+import { ExtensionRegistry, RouteRegistry, WaffleAppRegistry, ModuleSettingsRegistry, NotificationRegistry, FaviconRegistry, SlotRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
 import './index.css'
 import './i18n'
 import { useMailStore } from './store'
 import MailLogo from './MailLogo'
 import MailSidebarBody from './MailSidebarBody'
-import MailCreateMenu from './MailCreateMenu'
+import { newActionItems } from './newActions'
 import MailSearchBar from './MailSearchBar'
 import MailSendFileAction from './MailSendFileAction'
 import MailComposeGlobal from './MailComposeGlobal'
@@ -34,15 +34,22 @@ export function register() {
     { id: 'mail', label: 'Mail', Icon: MailLogo, path: '/mail' },
   ])
 
+  // "New" button menu (multicolor +): MenuItem[] DATA contributed to the
+  // shell's extension point, rendered by the project's MenuDropdown. `items`
+  // is re-evaluated on each open, so labels and store state stay fresh.
+  ExtensionRegistry.register('shell.new-actions', 'mail', {
+    moduleId: 'mail',
+    items: newActionItems,
+  })
+
   useSidebarStore.getState().register({
     moduleId:    'mail',
     routePrefix: '/mail',
     SidebarBody: MailSidebarBody,
     collapsedBody: true,
-    // Use the shell's default "New" button (multicolor +) instead of a bespoke
-    // one inside the sidebar body; its dropdown offers "New message".
+    // Label of the shell's default "New" button; its dropdown items come from
+    // the 'shell.new-actions' extension point above.
     newButtonLabelKey: 'mail:new_message',
-    NewActions: MailCreateMenu,
     // Bottom nav (portrait) / left rail (landscape) rendered by the shell on
     // mobile — the main folders, with short labels (nav_* keys).
     mobileTabs: [

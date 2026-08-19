@@ -13,6 +13,7 @@
 
 pub mod auth;
 pub mod authres;
+pub mod compliance;
 pub mod config;
 pub mod deliver;
 pub mod dkim;
@@ -20,12 +21,14 @@ pub mod dsn;
 pub mod greylist;
 pub mod hygiene;
 pub mod imap;
+pub mod journal;
 pub mod limits;
 pub mod outbound;
 pub mod pop3;
 pub mod queue;
 pub mod relay;
 pub mod resolve;
+pub mod retention;
 pub mod scram;
 pub mod signing;
 pub mod smtp;

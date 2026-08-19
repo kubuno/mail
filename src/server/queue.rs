@@ -191,6 +191,34 @@ pub async fn enqueue_with_lifetime(
     Ok(message_id)
 }
 
+/// How many remote recipients this user has had queued over the last rolling
+/// 24 hours — the count the administrator's daily sending allowance is measured
+/// against.
+///
+/// Counted on the QUEUE rather than on the Sent folder: what an allowance has to
+/// bound is what actually leaves the instance towards the internet, and a Sent
+/// copy exists for local-only mail too. Delivery reports (`is_dsn`) are excluded
+/// — a bounce is the instance writing, not the user.
+pub async fn recipients_queued_last_24h(db: &PgPool, user_id: Uuid) -> Result<i64> {
+    let count: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+             FROM mail.outbound_recipients r
+             JOIN mail.outbound_messages m ON m.id = r.message_id
+            WHERE m.user_id = $1
+              AND m.is_dsn = FALSE
+              AND m.created_at > NOW() - INTERVAL '24 hours'"#,
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Quota d'envoi : comptage des destinataires impossible");
+        e
+    })
+    .context("Comptage des destinataires sortants sur 24 h")?;
+    Ok(count)
+}
+
 /// Atomically claims up to `limit` due recipients for this worker, leasing them
 /// for `lease`. `FOR UPDATE SKIP LOCKED` lets several workers run without ever
 /// handing the same recipient to two of them; the lease makes a crashed
