@@ -9,6 +9,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- Internal refactor: the message composer (`ComposeWindow`) was split into
+  focused files (`mail-app/compose/`: `SendButton`, `ComposeFormatToolbar`,
+  `ComposeActionBar`, shared `parts`). No visible or behavioural change.
+
 ## [0.1.6] - 2026-08-19
 
 ### Changed

@@ -2,20 +2,15 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { openImagePicker } from '@kubuno/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FloatingWindow, Dropdown, FontSizeField, MenuDropdown, DatePicker, Button, useIsMobile, serializeMentions, type MenuItem, type MenuDropdownPos } from '@ui'
-
-// Web-safe families for the compose toolbar (applied via execCommand('fontName')).
-const MAIL_FONTS = ['Arial', 'Verdana', 'Trebuchet MS', 'Tahoma', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS']
-const MAIL_SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 24, 36, 48]
+import { FloatingWindow, Dropdown, MenuDropdown, useIsMobile, serializeMentions, type MenuItem, type MenuDropdownPos } from '@ui'
 import { prompt } from '@kubuno/sdk'
 import { useUndoSendStore } from './undoSendStore'
 import {
-  X, Minus, Maximize2, Minimize2, Paperclip, Link, Smile, Image, Lock,
-  Undo2, Redo2, Bold, Italic, Underline, Strikethrough,
-  AlignLeft, AlignCenter, AlignRight, ListOrdered, List, Indent, Outdent,
-  ChevronDown, Palette, MoreHorizontal, Trash2, Eraser, ShieldCheck, Check, PenLine, Tag, Star, FileText,
+  X, Minus, Maximize2, Minimize2,
+  AlignLeft, AlignCenter, AlignRight,
+  Eraser, Check, Tag, Star, FileText,
 } from 'lucide-react'
-import { mailApi, EmailAddress, apiErrorMessage, type Label } from './api'
+import { mailApi, EmailAddress, apiErrorMessage } from './api'
 import { activeSenders, defaultComposeSender } from './senderSelection'
 import { RecipientField } from './AddressSuggest'
 import { useMailStore } from './store'
@@ -29,62 +24,11 @@ import { useComposeMentions } from './mail-app/useComposeMentions'
 import AttachmentBar from './mail-app/AttachmentChip'
 import LargeFilesModal from './mail-app/LargeFilesModal'
 import { useMaxMessageSize } from './mail-app/useMaxMessageSize'
+import { LabelChecklist } from './mail-app/compose/parts'
+import ComposeFormatToolbar from './mail-app/compose/ComposeFormatToolbar'
+import ComposeActionBar from './mail-app/compose/ComposeActionBar'
 
 const MIN_W = 420, MIN_H = 320
-
-function ToolBtn({ onClick, title, children }: {
-  onClick: () => void; title: string; children: React.ReactNode
-}) {
-  return (
-    <button
-      onMouseDown={e => { e.preventDefault(); onClick() }}
-      title={title}
-      className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/10 text-text-primary transition-colors flex-shrink-0"
-    >
-      {children}
-    </button>
-  )
-}
-
-function IconBtn({ onClick, title, children }: {
-  onClick?: (e?: React.MouseEvent) => void; title: string; children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="p-1.5 rounded-full hover:bg-surface-2 text-text-tertiary transition-colors flex-shrink-0"
-    >
-      {children}
-    </button>
-  )
-}
-
-// Searchable label checklist for the "Libellé" submenu of the « ⋯ » menu.
-function LabelChecklist({ labels, checked, onToggle, placeholder }: {
-  labels: Label[]; checked: Set<string>; onToggle: (id: string) => void; placeholder: string
-}) {
-  const [q, setQ] = useState('')
-  const visible = labels.filter(l => !l.is_system && l.name.toLowerCase().includes(q.toLowerCase()))
-  return (
-    <div className="w-64 px-1 pb-1">
-      <input
-        autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={placeholder}
-        className="w-full h-8 px-2 text-sm border-b border-border outline-none focus:border-primary mb-1"
-      />
-      <div className="max-h-56 overflow-y-auto">
-        {visible.length === 0
-          ? <div className="px-2 py-2 text-xs text-text-tertiary">—</div>
-          : visible.map(l => (
-            <label key={l.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-surface-1 cursor-pointer text-sm text-text-primary">
-              <input type="checkbox" checked={checked.has(l.id)} onChange={() => onToggle(l.id)} />
-              <span className="truncate">{l.name}</span>
-            </label>
-          ))}
-      </div>
-    </div>
-  )
-}
 
 export default function ComposeWindow() {
   const { t } = useTranslation('mail')
@@ -140,20 +84,6 @@ export default function ComposeWindow() {
   // « Message programmé »: captured at first render because `composeInitial` is
   // cleared right after the init effect — the mount effect below reads the ref.
   const scheduleOnMountRef = useRef(!!composeInitial?.schedule)
-  const scheduleBtnRef = useRef<HTMLButtonElement>(null)
-  // Position of the "Schedule send" menu: below the send group and left-aligned
-  // with the « Envoyer » button when there is room, otherwise flipped above it —
-  // never covering the button, always kept on-screen.
-  const scheduleMenuPos = (): MenuDropdownPos => {
-    const group = scheduleBtnRef.current?.parentElement
-    const r = (group ?? scheduleBtnRef.current)?.getBoundingClientRect()
-    if (!r) return { top: 0, left: 0 }
-    const GAP = 6, MENU_H = 168, MIN_W = 232
-    const below = r.bottom + GAP
-    const top = below + MENU_H <= window.innerHeight ? below : Math.max(8, r.top - MENU_H - GAP)
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - MIN_W))
-    return { top, left }
-  }
 
   // Gmail-style placeholder: shown while the body is "logically empty" — i.e. it
   // holds nothing but the auto-inserted signature. It hides as soon as the user
@@ -246,18 +176,6 @@ export default function ComposeWindow() {
     refreshPlaceholder()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromAccount?.email_address])
-
-  // « Message programmé »: pop the schedule-send menu open once the composer is
-  // mounted (the action bar's chevron button anchors it).
-  useEffect(() => {
-    if (!scheduleOnMountRef.current) return
-    const id = requestAnimationFrame(() => {
-      if (!scheduleBtnRef.current) return
-      setSendMenuPos(scheduleMenuPos())
-    })
-    return () => cancelAnimationFrame(id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // Envoi immédiat → différé de 5 s avec possibilité d'annuler (toast dans MailApp).
   const sendNow = () => {
@@ -449,9 +367,6 @@ export default function ComposeWindow() {
     })
     if (picked?.kind === 'url') exec('insertImage', picked.url)
   }
-  const [emojiOpen,    setEmojiOpen]    = useState(false)
-  const [colorOpen,    setColorOpen]    = useState(false)
-  const [moreMenu,     setMoreMenu]     = useState<MenuDropdownPos | null>(null)
   const [alignMenu,    setAlignMenu]    = useState<MenuDropdownPos | null>(null)
   const [confidential, setConfidential] = useState(false)
   // OpenPGP: sign / encrypt this message. The control only appears when the
@@ -459,7 +374,6 @@ export default function ComposeWindow() {
   // Pre-armed when opened from « Message chiffré (PGP) ».
   const [pgpSign,    setPgpSign]    = useState(() => !!composeInitial?.secure)
   const [pgpEncrypt, setPgpEncrypt] = useState(() => !!composeInitial?.secure)
-  const [secMenu,    setSecMenu]    = useState<MenuDropdownPos | null>(null)
   const { data: pgpStatus } = useQuery({ queryKey: ['mail-pgp-status'], queryFn: mailApi.pgpStatus })
   const gpgEnabled = !!pgpStatus?.enabled
   const secItems: MenuItem[] = [
@@ -470,7 +384,6 @@ export default function ComposeWindow() {
   ]
 
   // Signatures menu (pen icon), Gmail-style: manage + none + each named signature.
-  const [sigMenu, setSigMenu] = useState<MenuDropdownPos | null>(null)
   const signatures = loadSignatures()
   const defaultSigId = defaultSignatureId()
   const insertSig = (html: string) => exec('insertHTML', `<br><br>${html}`)
@@ -486,8 +399,6 @@ export default function ComposeWindow() {
       onClick: () => insertSig(s.html),
     })),
   ]
-  const EMOJIS = ['😀','😅','😉','😍','😘','😎','🤔','🙏','👍','👎','👏','🙌','🎉','🔥','✅','❌','⭐','❤️','💡','📎','📅','⏰']
-  const COLORS = ['#202124','#d93025','#e8710a','#188038','#1a73e8','#9334e6','#c2185b','#5f6368']
   // Enabling plain-text mode flattens the current body to its text content;
   // disabling it simply re-allows markup (the text stays as-is).
   const togglePlainText = () => {
@@ -600,22 +511,6 @@ export default function ComposeWindow() {
       qc.invalidateQueries({ queryKey: ['mail-counts'] })
     },
   })
-
-  const [sendMenuPos, setSendMenuPos] = useState<MenuDropdownPos | null>(null)
-  // Custom "pick a date & time" scheduling dialog.
-  const [customSchedule, setCustomSchedule] = useState(false)
-  const [customDT, setCustomDT] = useState<string | null>(null)
-  const schedulePresets = () => {
-    const now = new Date()
-    const later   = new Date(now); later.setHours(now.getHours() + 2, 0, 0, 0)
-    const tom     = new Date(now); tom.setDate(now.getDate() + 1); tom.setHours(8, 0, 0, 0)
-    const mon     = new Date(now); mon.setDate(now.getDate() + ((8 - now.getDay()) % 7 || 7)); mon.setHours(8, 0, 0, 0)
-    return [
-      { label: t('schedule_later',    { defaultValue: 'Plus tard (2 h)' }),     at: later.toISOString() },
-      { label: t('schedule_tomorrow', { defaultValue: 'Demain matin' }),         at: tom.toISOString() },
-      { label: t('schedule_monday',   { defaultValue: 'Lundi matin' }),          at: mon.toISOString() },
-    ]
-  }
 
   // ── Minimized bar ───────────────────────────────────────────────────────────
   // On mobile the window is full screen (FloatingWindow fullBleed): minimizing
@@ -753,40 +648,14 @@ export default function ComposeWindow() {
 
       {/* ── Format toolbar ───────────────────────────────────────────────────── */}
       {showFmt && !plainText && (
-        <div className="flex items-center flex-wrap gap-0.5 px-3 py-1.5 mx-3 mb-2 bg-surface-1 rounded-lg border border-border flex-shrink-0">
-          <ToolBtn onClick={() => exec('undo')}   title={t('common_undo')}><Undo2 size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('redo')}   title={t('common_redo')}><Redo2 size={13} /></ToolBtn>
-          <div className="w-px h-4 bg-border mx-0.5" />
-          <FontSizeField
-            font={fontName} onFontChange={v => { setFontName(v); bodyRef.current?.focus(); exec('fontName', v) }} fonts={MAIL_FONTS}
-            size={fontSz} onSizeChange={v => { setFontSz(v); applyFontSizePx(v) }} sizes={MAIL_SIZES}
-            minSize={6} maxSize={96} height={26} fontWidth={118} sizeWidth={58} fontSize={14}
-          />
-          <div className="w-px h-4 bg-border mx-0.5" />
-          <ToolBtn onClick={() => exec('bold')}          title={t('mail_bold')}><Bold size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('italic')}        title={t('mail_italic')}><Italic size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('underline')}     title={t('mail_underline')}><Underline size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('strikeThrough')} title={t('mail_strikethrough')}><Strikethrough size={13} /></ToolBtn>
-          <div className="w-px h-4 bg-border mx-0.5" />
-          <button
-            onMouseDown={e => {
-              e.preventDefault()
-              // Capture the rect BEFORE the state updater — e.currentTarget is null
-              // once React runs the updater callback.
-              const r = e.currentTarget.getBoundingClientRect()
-              setAlignMenu(p => (p ? null : { top: r.bottom + 4, left: r.left }))
-            }}
-            title={t('mail_align', { defaultValue: 'Alignement' })}
-            className="h-7 px-1.5 flex items-center gap-0.5 rounded hover:bg-black/10 text-text-primary transition-colors flex-shrink-0"
-          >
-            <AlignLeft size={13} /><ChevronDown size={11} />
-          </button>
-          <div className="w-px h-4 bg-border mx-0.5" />
-          <ToolBtn onClick={() => exec('insertOrderedList')}   title={t('mail_ordered_list')}><ListOrdered size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('insertUnorderedList')} title={t('mail_bullet_list')}><List size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('indent')}  title={t('mail_indent')}><Indent size={13} /></ToolBtn>
-          <ToolBtn onClick={() => exec('outdent')} title={t('mail_outdent')}><Outdent size={13} /></ToolBtn>
-        </div>
+        <ComposeFormatToolbar
+          exec={exec}
+          fontName={fontName} setFontName={setFontName}
+          fontSz={fontSz} setFontSz={setFontSz}
+          applyFontSizePx={applyFontSizePx}
+          focusBody={() => bodyRef.current?.focus()}
+          setAlignMenu={setAlignMenu}
+        />
       )}
 
       {/* ── Scheduled-send error (immediate send surfaces via the toast) ─────── */}
@@ -797,164 +666,25 @@ export default function ComposeWindow() {
       )}
 
       {/* ── Action bar ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 px-4 py-3 border-t border-border flex-shrink-0">
-        {/* Envoyer + programmer */}
-        <div className="relative flex items-stretch flex-shrink-0 mr-2">
-          <button
-            onClick={sendNow}
-            disabled={!to.length || !accountId}
-            className="flex items-center gap-2 h-9 pl-5 pr-4 text-[14px] font-medium bg-primary text-white rounded-l-lg hover:bg-primary-hover disabled:opacity-50 transition-colors"
-          >
-            {t('mail_send')}
-          </button>
-          <button
-            ref={scheduleBtnRef}
-            onClick={() => setSendMenuPos(p => p ? null : scheduleMenuPos())}
-            disabled={sendMut.isPending || !to.length || !accountId}
-            title={t('schedule_send', { defaultValue: 'Programmer l\'envoi' })}
-            className="flex items-center h-9 px-1.5 bg-primary text-white rounded-r-lg border-l border-white/25 hover:bg-primary-hover disabled:opacity-50 transition-colors ml-px"
-          >
-            <ChevronDown size={14} />
-          </button>
-          {sendMenuPos && (
-            <MenuDropdown
-              pos={{ ...sendMenuPos, minWidth: 224 }}
-              onClose={() => setSendMenuPos(null)}
-              items={[
-                { type: 'label', text: t('schedule_send', { defaultValue: 'Programmer l\'envoi' }) },
-                ...schedulePresets().map<MenuItem>(p => ({ type: 'action', label: p.label, onClick: () => sendMut.mutate(p.at) })),
-                { type: 'separator' },
-                { type: 'action', label: t('schedule_custom', { defaultValue: 'Date et heure personnalisées…' }),
-                  onClick: () => { setSendMenuPos(null); setCustomDT(null); setCustomSchedule(true) } },
-              ]}
-            />
-          )}
-          {customSchedule && (
-            <div className="fixed inset-0 z-[9999] bg-black/30 flex items-center justify-center p-4"
-              onClick={() => setCustomSchedule(false)}>
-              <div className="bg-white rounded-xl shadow-xl w-full max-w-[360px] p-5" onClick={e => e.stopPropagation()}>
-                <h3 className="text-sm font-medium text-text-primary mb-3">
-                  {t('schedule_custom_title', { defaultValue: 'Programmer à une date précise' })}
-                </h3>
-                <DatePicker
-                  mode="datetime"
-                  value={customDT}
-                  onChange={setCustomDT}
-                  minDate={new Date().toISOString().slice(0, 10)}
-                  minuteStep={5}
-                  clearable
-                  placeholder={t('schedule_custom_ph', { defaultValue: 'Choisir une date et une heure' })}
-                />
-                <div className="flex justify-end gap-2 mt-4">
-                  <Button variant="ghost" onClick={() => setCustomSchedule(false)}>
-                    {t('common_cancel', { defaultValue: 'Annuler' })}
-                  </Button>
-                  <Button
-                    disabled={!customDT || sendMut.isPending}
-                    onClick={() => { if (customDT) { sendMut.mutate(new Date(customDT).toISOString()); setCustomSchedule(false) } }}
-                  >
-                    {t('schedule_send', { defaultValue: 'Programmer l\'envoi' })}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+      <ComposeActionBar
+        onSendNow={sendNow}
+        onSchedule={iso => sendMut.mutate(iso)}
+        sendDisabled={!to.length || !accountId}
+        sendPending={sendMut.isPending}
+        scheduleAutoOpen={scheduleOnMountRef.current}
+        plainText={plainText}
+        showFmt={showFmt} setShowFmt={setShowFmt}
+        exec={exec}
+        fileRef={fileRef} onPickFiles={onPickFiles}
+        insertLink={insertLink} insertImageUrl={insertImageUrl}
+        confidential={confidential} setConfidential={setConfidential}
+        gpgEnabled={gpgEnabled} pgpSign={pgpSign} pgpEncrypt={pgpEncrypt} secItems={secItems}
+        sigItems={sigItems} moreItems={moreItems}
+        draftStatus={draft.status}
+        onDiscard={() => { void draft.discard(); setComposeOpen(false) }}
+      />
 
-        {/* Aa toggle — hidden in plain-text mode (no formatting to reveal) */}
-        {!plainText && (
-          <button
-            onClick={() => setShowFmt(v => !v)}
-            className={`w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold transition-colors flex-shrink-0 ${
-              showFmt ? 'bg-primary/10 text-primary' : 'bg-surface-2 text-text-secondary hover:bg-surface-3'
-            }`}
-            title={t('mail_formatting')}
-          >
-            Aa
-          </button>
-        )}
-
-        {/* Couleur du texte */}
-        <div className="relative">
-          <IconBtn title={t('mail_text_color', { defaultValue: 'Couleur du texte' })} onClick={() => setColorOpen(v => !v)}><Palette size={15} /></IconBtn>
-          {colorOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setColorOpen(false)} />
-              <div className="absolute bottom-full mb-1 left-0 z-50 bg-white border border-border rounded-lg shadow-lg p-2 grid grid-cols-4 gap-1.5 w-40">
-                {COLORS.map(c => (
-                  <button key={c} onMouseDown={e => { e.preventDefault(); exec('foreColor', c); setColorOpen(false) }}
-                    className="w-7 h-7 rounded-full border border-border" style={{ background: c }} title={c} />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <IconBtn title={t('mail_attach_file', { defaultValue: 'Joindre des fichiers' })} onClick={() => fileRef.current?.click()}><Paperclip size={15} /></IconBtn>
-        <input ref={fileRef} type="file" multiple hidden onChange={e => onPickFiles(e.target.files)} />
-
-        <IconBtn title={t('mail_insert_link', { defaultValue: 'Insérer un lien' })} onClick={insertLink}><Link size={15} /></IconBtn>
-
-        {/* Emoji */}
-        <div className="relative">
-          <IconBtn title={t('mail_insert_emoji', { defaultValue: 'Emoji' })} onClick={() => setEmojiOpen(v => !v)}><Smile size={15} /></IconBtn>
-          {emojiOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setEmojiOpen(false)} />
-              <div className="absolute bottom-full mb-1 left-0 z-50 bg-white border border-border rounded-lg shadow-lg p-2 grid grid-cols-6 gap-1 w-56">
-                {EMOJIS.map(em => (
-                  <button key={em} onMouseDown={e => { e.preventDefault(); exec('insertText', em); setEmojiOpen(false) }}
-                    className="w-7 h-7 flex items-center justify-center rounded hover:bg-surface-2 text-lg">{em}</button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <IconBtn title={t('mail_insert_image', { defaultValue: 'Insérer une image' })} onClick={insertImageUrl}><Image size={15} /></IconBtn>
-        <IconBtn title={t('mail_confidential', { defaultValue: 'Mode confidentiel' })} onClick={() => setConfidential(v => !v)}>
-          <Lock size={15} className={confidential ? 'text-primary' : ''} />
-        </IconBtn>
-        {gpgEnabled && (
-          <IconBtn
-            title={t('mail_pgp_security', { defaultValue: 'Signer / Chiffrer (OpenPGP)' })}
-            onClick={e => { const r = (e!.currentTarget as HTMLElement).getBoundingClientRect(); setSecMenu(p => (p ? null : { top: r.top, left: r.left })) }}
-          >
-            <ShieldCheck size={15} className={(pgpSign || pgpEncrypt) ? 'text-primary' : ''} />
-          </IconBtn>
-        )}
-        <IconBtn
-          title={t('mail_signature', { defaultValue: 'Insérer une signature' })}
-          onClick={e => { const r = (e!.currentTarget as HTMLElement).getBoundingClientRect(); setSigMenu(p => (p ? null : { top: r.top, left: r.left })) }}
-        >
-          <PenLine size={15} />
-        </IconBtn>
-        <IconBtn title={t('more_options')} onClick={e => { const r = (e!.currentTarget as HTMLElement).getBoundingClientRect(); setMoreMenu({ top: r.top, left: r.left }) }}><MoreHorizontal size={15} /></IconBtn>
-
-        <div className="flex-1" />
-
-        {/* Auto-save status, à la Gmail. */}
-        {draft.status !== 'idle' && (
-          <span className="text-[14px] text-text-tertiary mr-1 select-none">
-            {draft.status === 'saving'
-              ? t('mail_draft_saving', { defaultValue: 'Enregistrement…' })
-              : t('mail_draft_saved',  { defaultValue: 'Brouillon enregistré' })}
-          </span>
-        )}
-
-        <button
-          onClick={() => { void draft.discard(); setComposeOpen(false) }}
-          className="p-2 rounded-full hover:bg-danger/10 hover:text-danger text-text-tertiary transition-colors"
-          title={t('discard')}
-        >
-          <Trash2 size={15} />
-        </button>
-      </div>
-
-      {moreMenu && <MenuDropdown items={moreItems} pos={moreMenu} onClose={() => setMoreMenu(null)} />}
       {alignMenu && <MenuDropdown items={alignItems} pos={{ ...alignMenu, minWidth: 176 }} onClose={() => setAlignMenu(null)} />}
-      {secMenu && <MenuDropdown items={secItems} pos={{ ...secMenu, minWidth: 220 }} onClose={() => setSecMenu(null)} />}
-      {sigMenu && <MenuDropdown items={sigItems} pos={{ ...sigMenu, minWidth: 200 }} onClose={() => setSigMenu(null)} />}
 
       {/* « Ajout des fichiers… » : uploads of oversized files to Drive in flight. */}
       <LargeFilesModal
