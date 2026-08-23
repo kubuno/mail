@@ -50,3 +50,8 @@ nohup.out
 # nécessaire pour compiler sans base de données en CI), migrations/, themes/, man/
 
 node_modules
+
+# Claude Code working files (agent instructions & memory) — never published
+CLAUDE.md
+AGENTS.md
+.claude/
