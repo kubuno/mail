@@ -6,7 +6,7 @@ import { FloatingWindow, Dropdown, MenuDropdown, useIsMobile, serializeMentions,
 import { prompt } from '@kubuno/sdk'
 import { useUndoSendStore } from './undoSendStore'
 import {
-  X, Minus, Maximize2, Minimize2,
+  X, Minus, Square, Copy,
   AlignLeft, AlignCenter, AlignRight,
   Eraser, Check, Tag, Star, FileText,
 } from 'lucide-react'
@@ -714,7 +714,7 @@ export default function ComposeWindow() {
           ? t('mail_exit_fullscreen', { defaultValue: 'Quitter le plein écran' })
           : t('mail_fullscreen', { defaultValue: 'Plein écran' })}
       >
-        {maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+        {maximized ? <Copy size={14} /> : <Square size={14} />}
       </button>
     </div>
   )

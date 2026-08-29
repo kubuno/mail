@@ -84,6 +84,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Classic window-caption glyphs on the composer.** Maximize is now a plain
+  square and restore two overlapping squares, instead of diagonal double
+  arrows.
+
 - **The advanced search panel gained an "Additional filters" tab — a real
   condition builder.** Operator fragments from the bar's query (parenthesized
   groups, OR chains, any supported operator) are decomposed into editable rows —
