@@ -49,6 +49,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The condition builder's "Condition" and "Group" text buttons are now icon
+  buttons with tooltips** — a lighter group header, same actions.
 - **One insertion slot per boundary in the condition builder.** "After row N"
   and "before row N+1" were shown as two distinct drop positions when they are
   the same place; drop targets are now normalized to a single slot per sibling

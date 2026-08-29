@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus, GripVertical } from 'lucide-react'
+import { X, GripVertical, ListPlus, Parentheses } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { DatePicker, Dropdown, Checkbox, Button, Input, Tabs } from '@ui'
+import { DatePicker, Dropdown, Checkbox, Button, Input, Tabs, Tooltip } from '@ui'
 import { useMailStore } from './store'
 import { mailApi } from './api'
 
@@ -543,14 +543,26 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           ]}
           height={36} fontSize={14} width={240} focusable
         />
-        <Button type="button" variant="ghost" icon={<Plus size={14} />}
-          onClick={() => addNode(path, { kind: 'cond', neg: false, op: 'label', val: '' })}>
-          {t('mail_filter_add_condition', { defaultValue: 'Condition' })}
-        </Button>
-        <Button type="button" variant="ghost" icon={<Plus size={14} />}
-          onClick={() => addNode(path, { kind: 'group', combinator: g.combinator === 'or' ? 'and' : 'or', children: [{ kind: 'cond', neg: false, op: 'label', val: '' }] })}>
-          {t('mail_filter_add_group', { defaultValue: 'Groupe' })}
-        </Button>
+        <Tooltip label={t('mail_filter_add_condition', { defaultValue: 'Ajouter une condition' })} side="top">
+          <button
+            type="button"
+            aria-label={t('mail_filter_add_condition', { defaultValue: 'Ajouter une condition' })}
+            onClick={() => addNode(path, { kind: 'cond', neg: false, op: 'label', val: '' })}
+            className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
+          >
+            <ListPlus size={16} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t('mail_filter_add_group', { defaultValue: 'Ajouter un groupe' })} side="top">
+          <button
+            type="button"
+            aria-label={t('mail_filter_add_group', { defaultValue: 'Ajouter un groupe' })}
+            onClick={() => addNode(path, { kind: 'group', combinator: g.combinator === 'or' ? 'and' : 'or', children: [{ kind: 'cond', neg: false, op: 'label', val: '' }] })}
+            className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
+          >
+            <Parentheses size={16} />
+          </button>
+        </Tooltip>
         {path.length > 0 && (
           <button
             type="button"
