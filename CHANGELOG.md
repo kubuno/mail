@@ -11,6 +11,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **The committed search lives in the URL** — `#search/<encoded query>`, Gmail
+  style: a search survives reloads, can be deep-linked and follows the browser's
+  back/forward. Clearing the search returns the hash to the folder.
+- **Condition rows can be reordered by drag and drop.** Every condition and
+  group carries a grip; dropping between siblings shows a crisp insertion bar
+  (no translucent browser ghost), and dropping onto a group's header — which
+  highlights — moves the node *into* that group. Conditions and whole groups
+  move freely between root and any group; a group can never be dropped into its
+  own descendants.
+- **Uniform field typography in the advanced panel.** The free-value inputs
+  render at the same 14px as every dropdown (the coarse-pointer 16px anti-zoom
+  guard was out-specifying the primitives' size on some devices).
 - **The search language accepts an explicit `AND`.** `(-in:spam AND in:trash) OR
   is:subscription` now parses as intended: `AND` is a combinator (juxtaposition
   already meant AND), no longer a literal word to search for.

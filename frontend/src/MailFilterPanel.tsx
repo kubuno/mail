@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Plus } from 'lucide-react'
+import { X, Plus, GripVertical } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatePicker, Dropdown, Checkbox, Button, Input, Tabs } from '@ui'
@@ -278,7 +278,7 @@ function LineInput({
 }) {
   // The @ui Input primitive (platform rule: primary components in search UIs) —
   // no bottom-rule underline, uniform height/typography with every other field.
-  return <Input value={value} onChange={e => onChange(e.target.value)} />
+  return <Input value={value} onChange={e => onChange(e.target.value)} style={{ fontSize: 14 }} />
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -414,6 +414,42 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
     groupAt(root, groupPath).combinator = combinator
   })
 
+  // ── Drag-and-drop reordering of the tree (grip handle per node) ─────────────
+  // No translucent browser ghost (project rule): the drag image is a blank 1×1,
+  // the only feedback is a crisp accent insertion bar between siblings — the
+  // same doctrine as the Gantt row reordering.
+  const dragPathRef = useRef<number[] | null>(null)
+  const [dropMark, setDropMark] = useState<{ key: string; before: boolean } | null>(null)
+  const blankDragImg = useRef<HTMLImageElement | null>(null)
+  useEffect(() => {
+    const img = new Image()
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='
+    blankDragImg.current = img
+  }, [])
+  const isPrefix = (a: number[], b: number[]) => a.length <= b.length && a.every((v, i2) => v === b[i2])
+  const moveNode = (from: number[], toParent: number[], toIndex: number) => {
+    // A group cannot be dropped into itself or its own descendants.
+    if (isPrefix(from, toParent)) return
+    editTree(root => {
+      const fParent = groupAt(root, from.slice(0, -1))
+      const fIdx = from[from.length - 1]
+      const [node] = fParent.children.splice(fIdx, 1)
+      if (!node) return
+      const tParent = groupAt(root, toParent)
+      let ti = toIndex
+      const sameParent = from.length - 1 === toParent.length && from.slice(0, -1).every((v, i2) => v === toParent[i2])
+      if (sameParent && ti > fIdx) ti--
+      tParent.children.splice(Math.max(0, Math.min(ti, tParent.children.length)), 0, node)
+    })
+  }
+  const onGripDragStart = (path: number[]) => (e: React.DragEvent) => {
+    dragPathRef.current = path
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', '')
+    if (blankDragImg.current) e.dataTransfer.setDragImage(blankDragImg.current, 0, 0)
+  }
+  const onGripDragEnd = () => { dragPathRef.current = null; setDropMark(null) }
+
   // ── Recursive rendering (react-querybuilder layout) ─────────────────────────
   const renderCondRow = (n: Exclude<XNode, XGroup>, path: number[]) => (
     <div key={path.join('.')} className="flex items-center gap-2 flex-wrap">
@@ -423,6 +459,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           onChange={e => patchNode(path, { text: e.target.value } as Partial<XNode>)}
           placeholder={t('mail_filter_expression', { defaultValue: 'expression' })}
           className="flex-1 min-w-44"
+          style={{ fontSize: 14 }}
         />
       ) : (
         <>
@@ -446,6 +483,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               onChange={e => patchNode(path, { val: e.target.value } as Partial<XNode>)}
               placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
               className="w-44"
+              style={{ fontSize: 14 }}
             />
           )}
           <Checkbox
@@ -469,7 +507,30 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   const renderGroup = (g: XGroup, path: number[]): React.ReactNode => (
     <div key={path.join('.') || 'root'}
       className={path.length ? 'border-l-2 border-border pl-3 py-1 space-y-2' : 'space-y-2'}>
-      <div className="flex items-center gap-2 flex-wrap">
+      <div
+        className={`flex items-center gap-2 flex-wrap rounded px-1 -mx-1 ${
+          dropMark?.key === `grp:${path.join('.')}` ? 'bg-primary/10 outline outline-1 outline-primary' : ''
+        }`}
+        onDragOver={e => {
+          const from = dragPathRef.current
+          if (!from || isPrefix(from, path)) return
+          e.preventDefault()
+          e.stopPropagation()
+          e.dataTransfer.dropEffect = 'move'
+          setDropMark({ key: `grp:${path.join('.')}`, before: false })
+        }}
+        onDragLeave={() => setDropMark(m => (m?.key === `grp:${path.join('.')}` ? null : m))}
+        onDrop={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          const from = dragPathRef.current
+          if (!from) return
+          moveNode(from, path, g.children.length)
+          dragPathRef.current = null
+          setDropMark(null)
+        }}
+        title={dragPathRef.current ? t('mail_filter_drop_into', { defaultValue: 'Déposer dans ce groupe' }) : undefined}
+      >
         <span className="text-sm text-text-secondary">
           {t('mail_filter_match', { defaultValue: 'Correspond à' })}
         </span>
@@ -501,8 +562,52 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           </button>
         )}
       </div>
-      {g.children.map((c, i) =>
-        c.kind === 'group' ? renderGroup(c, [...path, i]) : renderCondRow(c, [...path, i]))}
+      {g.children.map((c, i) => {
+        const childPath = [...path, i]
+        const key = childPath.join('.')
+        return (
+          <div
+            key={key}
+            onDragOver={e => {
+              if (!dragPathRef.current) return
+              e.preventDefault()
+              e.stopPropagation()
+              e.dataTransfer.dropEffect = 'move'
+              const r2 = e.currentTarget.getBoundingClientRect()
+              setDropMark({ key, before: e.clientY < r2.top + r2.height / 2 })
+            }}
+            onDragLeave={() => setDropMark(m => (m?.key === key ? null : m))}
+            onDrop={e => {
+              e.preventDefault()
+              e.stopPropagation()
+              const from = dragPathRef.current
+              if (!from) return
+              const before = dropMark?.key === key ? dropMark.before : true
+              moveNode(from, path, before ? i : i + 1)
+              dragPathRef.current = null
+              setDropMark(null)
+            }}
+          >
+            {dropMark?.key === key && dropMark.before && <div className="h-0.5 bg-primary rounded mb-1" />}
+            <div className="flex items-start gap-1">
+              <button
+                type="button"
+                draggable
+                onDragStart={onGripDragStart(childPath)}
+                onDragEnd={onGripDragEnd}
+                title={t('mail_filter_reorder', { defaultValue: 'Réordonner' })}
+                className="cursor-grab p-1 mt-1.5 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
+              >
+                <GripVertical size={14} />
+              </button>
+              <div className="flex-1 min-w-0">
+                {c.kind === 'group' ? renderGroup(c, childPath) : renderCondRow(c, childPath)}
+              </div>
+            </div>
+            {dropMark?.key === key && !dropMark.before && <div className="h-0.5 bg-primary rounded mt-1" />}
+          </div>
+        )
+      })}
     </div>
   )
 

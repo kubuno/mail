@@ -92,6 +92,46 @@ export default function MailApp() {
   // Mirror the selection into the hash, keeping the current category segment.
   // ⚠️ Read the LIVE store value: on mount this effect runs in the same commit
   // as the deep-link one above, so the render-time value is still null and
+  // ── Search in the URL (Gmail parity: «#search/<encoded query>») ────────────
+  // The committed query lives in the hash, so a search survives reload, can be
+  // deep-linked and follows back/forward. Entering/leaving search pushes a
+  // history entry; edits within a search replace it. The trailing «/<thread-id>»
+  // segment is preserved either way.
+  // URL → store FIRST (declaration order = effect order on mount): a deep link
+  // must be read into the store before the writer below looks at the hash —
+  // otherwise the writer, still seeing an empty query, would strip `#search/…`
+  // before it was ever applied.
+  useEffect(() => {
+    const apply = () => {
+      const m = window.location.hash.match(/^#search\/(.*?)(\/[0-9a-f-]{36})?$/i)
+      const q = m ? decodeURIComponent(m[1]) : ''
+      if (m && q !== useMailStore.getState().searchQuery) useMailStore.getState().setSearchQuery(q)
+      else if (!m && useMailStore.getState().searchQuery && !window.location.hash) {
+        useMailStore.getState().setSearchQuery('')
+      }
+    }
+    apply()
+    window.addEventListener('hashchange', apply)
+    return () => window.removeEventListener('hashchange', apply)
+  }, [])
+  // Store → URL: reads the FRESH store value (not the render-time closure) so
+  // the mount run, which happens right after the reader above, never acts on a
+  // stale empty query.
+  const searchForUrl = useMailStore(st => st.searchQuery)
+  useEffect(() => {
+    const q = useMailStore.getState().searchQuery
+    const cur = window.location.hash
+    const thread = cur.match(/\/[0-9a-f-]{36}$/i)?.[0] ?? ''
+    const inSearch = cur.startsWith('#search/')
+    const next = q
+      ? `#search/${encodeURIComponent(q)}${thread}`
+      : inSearch ? `#inbox${thread}` : cur
+    if (cur === next) return
+    const url = `${window.location.pathname}${window.location.search}${next}`
+    if (q && !inSearch) window.history.pushState(null, '', url)
+    else window.history.replaceState(null, '', url)
+  }, [searchForUrl])
+
   // would wipe the id straight out of the URL.
   const selectedForUrl = useMailStore(st => st.selectedThread)
   useEffect(() => {
