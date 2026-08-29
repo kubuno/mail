@@ -419,7 +419,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   // the only feedback is a crisp accent insertion bar between siblings — the
   // same doctrine as the Gantt row reordering.
   const dragPathRef = useRef<number[] | null>(null)
-  const [dropMark, setDropMark] = useState<{ key: string; before: boolean } | null>(null)
+  const [dropMark, setDropMark] = useState<{ key: string; slot?: number } | null>(null)
   const blankDragImg = useRef<HTMLImageElement | null>(null)
   useEffect(() => {
     const img = new Image()
@@ -575,29 +575,32 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               e.stopPropagation()
               e.dataTransfer.dropEffect = 'move'
               const r2 = e.currentTarget.getBoundingClientRect()
-              const before = e.clientY < r2.top + r2.height / 2
-              // Only update when the target boundary actually changes: a state
-              // write per dragover event (they fire continuously) re-renders in
-              // a loop and makes the whole panel shiver.
-              setDropMark(m => (m && m.key === key && m.before === before ? m : { key, before }))
+              // ONE boundary per sibling pair: "after row N" and "before row
+              // N+1" are the same insertion SLOT — hovering N's bottom half or
+              // N+1's top half marks the exact same bar. Only update when the
+              // slot actually changes (a write per dragover event re-renders in
+              // a loop and makes the whole panel shiver).
+              const slot = e.clientY < r2.top + r2.height / 2 ? i : i + 1
+              const gkey = path.join('.') || 'root'
+              setDropMark(m => (m && m.key === gkey && m.slot === slot ? m : { key: gkey, slot }))
             }}
             onDrop={e => {
               e.preventDefault()
               e.stopPropagation()
               const from = dragPathRef.current
               if (!from) return
-              const before = dropMark?.key === key ? dropMark.before : true
-              moveNode(from, path, before ? i : i + 1)
+              const gkey = path.join('.') || 'root'
+              const slot = dropMark?.key === gkey && dropMark.slot != null ? dropMark.slot : i
+              moveNode(from, path, slot)
               dragPathRef.current = null
               setDropMark(null)
             }}
           >
             {/* Insertion bar as an OVERLAY: absolutely positioned so it never
-                shifts the layout under the pointer (a in-flow bar moves the row,
-                flips the before/after test and oscillates). No dragleave-clear
-                either — leaving a child fires dragleave and made it flicker;
-                the mark simply moves to the next hovered target. */}
-            {dropMark?.key === key && dropMark.before && (
+                shifts the layout under the pointer. Rendered once per slot: at
+                the top of the slot's child, or under the last child for the
+                final slot. No dragleave-clear — the mark simply moves on. */}
+            {dropMark?.key === (path.join('.') || 'root') && dropMark.slot === i && (
               <div className="absolute -top-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
             )}
             <div className="flex items-start gap-1">
@@ -615,7 +618,8 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
                 {c.kind === 'group' ? renderGroup(c, childPath) : renderCondRow(c, childPath)}
               </div>
             </div>
-            {dropMark?.key === key && !dropMark.before && (
+            {i === g.children.length - 1 &&
+              dropMark?.key === (path.join('.') || 'root') && dropMark.slot === i + 1 && (
               <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
             )}
           </div>

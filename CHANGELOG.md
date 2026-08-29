@@ -49,6 +49,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **One insertion slot per boundary in the condition builder.** "After row N"
+  and "before row N+1" were shown as two distinct drop positions when they are
+  the same place; drop targets are now normalized to a single slot per sibling
+  boundary, so hovering either side of a boundary marks the exact same bar.
 - **Drag-and-drop in the condition builder no longer shivers.** The insertion
   bar is drawn as an absolute overlay (an in-flow bar shifted the row under the
   pointer and made the before/after test oscillate), the drop mark only updates
