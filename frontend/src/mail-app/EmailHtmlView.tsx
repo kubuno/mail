@@ -364,7 +364,7 @@ const BASE_CSS = `
 
   /* Preformatted text */
   pre, code {
-    font-family: 'Google Sans Mono', 'Fira Code', monospace;
+    font-family: 'DM Mono', 'Fira Code', monospace;
     font-size: 13px;
     background: #f1f3f4;
     border-radius: 4px;

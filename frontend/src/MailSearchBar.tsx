@@ -131,6 +131,7 @@ export default function MailSearchBar() {
       { ins: 'is:important',        desc: t('srch_is_important') },
       { ins: 'is:snoozed',          desc: t('folder_snoozed') },
       { ins: 'is:muted',            desc: t('srch_is_muted') },
+      { ins: 'is:subscription',     desc: t('srch_is_subscription', { defaultValue: "Messages d'abonnement (en-tête List-Unsubscribe)" }) },
       { ins: 'has:attachment',      desc: t('mail_filter_has_attachment') },
       { ins: 'has:userlabels',      desc: t('srch_has_userlabels') },
       { ins: 'has:nouserlabels',    desc: t('srch_has_nouserlabels') },

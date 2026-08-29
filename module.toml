@@ -120,6 +120,12 @@ position = 3
 description = "Les boîtes, alias, listes de diffusion et catch-all que cette instance sert. Ce groupe n'a pas de réglage : il gère des objets."
 
 [[setting_groups]]
+id       = "provisioning"
+title    = "Attribution des adresses"
+icon     = "AtSign"
+description = "Comment une adresse est attribuée automatiquement à chaque compte dès qu'un domaine primaire est vérifié, et selon quelle règle son local-part est construit. L'administrateur garde la main : une adresse posée à la main n'est jamais remplacée."
+
+[[setting_groups]]
 id       = "transport"
 label    = "Chiffrement"
 icon     = "Lock"
@@ -1047,4 +1053,27 @@ label       = "Activer le chiffrement OpenPGP/GPG"
 description = "Autorise les utilisateurs de cette instance à gérer une paire de clés OpenPGP, puis à signer et chiffrer le contenu de leurs messages (et à vérifier/déchiffrer ceux qu'ils reçoivent). Les clés privées sont conservées chiffrées au repos sur l'instance. Désactivé, l'onglet « Chiffrement » des réglages de messagerie disparaît et aucune opération PGP n'est possible."
 category    = "OpenPGP"
 group       = "openpgp"
+risk        = "info"
+
+[[settings]]
+key         = "autoprovision_enabled"
+scope       = "global"
+type        = "bool"
+default     = true
+label       = "Attribuer une adresse automatiquement"
+description = "Dès qu'un domaine primaire est vérifié (preuve DNS + MX), chaque compte qui n'a pas encore de boîte sur ce domaine en reçoit une, construite selon la règle ci-dessous ; les conflits sont résolus par un suffixe numérique. Chaque nouveau compte est servi de la même façon. Désactivé, plus aucune adresse n'est créée automatiquement — les boîtes existantes ne sont pas touchées."
+category    = "Attribution des adresses"
+group       = "provisioning"
+risk        = "info"
+
+[[settings]]
+key         = "address_format"
+scope       = "global"
+type        = "string"
+default     = "{prenom}.{nom}"
+label       = "Règle de construction de l'adresse"
+description = "Le local-part (ce qui précède le @) construit pour une adresse automatique. Jetons disponibles : {prenom}, {nom}, {p} (initiale du prénom), {n} (initiale du nom), {username}. Le résultat est mis en minuscules, les accents sont retirés et les caractères non autorisés remplacés par des points. Quand le prénom ou le nom manque, la règle se replie sur {username}. Exemple : « {prenom}.{nom} » donne « marie.dupont »."
+category    = "Attribution des adresses"
+group       = "provisioning"
+placeholder = "{prenom}.{nom}"
 risk        = "info"

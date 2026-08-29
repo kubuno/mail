@@ -112,7 +112,7 @@ fn attachment_reason(cfg: &ServerConfig, name: &str, bytes: &[u8]) -> Option<Str
     }
 
     if let Some(extension) = extension_of(name) {
-        if cfg.attachment_blocked_extensions.iter().any(|blocked| *blocked == extension) {
+        if cfg.attachment_blocked_extensions.contains(&extension) {
             return Some(format!("pièce jointe « {quoted} » : extension « {extension} » interdite"));
         }
     }
@@ -128,7 +128,7 @@ fn attachment_reason(cfg: &ServerConfig, name: &str, bytes: &[u8]) -> Option<Str
 /// name has none, or when what follows the last dot is not a plausible
 /// extension (empty, or longer than any real one).
 pub fn extension_of(name: &str) -> Option<String> {
-    let base = name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(name).trim();
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name).trim();
     let (_, extension) = base.rsplit_once('.')?;
     let extension = extension.trim().to_ascii_lowercase();
     if extension.is_empty() || extension.len() > 12 || !extension.chars().all(|c| c.is_ascii_alphanumeric()) {

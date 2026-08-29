@@ -9,13 +9,22 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Added
+
+- **A new search operator, `is:subscription`.** It matches messages that carry
+  a `List-Unsubscribe` header — the same population the "Manage subscriptions"
+  view is built on. It combines with every other operator (`from:`, `in:`,
+  `OR`, negation, parentheses), and is suggested in the search bar.
+
 ### Changed
 
 - **Manage subscriptions, redesigned.** The subscription list now shows each
   sender with a coloured avatar, its address on its own column and a
   plain-language frequency ("More than 20 emails recently", "10-20 emails
-  recently", …). Clicking a sender opens the mailbox filtered on all of their
-  messages (`from:` search). "Unsubscribe" is a discreet inline action that
+  recently", …). Clicking a sender opens the mailbox on the full Gmail-style
+  query — `from:X (-in:spam OR in:trash) is:subscription` — everywhere but
+  spam, trash included, subscription messages only. "Unsubscribe" is a discreet
+  inline action that
   first asks for confirmation — "Stop receiving messages from all of X's mailing
   lists?" — before triggering the `List-Unsubscribe`, matching the familiar
   mail-client layout.

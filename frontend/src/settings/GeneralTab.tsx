@@ -709,7 +709,7 @@ export function GeneralTab() {
                     placeholder={t('mail_sig_name', { defaultValue: 'Nom de la signature' })} className="flex-1" />
                   <button
                     onClick={() => setDefSig(d => (d === s.id ? '' : s.id))}
-                    className={`flex items-center gap-1 h-8 px-3 rounded-full text-sm border transition-colors ${
+                    className={`flex items-center gap-1 h-8 px-3 rounded-md text-sm border transition-colors ${
                       defSig === s.id ? 'bg-primary/10 border-primary/40 text-primary' : 'border-border text-text-secondary hover:bg-surface-1'
                     }`}
                     title={t('mail_sig_default', { defaultValue: 'Signature par défaut' })}

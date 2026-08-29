@@ -463,6 +463,15 @@ pub struct ServerConfig {
     /// First retry delay; it then doubles up to `outbound_max_backoff_hours`.
     pub outbound_min_backoff_secs: i64,
     pub outbound_max_backoff_hours: i64,
+
+    // ── Automatic address attribution ───────────────────────────────────────
+    /// When true, a verified primary domain triggers a mailbox for every account
+    /// that has none, and every new account is served the same way. `mail.
+    /// autoprovision_enabled`.
+    pub autoprovision: bool,
+    /// The rule the local part of an automatic address is built from. Tokens:
+    /// `{prenom}`, `{nom}`, `{p}`, `{n}`, `{username}`. `mail.address_format`.
+    pub address_format: String,
 }
 
 impl Default for ServerConfig {
@@ -508,6 +517,8 @@ impl Default for ServerConfig {
             content_blocked_expressions:   Vec::new(),
             content_action:                PolicyAction::Quarantine,
             append_footer_html:            String::new(),
+            autoprovision:                 true,
+            address_format:                "{prenom}.{nom}".to_string(),
 
             restrict_inbound_domains:  Vec::new(),
             restrict_outbound_domains: Vec::new(),
@@ -1080,6 +1091,8 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
         content_blocked_expressions: expression_list_of("content_blocked_expressions"),
         content_action:              action_of("content_action", defaults.content_action),
         append_footer_html:          str_of("append_footer_html").unwrap_or_default(),
+        autoprovision:               bool_of("autoprovision_enabled", defaults.autoprovision),
+        address_format:              str_of("address_format").unwrap_or(defaults.address_format),
 
         restrict_inbound_domains:  domain_list_of("restrict_inbound_domains"),
         restrict_outbound_domains: domain_list_of("restrict_outbound_domains"),

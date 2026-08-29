@@ -1,6 +1,8 @@
 //! Gmail-style search query language: tokenizer, parser and SQL compiler.
 //!
-//! Supported operators: `in:`, `is:`, `label:`, `from:`, `to:`, `cc:`, `bcc:`,
+//! Supported operators: `in:`, `is:` (incl. `is:subscription` — Gmail's `^sub_m`
+//! equivalent: the message carries a `List-Unsubscribe` header), `label:`,
+//! `from:`, `to:`, `cc:`, `bcc:`,
 //! `subject:`, `has:attachment|userlabels|nouserlabels|drive|document|spreadsheet|
 //! presentation|youtube`, `filename:`, `after:`/`newer:`, `before:`/`older:`,
 //! `older_than:`, `newer_than:`, `larger:`/`size:`, `smaller:`, `list:`,
@@ -621,6 +623,13 @@ fn push_crit(qb: &mut QueryBuilder<'_, Postgres>, c: &Crit, user_id: Uuid) {
             "muted" => {
                 qb.push("t.is_muted = TRUE");
             }
+            // Subscription-type messages — the Kubuno equivalent of Gmail's
+            // internal `^sub_m` system label: a message that carries a
+            // `List-Unsubscribe` header. Used by the "Manage subscriptions"
+            // view when clicking a sender (`from:X … is:subscription`).
+            "subscription" | "subscriptions" => {
+                qb.push("(m.list_unsubscribe IS NOT NULL AND m.list_unsubscribe <> '')");
+            }
             _ => {
                 qb.push("TRUE");
             }
@@ -780,6 +789,17 @@ mod tests {
     fn detects_in() {
         assert!(parse("in:trash test").has_in);
         assert!(parse("-in:trash test").has_in);
+    }
+
+    /// The exact query the "Manage subscriptions" view issues when a sender row
+    /// is clicked — Gmail's `from:X (-label:spam OR label:trash) label:^sub_m`
+    /// transposed to our operators. It must parse as a combined tree and lift
+    /// the implicit spam/trash exclusion (the query names locations itself).
+    #[test]
+    fn subscription_sender_query() {
+        let p = parse("from:x@y.z (-in:spam OR in:trash) is:subscription");
+        assert!(p.has_in);
+        assert!(crit_count(&p.root) >= 3);
     }
 
     #[test]

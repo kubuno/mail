@@ -1,3 +1,4 @@
+pub mod provisioning;
 pub mod autocrypt;
 pub mod avatars;
 pub mod address_index;

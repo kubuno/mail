@@ -104,4 +104,41 @@ pub async fn notify_incoming_mail(
     if let Err(e) = publish_custom(core_url, internal_secret, "mail.received", payload).await {
         tracing::warn!(error = %e, %recipient, "Publication de l'event « mail reçu » échouée (push ignoré)");
     }
+
+    // Tell whoever keeps an address book that this recipient just dealt with
+    // this correspondent. Published on the CORE's bus, not sent to a module:
+    // mail knows nothing about contacts, and an instance without an address book
+    // simply has no subscriber. Best-effort like everything else here.
+    notify_interlocutor(core_url, internal_secret, recipient, sender_email, sender_name).await;
+}
+
+/// Reports one person the user exchanged with, for the "Other contacts" list of
+/// whichever module collects them.
+///
+/// The address is the identity: a display name is a nicety that may be missing,
+/// spoofed or change from one message to the next, so it travels as a hint and
+/// the subscriber decides what to do with it.
+pub async fn notify_interlocutor(
+    core_url: &str,
+    internal_secret: &str,
+    owner: Uuid,
+    email: &str,
+    display_name: Option<&str>,
+) {
+    let email = email.trim();
+    if core_url.trim().is_empty() || internal_secret.trim().is_empty() || email.is_empty() {
+        return;
+    }
+    let name = display_name.map(str::trim).filter(|s| !s.is_empty());
+    let payload = serde_json::json!({
+        "owner_id": owner.to_string(),
+        "interlocutors": [{
+            "kind":         "email",
+            "value":        email,
+            "display_name": name,
+        }],
+    });
+    if let Err(e) = publish_custom(core_url, internal_secret, "mail.interlocutor", payload).await {
+        tracing::warn!(error = %e, %owner, "Publication de l'event « interlocuteur » échouée (ignorée)");
+    }
 }

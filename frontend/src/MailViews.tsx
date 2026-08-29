@@ -262,11 +262,14 @@ export function SubscriptionsView() {
     queryKey: ['mail-subscriptions'], queryFn: mailApi.getSubscriptions,
   })
 
-  // Clicking a subscription row opens the mailbox filtered on that sender —
-  // every message they sent, Gmail-style. Navigating to /mail sets the inbox
-  // folder (ThreadList mounts) without clearing the search we just set.
+  // Clicking a subscription row opens the mailbox on the FULL Gmail-equivalent
+  // query — Gmail issues `from:X (-label:spam OR label:trash) label:^sub_m`;
+  // ours transposes it operator for operator: everywhere but spam (trash
+  // included), subscription-type messages only (`is:subscription` = carries a
+  // List-Unsubscribe header, our equivalent of the `^sub_m` system label).
+  // Navigating to /mail mounts ThreadList without clearing the search.
   const openSenderSearch = (email: string) => {
-    setSearchQuery(`from:${email}`)
+    setSearchQuery(`from:${email} (-in:spam OR in:trash) is:subscription`)
     navigate('/mail')
   }
 

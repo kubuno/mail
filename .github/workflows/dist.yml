@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }   # full history: build id needs the commit count
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
@@ -28,16 +27,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: rpm, path: dist/*.rpm }
       - if: startsWith(github.ref, 'refs/tags/')
-        name: upload to release
-        env: { GH_TOKEN: '${{ github.token }}' }
-        run: bash .github/upload-asset.sh 'dist/*.rpm'
+        uses: softprops/action-gh-release@v2
+        with: { files: dist/*.rpm }
 
   windows:
     runs-on: windows-latest
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }   # full history: build id needs the commit count
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: x86_64-pc-windows-msvc }
       - uses: Swatinem/rust-cache@v2
@@ -48,18 +45,22 @@ jobs:
       - run: if [ -f frontend/package.json ]; then cd frontend && npm ci && npm run build; fi
       - run: bash build_windows.sh
         env: { SQLX_OFFLINE: "true" }
+      # Le paquet Kubuno pour Windows : même binaire, même frontend, empaquetés
+      # dans le format que le serveur installe lui-même. C'est ce qui rend
+      # l'installation depuis la console possible ici — le serveur sait déballer
+      # un ZIP sans outil externe, ce qui n'est le cas ni du .deb ni du .tar.gz.
+      - run: bash build_kbpkg.sh --skip-build
+        env: { OS: windows, ARCH: x86_64, TARGET: x86_64-pc-windows-msvc }
       - uses: actions/upload-artifact@v4
-        with: { name: windows, path: dist/*.exe }
+        with: { name: windows, path: "dist/*.exe\ndist/*.kbpkg" }
       - if: startsWith(github.ref, 'refs/tags/')
-        name: upload to release
-        env: { GH_TOKEN: '${{ github.token }}' }
-        run: bash .github/upload-asset.sh 'dist/*.exe'
+        uses: softprops/action-gh-release@v2
+        with: { files: "dist/*.exe\ndist/*.kbpkg" }
 
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }   # full history: build id needs the commit count
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: aarch64-apple-darwin }
       - uses: Swatinem/rust-cache@v2
@@ -68,9 +69,10 @@ jobs:
       - run: if [ -f frontend/package.json ]; then cd frontend && npm ci && npm run build; fi
       - run: bash build_macos.sh
         env: { SQLX_OFFLINE: "true" }
+      - run: bash build_kbpkg.sh --skip-build
+        env: { OS: macos, ARCH: aarch64, TARGET: aarch64-apple-darwin }
       - uses: actions/upload-artifact@v4
-        with: { name: macos, path: dist/*.pkg }
+        with: { name: macos, path: "dist/*.pkg\ndist/*.kbpkg" }
       - if: startsWith(github.ref, 'refs/tags/')
-        name: upload to release
-        env: { GH_TOKEN: '${{ github.token }}' }
-        run: bash .github/upload-asset.sh 'dist/*.pkg'
+        uses: softprops/action-gh-release@v2
+        with: { files: "dist/*.pkg\ndist/*.kbpkg" }

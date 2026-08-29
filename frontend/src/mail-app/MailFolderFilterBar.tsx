@@ -131,10 +131,13 @@ function Popover({ anchorRef, open, onClose, children }: {
 function Chip({ label, active, hasCaret, onClick }: {
   label: string; active: boolean; hasCaret?: boolean; onClick: (e: React.MouseEvent) => void
 }) {
+  // `rounded-md`, like every other button in the product: these filters are
+  // buttons, and the pill shape set them apart from the rest of the interface
+  // for no reason other than habit.
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1 h-8 px-3 rounded-full border text-[13px] whitespace-nowrap flex-shrink-0 transition-colors
+      className={`inline-flex items-center gap-1 h-8 px-3 rounded-md border text-[13px] whitespace-nowrap flex-shrink-0 transition-colors
         ${active
           ? 'bg-primary/10 border-primary/40 text-primary'
           : 'bg-surface-0 border-border text-text-secondary hover:bg-surface-1'}`}

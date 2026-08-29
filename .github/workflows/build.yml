@@ -37,6 +37,12 @@ jobs:
       # ── Paquet Debian ──
       - name: build .deb
         run: bash build_deb.sh
+      # ── Paquet Kubuno (.kbpkg) ──
+      # Le format que le serveur installe lui-même, identique sur tous les
+      # systèmes. Construit à partir du binaire et du frontend produits
+      # ci-dessus : il livre donc exactement ce que livre le .deb.
+      - name: build .kbpkg
+        run: bash build_kbpkg.sh --skip-build
       - uses: actions/upload-artifact@v4
         with:
           name: kubuno-mail-deb
@@ -69,5 +75,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.deb
+          files: |
+            dist/*.deb
+            dist/*.kbpkg
           body_path: RELEASE_NOTES.md

@@ -557,6 +557,96 @@ pub async fn issue_mailbox_credential(
 /// carry harmless sentinels — empty host, `security = 'none'`, an encrypted empty
 /// password. It is told apart from an external account by `kind`. See migration
 /// 000025.
+/// Attributes an automatic address to one account, resolving a name clash.
+///
+/// The counterpart of [`create_mailbox`] for the provisioning worker: no
+/// `AuthUser` (it is internal), no credential, and it NEVER overwrites — an
+/// account that already holds any mailbox on this domain is left exactly as it
+/// is, so a manually chosen address, or a previous run, is never disturbed. That
+/// is what makes the reconcile safe to run on every tick.
+///
+/// `local_base` is the local part the rule produced, already sanitised. If it is
+/// taken, `local_base2`, `local_base3`… are tried in turn: two people whose rule
+/// collapses to the same string still each get an address, and the second one
+/// carries the suffix, not the first.
+///
+/// Returns the address created, or `None` when the account already had one.
+pub(crate) async fn provision_mailbox(
+    state: &AppState,
+    domain: &str,
+    user_id: Uuid,
+    local_base: &str,
+    display_name: Option<&str>,
+) -> Result<Option<String>, MailError> {
+    // Already served on this domain? Then there is nothing to do — and nothing
+    // to overwrite. This is the idempotency the worker relies on.
+    let has: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM mail.mailboxes WHERE user_id = $1 AND domain = $2 LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(domain)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(db_error("provisioning : boîte existante ?"))?;
+    if has.is_some() {
+        return Ok(None);
+    }
+
+    // Find a free address: base, then base2, base3… A ceiling stops a pathologic
+    // domain (everything collapsing to one string) from looping forever; past it
+    // the account is left unprovisioned and the worker logs it rather than spin.
+    let mut address = String::new();
+    let mut found = false;
+    for n in 1..=50u32 {
+        let candidate = if n == 1 {
+            format!("{local_base}@{domain}")
+        } else {
+            format!("{local_base}{n}@{domain}")
+        };
+        if require_address_free(&state.db, &candidate, None).await.is_ok() {
+            address = candidate;
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        tracing::warn!(user_id = %user_id, domain, local_base, "provisioning : aucune adresse libre après 50 essais");
+        return Ok(None);
+    }
+
+    let quota = default_quota(&state.db, domain).await?;
+
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(db_error("provisioning : ouverture de transaction"))?;
+
+    let row = sqlx::query_as::<_, MailboxRow>(&format!(
+        r#"INSERT INTO mail.mailboxes
+             (address, domain, user_id, display_name, quota_bytes, is_active, comment)
+           VALUES ($1, $2, $3, $4, $5, TRUE, $6)
+           RETURNING {COLUMNS}"#
+    ))
+    .bind(&address)
+    .bind(domain)
+    .bind(user_id)
+    .bind(clean_text(display_name))
+    .bind(quota)
+    .bind(Some("Adresse attribuée automatiquement"))
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| translate_conflict(e, &address, domain, "provisioning : création de la boîte"))?;
+
+    create_local_account(&mut tx, state, &row).await?;
+
+    tx.commit()
+        .await
+        .map_err(db_error("provisioning : validation"))?;
+
+    Ok(Some(address))
+}
+
 pub(crate) async fn create_local_account(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     state: &AppState,

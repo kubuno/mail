@@ -20,6 +20,10 @@ pub async fn run(state: Arc<AppState>) {
     tracing::info!("Worker d'envoi programmé démarré (vérif toutes les 30 s)");
     loop {
         send_due(&state, &crypto).await;
+        // Automatic address attribution: idempotent, so running it each tick
+        // costs a settings read when there is nothing to do, and back-fills a
+        // freshly verified domain or a new account within one cycle.
+        crate::services::provisioning::reconcile(&state).await;
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
 }
