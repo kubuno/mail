@@ -35,7 +35,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   it and lift off it); folder views keep their scoped chip bar.
 - **Searching on senders features them above the results** — avatar, display
   name and the address as a mail link that opens the composer prefilled with
-  them. Multi-source queries (`(from:a OR from:b)`) show one card per sender.
+  them. Multi-source queries (`(from:a OR from:b)`) show one card per sender,
+  flowing side by side on a single row.
 - **The committed search lives in the URL** — `#search/<encoded query>`, Gmail
   style: a search survives reloads, can be deep-linked and follows the browser's
   back/forward. Clearing the search returns the hash to the folder.

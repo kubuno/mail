@@ -396,10 +396,16 @@ export default function ThreadList() {
         if (!searchQuery) return null
         const senders = searchedSenders(searchQuery)
         if (!senders.length) return null
-        return senders.map(sender => {
-          const known = threads.find(th => (th.last_sender_email ?? '').toLowerCase() === sender)
-          return <SearchSenderHeader key={sender} email={sender} name={known?.last_sender_name} />
-        })
+        // One row, cards flowing side by side (wrapping when narrow) — several
+        // sources must not stack full-width rows.
+        return (
+          <div className="flex flex-wrap items-center gap-x-10 gap-y-2 px-6 py-3 border-b border-border bg-surface-0 flex-shrink-0">
+            {senders.map(sender => {
+              const known = threads.find(th => (th.last_sender_email ?? '').toLowerCase() === sender)
+              return <SearchSenderHeader key={sender} email={sender} name={known?.last_sender_name} />
+            })}
+          </div>
+        )
       })()}
 
       <CategoryTabs

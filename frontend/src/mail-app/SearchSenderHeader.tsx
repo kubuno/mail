@@ -16,7 +16,7 @@ export default function SearchSenderHeader({ email, name }: { email: string; nam
   }
 
   return (
-    <div className="flex items-center gap-4 px-6 py-3 border-b border-border flex-shrink-0 bg-surface-0">
+    <div className="flex items-center gap-4 min-w-0">
       <SenderAvatar email={email} name={name} size={48} />
       <div className="text-sm font-medium text-text-primary truncate max-w-64">{display}</div>
       <button
