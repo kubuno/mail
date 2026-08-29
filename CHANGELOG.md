@@ -11,6 +11,91 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Manage subscriptions, redesigned.** The subscription list now shows each
+  sender with a coloured avatar, its address on its own column and a
+  plain-language frequency ("More than 20 emails recently", "10-20 emails
+  recently", …). "Unsubscribe" is a discreet inline action that first asks for
+  confirmation — "Stop receiving messages from all of X's mailing lists?" —
+  before triggering the `List-Unsubscribe`, matching the familiar mail-client
+  layout.
+
+
+
+
+### Fixed
+
+
+- **A withdrawn dependency is no longer used.** A crate deep in the tree
+  (`spin` 0.9.8, pulled in through the HTTP stack) was yanked by its authors.
+  No vulnerability was announced, but a withdrawn crate has no business in a
+  release; the lockfile now takes the version that replaced it.
+- **The package could not be built where `zip` is absent.** The Windows job of
+  the continuous integration has no `zip`, so the Windows package was simply lost
+  the first time it was attempted — a script failure, not a build failure. The
+  builder now falls back to 7-Zip, then to PowerShell.
+### Added
+
+- **This module now ships a `.kbpkg`** — the single package format a Kubuno
+  server installs by itself, the same file on Linux, Windows and macOS. It
+  carries the same binary, interface and manifest as the system packages,
+  arranged the way the server expects to find a module on disk, plus a
+  `SHA256SUMS` so a copy carried offline can be checked without the catalogue.
+  Nothing changes for existing installations: the `.deb`, `.rpm`, `.exe` and
+  `.pkg` are still published, and a catalogue that sees both simply prefers the
+  new one. It is also the only format the server can unpack without an external
+  tool, which is what makes one-click installation possible away from
+  Debian-like systems.
+### Fixed
+
+- **A built package could be thrown away instead of published.** The job that
+  attaches a package to the release waited ten minutes for another workflow to
+  create that release, then gave up with "release never appeared — build.yml
+  likely failed". The diagnosis was wrong: on a repository whose `.deb` takes
+  longer than ten minutes to build, the release simply did not exist yet, and a
+  package that had built perfectly was discarded. Four modules reached v0.1.6
+  with packages missing for some systems because of it. The job now creates the
+  release itself when it is missing, so it no longer depends on another workflow
+  finishing first.
+### Added
+
+- **Security policy and CI quality gate.** A `SECURITY.md` documents how to
+  report vulnerabilities, and a CI workflow enforces `clippy -D warnings`, a
+  dependency-vulnerability audit (`cargo audit`) and the frontend typecheck/tests.
+
+- **Automatic address attribution.** Once a primary domain is verified (DNS
+  proof and MX), every account without a mailbox on it receives one, and so
+  does every new account thereafter. The local part is built from an
+  administrator's rule (`Attribution des adresses` settings — e.g.
+  `{prenom}.{nom}`, tokens `{prenom} {nom} {p} {n} {username}`), accents folded
+  and clashes resolved with a numeric suffix. It never overwrites: an address
+  set by hand, or from a previous run, is left untouched, and the whole
+  behaviour can be turned off. Reconciled on a timer, so nothing is lost to a
+  missed event or a restart.
+
+- Mail now publishes, on the platform's event bus, that a recipient exchanged
+  with a correspondent. An address book can collect those into its "Other
+  contacts" list; mail itself knows nothing about who listens, and publishing
+  never affects delivery.
+
+
+### Changed
+
+- **Pill-shaped buttons are gone from the interface.** Filter chips, view
+  segments, tab selectors and action buttons that were drawn as pills now use the
+  same 4 px corner radius as every other button — the shape set them apart for no
+  reason other than habit. Round buttons that hold a lone icon, avatars, status
+  dots and non-clickable badges keep their shape: a circle around a single glyph
+  is not a pill.
+
+- **The folder filter chips are no longer pill-shaped.** « De », « Indifférente »,
+  « Contient une pièce jointe », « À » and « Non lu » now use the same 4 px corner
+  radius as every other button in the product; the pill set them apart for no
+  reason other than habit. Round icon-only buttons (zoom, print) and status
+  badges keep their shape — a circle around a lone icon is not the same thing.
+
+- The monospace fallback for message bodies no longer names a Google font that
+  was never shipped; it uses DM Mono, which the instance actually serves.
+
 - Internal refactor: the message composer (`ComposeWindow`) was split into
   focused files (`mail-app/compose/`: `SendButton`, `ComposeFormatToolbar`,
   `ComposeActionBar`, shared `parts`). No visible or behavioural change.

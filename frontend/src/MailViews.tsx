@@ -4,8 +4,10 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, MailX, ExternalLink, Loader2, RefreshCw, Paperclip, Trash2 } from 'lucide-react'
-import { useIsMobile } from '@ui'
-import { mailApi, Draft } from './api'
+import { useIsMobile, ConfirmDialog } from '@ui'
+import { useConfirm } from '@kubuno/sdk'
+import { mailApi, Draft, type Subscription } from './api'
+import SenderAvatar from './mail-app/SenderAvatar'
 import { useMailStore } from './store'
 import { SelectBox, DragGrip } from './mail-app/rowChrome'
 import MailFolderFilterBar, { type FilterState, EMPTY_FILTER } from './mail-app/MailFolderFilterBar'
@@ -105,7 +107,7 @@ export function DraftsView() {
         {checked.size > 0 ? (
           <button
             onClick={() => remove([...checked])}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-sm text-danger hover:bg-danger/10"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-danger hover:bg-danger/10"
           >
             <Trash2 size={16} /> {t('delete', { defaultValue: 'Supprimer' })} ({checked.size})
           </button>
@@ -250,11 +252,37 @@ export function unsubscribeTarget(raw: string): string | null {
 }
 
 export function SubscriptionsView() {
-  const { t, i18n } = useTranslation('mail')
+  const { t } = useTranslation('mail')
   const qc = useQueryClient()
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const { data: subs = [], isLoading } = useQuery({
     queryKey: ['mail-subscriptions'], queryFn: mailApi.getSubscriptions,
   })
+
+  // Gmail-style frequency bucket derived from the sender's message count.
+  const freqLabel = (count: number) =>
+    count > 20 ? t('subs_freq_many', { defaultValue: 'Plus de 20 e-mails récemment' })
+    : count >= 10 ? t('subs_freq_med', { defaultValue: '10-20 e-mails récemment' })
+    : t('subs_freq_few', { count, defaultValue: `${count} e-mail${count > 1 ? 's' : ''} récemment` })
+
+  // Ask before unsubscribing (Gmail flow), then trigger the List-Unsubscribe.
+  const doUnsubscribe = async (s: Subscription) => {
+    const name = s.from_name || s.from_email
+    const ok = await confirm({
+      title:        t('subs_unsubscribe', { defaultValue: 'Se désabonner' }),
+      message:      t('subs_confirm', { name, email: s.from_email,
+                      defaultValue: `Voulez-vous arrêter de recevoir des messages de toutes les listes de diffusion de ${name} (${s.from_email}) ?` }),
+      confirmLabel: t('subs_unsubscribe', { defaultValue: 'Se désabonner' }),
+    })
+    if (!ok) return
+    const target = s.list_unsubscribe ? unsubscribeTarget(s.list_unsubscribe) : null
+    if (target) {
+      if (target.startsWith('mailto:')) window.location.href = target
+      else window.open(target, '_blank', 'noopener,noreferrer')
+    }
+    // The subscription drops off at the next sync once it stops sending.
+    qc.invalidateQueries({ queryKey: ['mail-subscriptions'] })
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -269,41 +297,32 @@ export function SubscriptionsView() {
           {t('subs_empty', { defaultValue: 'Aucun abonnement détecté (en-tête List-Unsubscribe).' })}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto divide-y divide-border/40">
-          {subs.map(s => {
-            const target = s.list_unsubscribe ? unsubscribeTarget(s.list_unsubscribe) : null
-            return (
-              <div key={s.from_email} className="flex items-center gap-4 px-6 py-3 hover:bg-surface-1">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-text-primary truncate">{s.from_name || s.from_email}</div>
-                  <div className="text-xs text-text-tertiary truncate">{s.from_email}</div>
+        <div className="flex-1 overflow-y-auto">
+          <p className="px-6 py-4 text-sm text-text-tertiary">
+            {t('subs_intro', { defaultValue: 'Lorsque vous vous désabonnez, vous pouvez continuer à recevoir des messages pendant quelques jours' })}
+          </p>
+          <div className="divide-y divide-border/40">
+            {subs.map(s => (
+              <div key={s.from_email} className="group flex items-center gap-4 px-6 py-2.5 hover:bg-surface-1">
+                <SenderAvatar email={s.from_email} name={s.from_name} size={28} />
+                <div className="w-56 min-w-0 flex-shrink-0 text-sm text-text-primary truncate">
+                  {s.from_name || s.from_email}
                 </div>
-                <div className="text-xs text-text-tertiary whitespace-nowrap flex-shrink-0">
-                  {t('subs_count', { count: s.count, defaultValue: `${s.count} messages` })}
-                  <span className="mx-2">·</span>
-                  {fmtDate(s.last_at, i18n.language)}
-                </div>
+                <div className="flex-1 min-w-0 text-sm text-text-secondary truncate">{s.from_email}</div>
+                <div className="text-sm text-text-secondary whitespace-nowrap flex-shrink-0">{freqLabel(s.count)}</div>
                 <button
-                  disabled={!target}
-                  onClick={() => {
-                    if (!target) return
-                    if (target.startsWith('mailto:')) window.location.href = target
-                    else window.open(target, '_blank', 'noopener,noreferrer')
-                    // L'abonnement disparaîtra au prochain sync s'il n'envoie plus.
-                    qc.invalidateQueries({ queryKey: ['mail-subscriptions'] })
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-border text-text-secondary
-                             hover:bg-danger/10 hover:text-danger hover:border-danger/30 disabled:opacity-40 transition-colors flex-shrink-0"
-                  title={target ?? ''}
+                  onClick={() => doUnsubscribe(s)}
+                  title={t('subs_unsubscribe', { defaultValue: 'Se désabonner' })}
+                  className="text-sm text-text-primary px-3 py-1.5 rounded-full hover:bg-surface-2 transition-colors flex-shrink-0"
                 >
-                  <ExternalLink size={14} />
                   {t('subs_unsubscribe', { defaultValue: 'Se désabonner' })}
                 </button>
               </div>
-            )
-          })}
+            ))}
+          </div>
         </div>
       )}
+      {confirmState && <ConfirmDialog {...confirmState} onConfirm={handleConfirm} onCancel={handleCancel} />}
     </div>
   )
 }
