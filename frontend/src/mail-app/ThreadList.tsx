@@ -20,7 +20,7 @@ import ThreadListToolbar from './ThreadListToolbar'
 import CategoryTabs from './CategoryTabs'
 import AttachmentPreview, { type PreviewSource } from './AttachmentPreview'
 import MailFolderFilterBar, { type FilterFolder } from './MailFolderFilterBar'
-import SearchSenderHeader, { searchedSender } from './SearchSenderHeader'
+import SearchSenderHeader, { searchedSenders } from './SearchSenderHeader'
 
 // Folders that carry the Gmail-style filter chip bar (drafts has its own view).
 const FILTER_FOLDERS = new Set<string>(['starred', 'important', 'sent', 'all', 'spam'])
@@ -394,10 +394,12 @@ export default function ThreadList() {
         // A search on ONE sender features that sender above the results
         // (avatar + name + address opening the composer) — Gmail parity.
         if (!searchQuery) return null
-        const sender = searchedSender(searchQuery)
-        if (!sender) return null
-        const known = threads.find(th => (th.last_sender_email ?? '').toLowerCase() === sender)
-        return <SearchSenderHeader email={sender} name={known?.last_sender_name} />
+        const senders = searchedSenders(searchQuery)
+        if (!senders.length) return null
+        return senders.map(sender => {
+          const known = threads.find(th => (th.last_sender_email ?? '').toLowerCase() === sender)
+          return <SearchSenderHeader key={sender} email={sender} name={known?.last_sender_name} />
+        })
       })()}
 
       <CategoryTabs

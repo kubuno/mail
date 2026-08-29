@@ -32,16 +32,16 @@ export default function SearchSenderHeader({ email, name }: { email: string; nam
   )
 }
 
-/** The single concrete `from:<email>` of a query, or null (absent, `from:me`,
- *  several senders, or part of an OR alternative — no one sender to feature). */
-export function searchedSender(query: string): string | null {
-  const matches = [...query.matchAll(/(?:^|[\s(])-?from:"?([^\s()"]+@[^\s()"]+)"?/gi)]
-  if (matches.length !== 1) return null
-  const m = matches[0]
-  if (m[0].trimStart().startsWith('-')) return null
-  // Inside an OR alternative the sender is not a guaranteed filter.
-  const idx = m.index ?? 0
-  const around = query.slice(Math.max(0, idx - 4), idx + m[0].length + 4).toUpperCase()
-  if (around.includes(' OR ')) return null
-  return m[1].toLowerCase()
+/** Every concrete `from:<email>` of a query (deduped, lowercased) — one card
+ *  per searched sender, multi-source `(from:a OR from:b)` queries included.
+ *  Negated senders and `from:me`-style words don't feature anyone. */
+export function searchedSenders(query: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const m of query.matchAll(/(?:^|[\s(])(-?)from:"?([^\s()"]+@[^\s()"]+)"?/gi)) {
+    if (m[1]) continue
+    const email = m[2].toLowerCase()
+    if (!seen.has(email)) { seen.add(email); out.push(email) }
+  }
+  return out
 }
