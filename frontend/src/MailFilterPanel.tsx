@@ -517,9 +517,9 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           e.preventDefault()
           e.stopPropagation()
           e.dataTransfer.dropEffect = 'move'
-          setDropMark({ key: `grp:${path.join('.')}`, before: false })
+          const k2 = `grp:${path.join('.')}`
+          setDropMark(m => (m && m.key === k2 ? m : { key: k2, before: false }))
         }}
-        onDragLeave={() => setDropMark(m => (m?.key === `grp:${path.join('.')}` ? null : m))}
         onDrop={e => {
           e.preventDefault()
           e.stopPropagation()
@@ -568,15 +568,19 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
         return (
           <div
             key={key}
+            className="relative"
             onDragOver={e => {
               if (!dragPathRef.current) return
               e.preventDefault()
               e.stopPropagation()
               e.dataTransfer.dropEffect = 'move'
               const r2 = e.currentTarget.getBoundingClientRect()
-              setDropMark({ key, before: e.clientY < r2.top + r2.height / 2 })
+              const before = e.clientY < r2.top + r2.height / 2
+              // Only update when the target boundary actually changes: a state
+              // write per dragover event (they fire continuously) re-renders in
+              // a loop and makes the whole panel shiver.
+              setDropMark(m => (m && m.key === key && m.before === before ? m : { key, before }))
             }}
-            onDragLeave={() => setDropMark(m => (m?.key === key ? null : m))}
             onDrop={e => {
               e.preventDefault()
               e.stopPropagation()
@@ -588,7 +592,14 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               setDropMark(null)
             }}
           >
-            {dropMark?.key === key && dropMark.before && <div className="h-0.5 bg-primary rounded mb-1" />}
+            {/* Insertion bar as an OVERLAY: absolutely positioned so it never
+                shifts the layout under the pointer (a in-flow bar moves the row,
+                flips the before/after test and oscillates). No dragleave-clear
+                either — leaving a child fires dragleave and made it flicker;
+                the mark simply moves to the next hovered target. */}
+            {dropMark?.key === key && dropMark.before && (
+              <div className="absolute -top-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
+            )}
             <div className="flex items-start gap-1">
               <button
                 type="button"
@@ -604,7 +615,9 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
                 {c.kind === 'group' ? renderGroup(c, childPath) : renderCondRow(c, childPath)}
               </div>
             </div>
-            {dropMark?.key === key && !dropMark.before && <div className="h-0.5 bg-primary rounded mt-1" />}
+            {dropMark?.key === key && !dropMark.before && (
+              <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
+            )}
           </div>
         )
       })}

@@ -47,6 +47,15 @@ number at release time, and CI publishes that section as the GitHub Release note
   view is built on. It combines with every other operator (`from:`, `in:`,
   `OR`, negation, parentheses), and is suggested in the search bar.
 
+### Fixed
+
+- **Drag-and-drop in the condition builder no longer shivers.** The insertion
+  bar is drawn as an absolute overlay (an in-flow bar shifted the row under the
+  pointer and made the before/after test oscillate), the drop mark only updates
+  when the target boundary actually changes (a state write per dragover event
+  re-rendered in a loop), and leaving a child no longer clears the mark (the
+  dragleave storm made it flicker).
+
 ### Changed
 
 - **The advanced search panel gained an "Additional filters" tab — a real
