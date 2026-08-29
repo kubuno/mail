@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { X, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { DatePicker, Dropdown, Checkbox, Button } from '@ui'
+import { DatePicker, Dropdown, Checkbox, Button, Input, Tabs } from '@ui'
 import { useMailStore } from './store'
 import { mailApi } from './api'
 
@@ -21,10 +21,55 @@ interface Filters {
   customDate: string | null
   searchIn:   string
   hasAttach:  boolean
-  /** Additional operator filters, one top-level query fragment each — e.g.
-   *  `is:subscription` or `(-in:spam OR in:trash)`. Added/removed dynamically
-   *  in the panel; free words never land here (they go to hasWords). */
-  extras:     string[]
+  /** Additional operator conditions, editable in place — the classic filter
+   *  builder rows (AG Grid / Airtable style): each row is `[ET|OU] [NOT] op:val`,
+   *  consecutive OR rows serialize as a parenthesized `(a OR b)` group. A
+   *  fragment our row model cannot represent stays editable as a raw
+   *  expression (`raw`). Free words never land here (they go to hasWords). */
+  extras:     ExtraRow[]
+}
+
+export interface ExtraRow {
+  /** How this row combines with the PREVIOUS one ('and' on the first row). */
+  connector: 'and' | 'or'
+  neg:       boolean
+  op:        string
+  val:       string
+  /** Set when the fragment isn't a plain `-?op:value` — edited as raw text. */
+  raw?:      string
+}
+
+/** One condition's query text ('' while its value is still empty). */
+function condStr(r: ExtraRow): string {
+  if (r.raw != null) return r.raw.trim()
+  const v = r.val.trim()
+  if (!v) return ''
+  return `${r.neg ? '-' : ''}${r.op}:${/\s/.test(v) ? `"${v}"` : v}`
+}
+
+/** Parses one top-level query fragment into builder rows: a single `-?op:val`,
+ *  a `(a OR b …)` group, or — when it doesn't fit the row model — a raw row. */
+function unitToRows(unit: string): ExtraRow[] {
+  const parseCond = (s: string) => {
+    const m = /^(-?)([a-z_0-9]+):(.+)$/i.exec(s.trim())
+    return m ? { neg: !!m[1], op: m[2].toLowerCase(), val: m[3].replace(/^"|"$/g, '') } : null
+  }
+  const isParen = unit.startsWith('(') && unit.endsWith(')')
+  const toks = topLevelTokens(isParen ? unit.slice(1, -1).trim() : unit)
+  // Expect the shape `cond (OR cond)*`; anything else becomes a raw row.
+  const members: string[] = []
+  let expectOr = false, ok = toks.length > 0
+  for (const tk of toks) {
+    if (expectOr) {
+      if (tk.toUpperCase() !== 'OR') { ok = false; break }
+      expectOr = false
+    } else { members.push(tk); expectOr = true }
+  }
+  const conds = ok ? members.map(parseCond) : null
+  if (!conds || conds.some(c => c == null)) {
+    return [{ connector: 'and', neg: false, op: '', val: '', raw: unit }]
+  }
+  return conds.map((c, i) => ({ connector: i === 0 ? 'and' as const : 'or' as const, ...c! }))
 }
 
 // ── Query → fields (Gmail behaviour) ─────────────────────────────────────────
@@ -77,7 +122,16 @@ export function buildQuery(f: Filters): string {
   if (f.searchIn === 'unread')       parts.push('is:unread')
   else if (f.searchIn === 'starred') parts.push('is:starred')
   else if (f.searchIn !== 'all')     parts.push(`in:${f.searchIn}`)
-  parts.push(...f.extras.filter(Boolean))
+  // Builder rows: consecutive OR rows form a parenthesized group; groups (and
+  // lone rows) are AND-combined like every other part. Empty rows are skipped.
+  const groups: string[][] = []
+  for (const r of f.extras) {
+    const s = condStr(r)
+    if (!s) continue
+    if (r.connector === 'or' && groups.length) groups[groups.length - 1].push(s)
+    else groups.push([s])
+  }
+  parts.push(...groups.map(g => (g.length > 1 ? `(${g.join(' OR ')})` : g[0])))
   return parts.join(' ')
 }
 
@@ -150,9 +204,9 @@ export function queryToFilters(q: string): Partial<Filters> {
   const isFreeWord = (u: string) =>
     !/[:(){}]/.test(u.replace(/^"|"$/g, '')) && !u.includes(' OR ') && !u.startsWith('-') && !u.startsWith('+')
   const words = units.filter(isFreeWord)
-  const extras = units.filter(u => !isFreeWord(u))
+  const extraUnits = units.filter(u => !isFreeWord(u))
   if (words.length) f.hasWords = words.join(' ')
-  if (extras.length) f.extras = extras
+  if (extraUnits.length) f.extras = extraUnits.flatMap(unitToRows)
   return f
 }
 
@@ -190,16 +244,9 @@ function LineInput({
   value:    string
   onChange: (v: string) => void
 }) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      className="w-full border-0 border-b border-border bg-transparent text-sm text-text-primary
-                 placeholder:text-transparent focus:outline-none focus:border-primary pb-0.5
-                 transition-colors"
-    />
-  )
+  // The @ui Input primitive (platform rule: primary components in search UIs) —
+  // no bottom-rule underline, uniform height/typography with every other field.
+  return <Input value={value} onChange={e => onChange(e.target.value)} />
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -280,12 +327,10 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
 
   // ── Création de filtre (règle automatique) ────────────────────────────────────
   const qc = useQueryClient()
-  // « Additional filters » builder: pick any supported operator, a value (an
-  // enumerated dropdown when the operator has a closed value set), optionally
-  // negated — the token joins the removable chips and the bar text live.
-  const [xOp, setXOp]   = useState('label')
-  const [xVal, setXVal] = useState('')
-  const [xNeg, setXNeg] = useState(false)
+  // « Additional filters » = the classic filter-builder rows (AG Grid/Airtable
+  // pattern): every row is edited IN PLACE (connector, operator, value,
+  // negation) and the bar's text follows live through set(). Operators with a
+  // closed value set get an enumerated dropdown.
   const OP_VALUES: Record<string, string[]> = {
     in:  ['inbox', 'sent', 'drafts', 'spam', 'trash', 'archive', 'anywhere', 'snoozed'],
     is:  ['unread', 'read', 'starred', 'unstarred', 'important', 'notimportant', 'snoozed', 'muted', 'subscription'],
@@ -296,13 +341,23 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   }
   const X_OPS = ['label', 'is', 'in', 'has', 'category', 'list', 'filename', 'cc', 'bcc', 'deliveredto',
                  'newer_than', 'older_than', 'after', 'before', 'larger', 'smaller', 'rfc822msgid']
-  const addExtra = () => {
-    const val = xVal.trim()
-    if (!val) return
-    const quoted = /\s/.test(val) ? `"${val}"` : val
-    set({ extras: [...f.extras, `${xNeg ? '-' : ''}${xOp}:${quoted}`] })
-    setXVal(''); setXNeg(false)
-  }
+  const updateExtra = (idx: number, patch: Partial<ExtraRow>) =>
+    set({ extras: f.extras.map((r, i2) => {
+      if (i2 !== idx) return r
+      const next = { ...r, ...patch }
+      // Switching to an enumerated operator whose list doesn't hold the current
+      // value resets it, so the dropdown never shows a foreign value.
+      if (patch.op && OP_VALUES[patch.op] && !OP_VALUES[patch.op].includes(next.val)) next.val = ''
+      return next
+    }) })
+  const addExtraRow = () =>
+    set({ extras: [...f.extras, { connector: 'and', neg: false, op: 'label', val: '' }] })
+  const removeExtraRow = (idx: number) =>
+    set({ extras: f.extras.filter((_, i2) => i2 !== idx) })
+
+  // The panel's two facets: the classic criteria fields, and the dynamic
+  // operator filters — kept in separate tabs (user request).
+  const [tab, setTab] = useState<'criteria' | 'extras'>('criteria')
 
   const [step, setStep] = useState<'conditions' | 'actions'>('conditions')
   const [act, setAct] = useState({ archive: false, markRead: false, star: false, important: false, trash: false, spam: false, labelId: '' })
@@ -353,7 +408,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
             <Checkbox label={t('filter_apply_label', { defaultValue: 'Appliquer le libellé :' })} checked={!!act.labelId} onChange={v => setAct(a => ({ ...a, labelId: v ? (labels[0]?.id ?? '') : '' }))} />
             {act.labelId && labels.length > 0 && (
               <Dropdown value={act.labelId} onChange={v => setAct(a => ({ ...a, labelId: v }))}
-                options={labels.map(l => ({ value: l.id, label: l.name }))} height={32} width={180} />
+                options={labels.map(l => ({ value: l.id, label: l.name }))} height={36} width={180} />
             )}
           </div>
         </div>
@@ -377,8 +432,21 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
 
   return (
     <div className="px-6 py-4">
+      <Tabs
+        tabs={[
+          { id: 'criteria', label: t('mail_filter_tab_criteria', { defaultValue: 'Critères' }) },
+          { id: 'extras', label: t('mail_filter_extras', { defaultValue: 'Filtres supplémentaires' }),
+            badge: f.extras.length || undefined },
+        ]}
+        value={tab}
+        onChange={v => setTab(v)}
+        size="sm"
+        className="mb-3"
+        t={t}
+      />
+
       {/* Fields */}
-      <div className="divide-y divide-border/30">
+      <div className={tab === 'criteria' ? undefined : 'hidden'}>
         <Row label={t('mail_filter_from')}>
           <LineInput value={f.from} onChange={v => set({ from: v })} />
         </Row>
@@ -402,7 +470,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               value={f.sizeOp}
               onChange={v => set({ sizeOp: v })}
               options={SIZE_OPS}
-              height={32}
+              height={36}
             />
             <input
               type="number"
@@ -416,7 +484,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               value={f.sizeUnit}
               onChange={v => set({ sizeUnit: v })}
               options={SIZE_UNITS}
-              height={32}
+              height={36}
             />
           </div>
         </Row>
@@ -428,7 +496,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               value={f.dateRange}
               onChange={v => set({ dateRange: v, customDate: null })}
               options={DATE_RANGES}
-              height={32}
+              height={36}
             />
             {f.dateRange === 'custom' && (
               <DatePicker
@@ -436,7 +504,6 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
                 value={f.customDate}
                 onChange={v => set({ customDate: v })}
                 clearable
-                size="sm"
                 className="w-36"
               />
             )}
@@ -449,14 +516,14 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
             value={f.searchIn}
             onChange={v => set({ searchIn: v })}
             options={SEARCH_IN}
-            height={32}
+            height={36}
             width="100%"
           />
         </Row>
       </div>
 
       {/* Attachment checkbox */}
-      <div className="mt-3 mb-5">
+      <div className={tab === 'criteria' ? 'mt-3 mb-5' : 'hidden'}>
         <Checkbox
           label={t('mail_filter_has_attachment')}
           checked={f.hasAttach}
@@ -464,68 +531,80 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
         />
       </div>
 
-      {/* ── Additional operator filters (dynamic add/remove) ─────────────────
-          Operator fragments from the bar's query (groups, OR chains, any
-          supported operator) land here as removable chips instead of polluting
-          « Contient les mots », and new ones can be composed from the full
-          operator list. */}
-      <div className="mb-5">
-        <div className="text-sm text-text-secondary mb-2">
-          {t('mail_filter_extras', { defaultValue: 'Filtres supplémentaires' })}
-        </div>
-        {f.extras.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2.5">
-            {f.extras.map((x, idx) => (
-              <span key={`${x}-${idx}`}
-                className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded border border-border bg-surface-1 text-[13px] font-mono text-text-primary">
-                {x}
-                <button
-                  type="button"
-                  onClick={() => set({ extras: f.extras.filter((_, i2) => i2 !== idx) })}
-                  title={t('mail_filter_extra_remove', { defaultValue: 'Retirer ce filtre' })}
-                  className="p-0.5 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10"
-                >
-                  <X size={13} />
-                </button>
+      {/* ── Additional operator filters tab ──────────────────────────────────
+          Classic filter-builder rows (AG Grid / Airtable pattern): each row is
+          fully editable in place — connector (ET/OU), negation, operator and
+          value — and the bar's query follows live. Consecutive OR rows
+          serialize as a parenthesized group. */}
+      <div className={tab === 'extras' ? 'mb-5 space-y-2' : 'hidden'}>
+        {f.extras.map((r, idx) => (
+          <div key={idx} className="flex items-center gap-2 flex-wrap">
+            {idx === 0 ? (
+              <span className="w-[72px] text-sm text-text-secondary flex-shrink-0">
+                {t('mail_filter_where', { defaultValue: 'Où' })}
               </span>
-            ))}
+            ) : (
+              <Dropdown
+                value={r.connector}
+                onChange={v => updateExtra(idx, { connector: v as 'and' | 'or' })}
+                options={[
+                  { value: 'and', label: t('mail_filter_and', { defaultValue: 'ET' }) },
+                  { value: 'or', label: t('mail_filter_or', { defaultValue: 'OU' }) },
+                ]}
+                height={36} fontSize={14} width={72} focusable
+              />
+            )}
+            {r.raw != null ? (
+              <Input
+                value={r.raw}
+                onChange={e => updateExtra(idx, { raw: e.target.value })}
+                placeholder={t('mail_filter_expression', { defaultValue: 'expression' })}
+                className="flex-1 min-w-44"
+              />
+            ) : (
+              <>
+                <Dropdown
+                  value={r.op}
+                  onChange={v => updateExtra(idx, { op: v })}
+                  options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
+                  height={36} fontSize={14} width={150} focusable
+                />
+                {OP_VALUES[r.op] ? (
+                  <Dropdown
+                    value={r.val}
+                    onChange={v => updateExtra(idx, { val: v })}
+                    options={OP_VALUES[r.op].map(v => ({ value: v, label: v }))}
+                    placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
+                    height={36} fontSize={14} width={180} focusable
+                  />
+                ) : (
+                  <Input
+                    value={r.val}
+                    onChange={e => updateExtra(idx, { val: e.target.value })}
+                    placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
+                    className="w-44"
+                  />
+                )}
+                <Checkbox
+                  label={t('mail_filter_extra_not', { defaultValue: 'Exclure (-)' })}
+                  checked={r.neg}
+                  onChange={v => updateExtra(idx, { neg: v })}
+                />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => removeExtraRow(idx)}
+              title={t('mail_filter_extra_remove', { defaultValue: 'Retirer cette condition' })}
+              className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
+            >
+              <X size={15} />
+            </button>
           </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Dropdown
-            value={xOp}
-            onChange={v => { setXOp(v); setXVal('') }}
-            options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
-            height={32} fontSize={13} width={150} focusable
-          />
-          {OP_VALUES[xOp] ? (
-            <Dropdown
-              value={xVal}
-              onChange={setXVal}
-              options={OP_VALUES[xOp].map(v => ({ value: v, label: v }))}
-              placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
-              height={32} fontSize={13} width={180} focusable
-            />
-          ) : (
-            <input
-              type="text"
-              value={xVal}
-              onChange={e => setXVal(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addExtra() }}
-              placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
-              className="h-8 w-44 px-2 text-[13px] rounded border border-border bg-transparent
-                         text-text-primary focus:outline-none focus:border-primary"
-            />
-          )}
-          <Checkbox
-            label={t('mail_filter_extra_not', { defaultValue: 'Exclure (-)' })}
-            checked={xNeg}
-            onChange={setXNeg}
-          />
-          <Button type="button" variant="ghost" icon={<Plus size={14} />} disabled={!xVal.trim()} onClick={addExtra}>
-            {t('common_add', { defaultValue: 'Ajouter' })}
-          </Button>
-        </div>
+        ))}
+        <Button type="button" variant="ghost" icon={<Plus size={14} />} onClick={addExtraRow}>
+          {t('mail_filter_add_condition', { defaultValue: 'Ajouter une condition' })}
+        </Button>
       </div>
 
       {/* Actions */}
