@@ -699,17 +699,20 @@ export default function ComposeWindow() {
   // Title-bar controls: minimize + maximize/restore (hidden on mobile, where the
   // composer is already full screen).
   const titleActions = isMobile ? undefined : (
-    <div className="flex items-center gap-0.5">
+    // Geometry, hover and colour come from the core caption-button rule
+    // (.kb-window-actions button) — identical to the close button. gap-2.5
+    // mirrors the band's own gap so the three buttons are evenly spaced.
+    <div className="flex items-center gap-2.5">
       <button
         onClick={() => setMinimized(true)}
-        className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
+        className="flex-shrink-0"
         title={t('mail_less', { defaultValue: 'Réduire' })}
       >
         <Minus size={15} />
       </button>
       <button
         onClick={() => setMaximized(v => !v)}
-        className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-colors"
+        className="flex-shrink-0"
         title={maximized
           ? t('mail_exit_fullscreen', { defaultValue: 'Quitter le plein écran' })
           : t('mail_fullscreen', { defaultValue: 'Plein écran' })}

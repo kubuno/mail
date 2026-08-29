@@ -84,6 +84,9 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Composer caption buttons match the close button.** Minimize and
+  maximize/restore use the same size, hover veil and outer spacing as the
+  close button.
 - **Classic window-caption glyphs on the composer.** Maximize is now a plain
   square and restore two overlapping squares, instead of diagonal double
   arrows.
