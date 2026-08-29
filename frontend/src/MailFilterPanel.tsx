@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, GripVertical, ListPlus, Parentheses } from 'lucide-react'
+import { X, GripVertical, SquarePlus, CopyPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatePicker, Dropdown, Checkbox, Button, Input, Tabs, Tooltip } from '@ui'
@@ -550,7 +550,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
             onClick={() => addNode(path, { kind: 'cond', neg: false, op: 'label', val: '' })}
             className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
           >
-            <ListPlus size={16} />
+            <SquarePlus size={16} />
           </button>
         </Tooltip>
         <Tooltip label={t('mail_filter_add_group', { defaultValue: 'Ajouter un groupe' })} side="top">
@@ -560,7 +560,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
             onClick={() => addNode(path, { kind: 'group', combinator: g.combinator === 'or' ? 'and' : 'or', children: [{ kind: 'cond', neg: false, op: 'label', val: '' }] })}
             className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
           >
-            <Parentheses size={16} />
+            <CopyPlus size={16} />
           </button>
         </Tooltip>
         {path.length > 0 && (
