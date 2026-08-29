@@ -14,10 +14,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Manage subscriptions, redesigned.** The subscription list now shows each
   sender with a coloured avatar, its address on its own column and a
   plain-language frequency ("More than 20 emails recently", "10-20 emails
-  recently", …). "Unsubscribe" is a discreet inline action that first asks for
-  confirmation — "Stop receiving messages from all of X's mailing lists?" —
-  before triggering the `List-Unsubscribe`, matching the familiar mail-client
-  layout.
+  recently", …). Clicking a sender opens the mailbox filtered on all of their
+  messages (`from:` search). "Unsubscribe" is a discreet inline action that
+  first asks for confirmation — "Stop receiving messages from all of X's mailing
+  lists?" — before triggering the `List-Unsubscribe`, matching the familiar
+  mail-client layout.
 
 
 

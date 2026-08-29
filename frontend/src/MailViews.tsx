@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, MailX, ExternalLink, Loader2, RefreshCw, Paperclip, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useIsMobile, ConfirmDialog } from '@ui'
 import { useConfirm } from '@kubuno/sdk'
 import { mailApi, Draft, type Subscription } from './api'
@@ -254,10 +255,20 @@ export function unsubscribeTarget(raw: string): string | null {
 export function SubscriptionsView() {
   const { t } = useTranslation('mail')
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const { setSearchQuery } = useMailStore()
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const { data: subs = [], isLoading } = useQuery({
     queryKey: ['mail-subscriptions'], queryFn: mailApi.getSubscriptions,
   })
+
+  // Clicking a subscription row opens the mailbox filtered on that sender —
+  // every message they sent, Gmail-style. Navigating to /mail sets the inbox
+  // folder (ThreadList mounts) without clearing the search we just set.
+  const openSenderSearch = (email: string) => {
+    setSearchQuery(`from:${email}`)
+    navigate('/mail')
+  }
 
   // Gmail-style frequency bucket derived from the sender's message count.
   const freqLabel = (count: number) =>
@@ -304,12 +315,21 @@ export function SubscriptionsView() {
           <div className="divide-y divide-border/40">
             {subs.map(s => (
               <div key={s.from_email} className="group flex items-center gap-4 px-6 py-2.5 hover:bg-surface-1">
-                <SenderAvatar email={s.from_email} name={s.from_name} size={28} />
-                <div className="w-56 min-w-0 flex-shrink-0 text-sm text-text-primary truncate">
-                  {s.from_name || s.from_email}
-                </div>
-                <div className="flex-1 min-w-0 text-sm text-text-secondary truncate">{s.from_email}</div>
-                <div className="text-sm text-text-secondary whitespace-nowrap flex-shrink-0">{freqLabel(s.count)}</div>
+                {/* The sender area is clickable: it opens the mailbox filtered on
+                    this sender (all their messages). The unsubscribe stays apart. */}
+                <button
+                  type="button"
+                  onClick={() => openSenderSearch(s.from_email)}
+                  title={t('subs_view_messages', { defaultValue: `Voir les messages de ${s.from_name || s.from_email}` })}
+                  className="flex-1 flex items-center gap-4 min-w-0 text-left"
+                >
+                  <SenderAvatar email={s.from_email} name={s.from_name} size={28} />
+                  <span className="w-56 min-w-0 flex-shrink-0 text-sm text-text-primary truncate">
+                    {s.from_name || s.from_email}
+                  </span>
+                  <span className="flex-1 min-w-0 text-sm text-text-secondary truncate">{s.from_email}</span>
+                  <span className="text-sm text-text-secondary whitespace-nowrap flex-shrink-0">{freqLabel(s.count)}</span>
+                </button>
                 <button
                   onClick={() => doUnsubscribe(s)}
                   title={t('subs_unsubscribe', { defaultValue: 'Se désabonner' })}
