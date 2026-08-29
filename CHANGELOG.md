@@ -11,6 +11,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Search results always carry the filter-chip row** — date, "Has attachment",
+  "To", "Exclude promotional offers" (new), "Unread" and the "Advanced search"
+  link. On a search view the chips refine the committed query (they append to
+  it and lift off it); folder views keep their scoped chip bar.
+- **Searching on a single sender features that sender above the results** —
+  avatar, display name and their address as a mail link that opens the composer
+  prefilled with them.
 - **The committed search lives in the URL** — `#search/<encoded query>`, Gmail
   style: a search survives reloads, can be deep-linked and follows the browser's
   back/forward. Clearing the search returns the hash to the folder.

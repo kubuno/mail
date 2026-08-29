@@ -12,9 +12,9 @@ import { useMailStore } from '../store'
 import { useAddressSuggestions } from '../AddressSuggest'
 
 // ── Which folders get the bar, and with which base scope / chip set ───────────
-export type FilterFolder = 'starred' | 'important' | 'sent' | 'all' | 'spam' | 'drafts'
+export type FilterFolder = 'starred' | 'important' | 'sent' | 'all' | 'spam' | 'drafts' | 'search'
 
-type ChipId = 'from' | 'date' | 'attach' | 'noAgenda' | 'to' | 'unread'
+type ChipId = 'from' | 'date' | 'attach' | 'noAgenda' | 'to' | 'unread' | 'noPromo'
 
 interface FolderCfg {
   /** Search operator that scopes the results to this folder (null = drafts, which
@@ -33,6 +33,10 @@ export const FOLDER_FILTERS: Record<FilterFolder, FolderCfg> = {
   // Drafts have no read state and no real recipients-from-others: date, attachment
   // and « À » are the ones that make sense (matches Gmail's drafts filter bar).
   drafts:    { scope: null,            chips: ['date', 'attach', 'noAgenda', 'to'] },                    // no from, no unread
+  // Search RESULTS (any committed query): Gmail's chip row — the chips APPEND
+  // to the live query (the base is whatever the user searched) instead of
+  // building from a folder scope.
+  search:    { scope: '',              chips: ['date', 'attach', 'to', 'noPromo', 'unread'] },
 }
 
 export interface FilterState {
@@ -43,11 +47,12 @@ export interface FilterState {
   before:  string
   attach:  boolean
   noAgenda: boolean
+  noPromo: boolean
   unread:  boolean
 }
 
 export const EMPTY_FILTER: FilterState = {
-  from: '', to: '', date: '', after: '', before: '', attach: false, noAgenda: false, unread: false,
+  from: '', to: '', date: '', after: '', before: '', attach: false, noAgenda: false, noPromo: false, unread: false,
 }
 
 /** Build the search query for a folder scope + chip values (used by ThreadList folders). */
@@ -64,13 +69,14 @@ export function buildFilterQuery(scope: string | null, f: FilterState): string {
   }
   if (f.attach)   parts.push('has:attachment')
   if (f.noAgenda) parts.push('-filename:.ics')
+  if (f.noPromo)  parts.push('-category:promotions')
   if (f.unread)   parts.push('is:unread')
   return parts.join(' ')
 }
 
 /** True when at least one chip carries a value. */
 export function isFilterActive(f: FilterState): boolean {
-  return !!(f.from || f.to || f.date || f.attach || f.noAgenda || f.unread)
+  return !!(f.from || f.to || f.date || f.attach || f.noAgenda || f.noPromo || f.unread)
 }
 
 // ── Popover anchored under its trigger ────────────────────────────────────────
@@ -268,16 +274,34 @@ export default function MailFolderFilterBar({ folder, onChange }: {
 
   // Apply: ThreadList folders drive the shared searchQuery; drafts hand the state
   // to the parent for client-side filtering.
+  // Search variant: the base is the user's committed query; chips append to it.
+  // `lastBuilt` recognises our own writes so an external query change (a new
+  // search) resets the chips and becomes the new base.
+  const baseRef = useRef(searchQuery)
+  const lastBuiltRef = useRef<string | null>(null)
   const apply = useCallback((next: FilterState) => {
     setF(next)
     onChange?.(next)
-    if (cfg.scope !== null) {
+    if (folder === 'search') {
+      const chipPart = buildFilterQuery('', next)
+      const built = `${baseRef.current} ${chipPart}`.trim()
+      lastBuiltRef.current = built
+      setSearchQuery(built)
+    } else if (cfg.scope !== null) {
       setSearchQuery(isFilterActive(next) ? buildFilterQuery(cfg.scope, next) : '')
     }
-  }, [cfg.scope, onChange, setSearchQuery])
+  }, [cfg.scope, folder, onChange, setSearchQuery])
 
-  // If the query is cleared elsewhere (header search × ), drop our chips too.
+  // If the query is cleared elsewhere (header search × ), drop our chips too;
+  // in search mode, any external rewrite becomes the new chip-free base.
   useEffect(() => {
+    if (folder === 'search') {
+      if (searchQuery !== lastBuiltRef.current) {
+        baseRef.current = searchQuery
+        if (isFilterActive(f)) setF(EMPTY_FILTER)
+      }
+      return
+    }
     if (cfg.scope !== null && searchQuery === '' && isFilterActive(f)) setF(EMPTY_FILTER)
   }, [searchQuery]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -333,6 +357,10 @@ export default function MailFolderFilterBar({ folder, onChange }: {
       {has('to') && (
         <AddressChip label={t('mail_filter_to', { defaultValue: 'À' })}
           value={f.to} onApply={v => apply({ ...f, to: v })} />
+      )}
+      {has('noPromo') && (
+        <Chip label={t('mail_filter_no_promo', { defaultValue: 'Exclure les offres promotionnelles' })}
+          active={f.noPromo} onClick={() => apply({ ...f, noPromo: !f.noPromo })} />
       )}
       {has('unread') && (
         <Chip label={t('mail_filter_unread', { defaultValue: 'Non lu' })}
