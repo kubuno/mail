@@ -18,6 +18,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The advanced search panel gained an "Additional filters" section.** Operator
+  fragments from the bar's query (parenthesized groups, OR chains, any supported
+  operator) now appear as removable chips instead of being dumped into "Has the
+  words" — that field only ever holds free words. New filters can be composed in
+  place from the full operator list (label:, is:, in:, has:, category:, dates,
+  sizes…), with an optional negation, and join the bar's text live.
 - **The advanced search panel mirrors the search bar — both ways.** Opening it
   decomposes the bar's query into the fields (From, To, Subject, "Has the
   words", size, date, scope…), unknown fragments landing verbatim in "Has the

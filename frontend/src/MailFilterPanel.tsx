@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { X, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatePicker, Dropdown, Checkbox, Button } from '@ui'
@@ -20,6 +21,10 @@ interface Filters {
   customDate: string | null
   searchIn:   string
   hasAttach:  boolean
+  /** Additional operator filters, one top-level query fragment each — e.g.
+   *  `is:subscription` or `(-in:spam OR in:trash)`. Added/removed dynamically
+   *  in the panel; free words never land here (they go to hasWords). */
+  extras:     string[]
 }
 
 // ── Query → fields (Gmail behaviour) ─────────────────────────────────────────
@@ -72,6 +77,7 @@ export function buildQuery(f: Filters): string {
   if (f.searchIn === 'unread')       parts.push('is:unread')
   else if (f.searchIn === 'starred') parts.push('is:starred')
   else if (f.searchIn !== 'all')     parts.push(`in:${f.searchIn}`)
+  parts.push(...f.extras.filter(Boolean))
   return parts.join(' ')
 }
 
@@ -130,7 +136,23 @@ export function queryToFilters(q: string): Partial<Filters> {
     }
   }
   if (noWords.length) f.noWords = noWords.join(' ')
-  if (rest.length) f.hasWords = rest.join(' ')
+  // Split the leftovers: FREE WORDS (bare words, quoted phrases) belong to
+  // « Contient les mots »; operator fragments, groups and OR chains become
+  // removable « additional filter » chips instead of polluting that field.
+  // Adjacent `a OR b` units are merged into a single chip first.
+  const units: string[] = []
+  for (const tok of rest) {
+    const prev = units[units.length - 1]
+    if (tok.toUpperCase() === 'OR' && prev != null) units[units.length - 1] = `${prev} OR`
+    else if (prev?.endsWith(' OR')) units[units.length - 1] = `${prev} ${tok}`
+    else units.push(tok)
+  }
+  const isFreeWord = (u: string) =>
+    !/[:(){}]/.test(u.replace(/^"|"$/g, '')) && !u.includes(' OR ') && !u.startsWith('-') && !u.startsWith('+')
+  const words = units.filter(isFreeWord)
+  const extras = units.filter(u => !isFreeWord(u))
+  if (words.length) f.hasWords = words.join(' ')
+  if (extras.length) f.extras = extras
   return f
 }
 
@@ -147,6 +169,7 @@ const INIT: Filters = {
   customDate: null,
   searchIn:   'all',
   hasAttach:  false,
+  extras:     [],
 }
 
 // ── Row layout ────────────────────────────────────────────────────────────────
@@ -257,6 +280,30 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
 
   // ── Création de filtre (règle automatique) ────────────────────────────────────
   const qc = useQueryClient()
+  // « Additional filters » builder: pick any supported operator, a value (an
+  // enumerated dropdown when the operator has a closed value set), optionally
+  // negated — the token joins the removable chips and the bar text live.
+  const [xOp, setXOp]   = useState('label')
+  const [xVal, setXVal] = useState('')
+  const [xNeg, setXNeg] = useState(false)
+  const OP_VALUES: Record<string, string[]> = {
+    in:  ['inbox', 'sent', 'drafts', 'spam', 'trash', 'archive', 'anywhere', 'snoozed'],
+    is:  ['unread', 'read', 'starred', 'unstarred', 'important', 'notimportant', 'snoozed', 'muted', 'subscription'],
+    has: ['attachment', 'userlabels', 'nouserlabels', 'drive', 'document', 'spreadsheet', 'presentation', 'youtube'],
+    category: ['primary', 'social', 'promotions', 'updates', 'forums'],
+    newer_than: ['1d', '3d', '1w', '2w', '1m', '6m', '1y'],
+    older_than: ['1d', '3d', '1w', '2w', '1m', '6m', '1y'],
+  }
+  const X_OPS = ['label', 'is', 'in', 'has', 'category', 'list', 'filename', 'cc', 'bcc', 'deliveredto',
+                 'newer_than', 'older_than', 'after', 'before', 'larger', 'smaller', 'rfc822msgid']
+  const addExtra = () => {
+    const val = xVal.trim()
+    if (!val) return
+    const quoted = /\s/.test(val) ? `"${val}"` : val
+    set({ extras: [...f.extras, `${xNeg ? '-' : ''}${xOp}:${quoted}`] })
+    setXVal(''); setXNeg(false)
+  }
+
   const [step, setStep] = useState<'conditions' | 'actions'>('conditions')
   const [act, setAct] = useState({ archive: false, markRead: false, star: false, important: false, trash: false, spam: false, labelId: '' })
   const [applyExisting, setApplyExisting] = useState(false)
@@ -415,6 +462,70 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           checked={f.hasAttach}
           onChange={v => set({ hasAttach: v })}
         />
+      </div>
+
+      {/* ── Additional operator filters (dynamic add/remove) ─────────────────
+          Operator fragments from the bar's query (groups, OR chains, any
+          supported operator) land here as removable chips instead of polluting
+          « Contient les mots », and new ones can be composed from the full
+          operator list. */}
+      <div className="mb-5">
+        <div className="text-sm text-text-secondary mb-2">
+          {t('mail_filter_extras', { defaultValue: 'Filtres supplémentaires' })}
+        </div>
+        {f.extras.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {f.extras.map((x, idx) => (
+              <span key={`${x}-${idx}`}
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded border border-border bg-surface-1 text-[13px] font-mono text-text-primary">
+                {x}
+                <button
+                  type="button"
+                  onClick={() => set({ extras: f.extras.filter((_, i2) => i2 !== idx) })}
+                  title={t('mail_filter_extra_remove', { defaultValue: 'Retirer ce filtre' })}
+                  className="p-0.5 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Dropdown
+            value={xOp}
+            onChange={v => { setXOp(v); setXVal('') }}
+            options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
+            height={32} fontSize={13} width={150} focusable
+          />
+          {OP_VALUES[xOp] ? (
+            <Dropdown
+              value={xVal}
+              onChange={setXVal}
+              options={OP_VALUES[xOp].map(v => ({ value: v, label: v }))}
+              placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
+              height={32} fontSize={13} width={180} focusable
+            />
+          ) : (
+            <input
+              type="text"
+              value={xVal}
+              onChange={e => setXVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addExtra() }}
+              placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
+              className="h-8 w-44 px-2 text-[13px] rounded border border-border bg-transparent
+                         text-text-primary focus:outline-none focus:border-primary"
+            />
+          )}
+          <Checkbox
+            label={t('mail_filter_extra_not', { defaultValue: 'Exclure (-)' })}
+            checked={xNeg}
+            onChange={setXNeg}
+          />
+          <Button type="button" variant="ghost" icon={<Plus size={14} />} disabled={!xVal.trim()} onClick={addExtra}>
+            {t('common_add', { defaultValue: 'Ajouter' })}
+          </Button>
+        </div>
       </div>
 
       {/* Actions */}
