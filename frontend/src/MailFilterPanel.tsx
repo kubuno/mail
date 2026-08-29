@@ -21,55 +21,79 @@ interface Filters {
   customDate: string | null
   searchIn:   string
   hasAttach:  boolean
-  /** Additional operator conditions, editable in place — the classic filter
-   *  builder rows (AG Grid / Airtable style): each row is `[ET|OU] [NOT] op:val`,
-   *  consecutive OR rows serialize as a parenthesized `(a OR b)` group. A
-   *  fragment our row model cannot represent stays editable as a raw
-   *  expression (`raw`). Free words never land here (they go to hasWords). */
-  extras:     ExtraRow[]
+  /** Additional operator conditions as a recursive rule tree — the standard
+   *  query-builder model (react-querybuilder): a group carries ONE combinator
+   *  (AND/OR) and children that are conditions, raw expressions or nested
+   *  groups. This represents any parenthesized mix, e.g.
+   *  `(-in:spam AND in:trash) OR is:subscription`. */
+  extras:     XGroup
 }
 
-export interface ExtraRow {
-  /** How this row combines with the PREVIOUS one ('and' on the first row). */
-  connector: 'and' | 'or'
-  neg:       boolean
-  op:        string
-  val:       string
-  /** Set when the fragment isn't a plain `-?op:value` — edited as raw text. */
-  raw?:      string
+export type XNode =
+  | { kind: 'cond'; neg: boolean; op: string; val: string }
+  | { kind: 'raw'; text: string }
+  | XGroup
+export interface XGroup { kind: 'group'; combinator: 'and' | 'or'; children: XNode[] }
+
+const emptyGroup = (): XGroup => ({ kind: 'group', combinator: 'and', children: [] })
+
+const parseCond = (sv: string) => {
+  const m = /^(-?)([a-z_0-9]+):(.+)$/i.exec(sv.trim())
+  return m ? { neg: !!m[1], op: m[2].toLowerCase(), val: m[3].replace(/^"|"$/g, '') } : null
 }
 
-/** One condition's query text ('' while its value is still empty). */
-function condStr(r: ExtraRow): string {
-  if (r.raw != null) return r.raw.trim()
-  const v = r.val.trim()
-  if (!v) return ''
-  return `${r.neg ? '-' : ''}${r.op}:${/\s/.test(v) ? `"${v}"` : v}`
-}
-
-/** Parses one top-level query fragment into builder rows: a single `-?op:val`,
- *  a `(a OR b …)` group, or — when it doesn't fit the row model — a raw row. */
-function unitToRows(unit: string): ExtraRow[] {
-  const parseCond = (s: string) => {
-    const m = /^(-?)([a-z_0-9]+):(.+)$/i.exec(s.trim())
-    return m ? { neg: !!m[1], op: m[2].toLowerCase(), val: m[3].replace(/^"|"$/g, '') } : null
+/** One token → a node: parenthesized group (recursed), condition, or raw text. */
+function tokenToNode(tok: string): XNode {
+  if (tok.startsWith('(') && tok.endsWith(')')) {
+    const inner = parseSeq(topLevelTokens(tok.slice(1, -1).trim()))
+    return inner ?? { kind: 'raw', text: tok }
   }
-  const isParen = unit.startsWith('(') && unit.endsWith(')')
-  const toks = topLevelTokens(isParen ? unit.slice(1, -1).trim() : unit)
-  // Expect the shape `cond (OR cond)*`; anything else becomes a raw row.
-  const members: string[] = []
-  let expectOr = false, ok = toks.length > 0
+  const c = parseCond(tok)
+  return c ? { kind: 'cond', ...c } : { kind: 'raw', text: tok }
+}
+
+/** A token sequence → a node. Top-level `OR` splits branches; juxtaposition and
+ *  the explicit `AND` keyword both mean AND. Mirrors the backend grammar. */
+function parseSeq(toks: string[]): XNode | null {
+  const branches: string[][] = [[]]
   for (const tk of toks) {
-    if (expectOr) {
-      if (tk.toUpperCase() !== 'OR') { ok = false; break }
-      expectOr = false
-    } else { members.push(tk); expectOr = true }
+    if (tk.toUpperCase() === 'OR') branches.push([])
+    else if (tk.toUpperCase() !== 'AND') branches[branches.length - 1].push(tk)
   }
-  const conds = ok ? members.map(parseCond) : null
-  if (!conds || conds.some(c => c == null)) {
-    return [{ connector: 'and', neg: false, op: '', val: '', raw: unit }]
+  const nodes = branches
+    .filter(b => b.length)
+    .map(b => {
+      const items = b.map(tokenToNode)
+      return items.length === 1 ? items[0]
+        : ({ kind: 'group', combinator: 'and', children: items } as XGroup)
+    })
+  if (!nodes.length) return null
+  return nodes.length === 1 ? nodes[0] : { kind: 'group', combinator: 'or', children: nodes }
+}
+
+/** A node's query text (conditions with an empty value vanish). `wrap` adds the
+ *  parentheses a multi-child group needs when embedded in a larger expression. */
+function serNode(n: XNode, wrap: boolean): string {
+  if (n.kind === 'raw') return n.text.trim()
+  if (n.kind === 'cond') {
+    const v = n.val.trim()
+    if (!v) return ''
+    return `${n.neg ? '-' : ''}${n.op}:${/\s/.test(v) ? `"${v}"` : v}`
   }
-  return conds.map((c, i) => ({ connector: i === 0 ? 'and' as const : 'or' as const, ...c! }))
+  const parts = n.children
+    .map(c => serNode(c, c.kind === 'group' && c.children.length > 1))
+    .filter(Boolean)
+  if (!parts.length) return ''
+  if (parts.length === 1) return parts[0]
+  const joined = parts.join(n.combinator === 'or' ? ' OR ' : ' AND ')
+  return wrap ? `(${joined})` : joined
+}
+
+/** Conditions in the tree (for the tab badge). */
+export function countConds(n: XNode): number {
+  if (n.kind === 'group') return n.children.reduce((a, c) => a + countConds(c), 0)
+  if (n.kind === 'cond') return n.val.trim() ? 1 : 0
+  return n.text.trim() ? 1 : 0
 }
 
 // ── Query → fields (Gmail behaviour) ─────────────────────────────────────────
@@ -122,16 +146,10 @@ export function buildQuery(f: Filters): string {
   if (f.searchIn === 'unread')       parts.push('is:unread')
   else if (f.searchIn === 'starred') parts.push('is:starred')
   else if (f.searchIn !== 'all')     parts.push(`in:${f.searchIn}`)
-  // Builder rows: consecutive OR rows form a parenthesized group; groups (and
-  // lone rows) are AND-combined like every other part. Empty rows are skipped.
-  const groups: string[][] = []
-  for (const r of f.extras) {
-    const s = condStr(r)
-    if (!s) continue
-    if (r.connector === 'or' && groups.length) groups[groups.length - 1].push(s)
-    else groups.push([s])
-  }
-  parts.push(...groups.map(g => (g.length > 1 ? `(${g.join(' OR ')})` : g[0])))
+  // The rule tree: an OR root with several children needs its parentheses (it
+  // is AND-combined with every other part); an AND root joins like plain parts.
+  const extrasStr = serNode(f.extras, f.extras.combinator === 'or' && f.extras.children.length > 1)
+  if (extrasStr) parts.push(extrasStr)
   return parts.join(' ')
 }
 
@@ -139,7 +157,24 @@ export function queryToFilters(q: string): Partial<Filters> {
   const f: Partial<Filters> = {}
   const rest: string[] = []
   const noWords: string[] = []
+  // Pre-group top-level tokens into OR chains FIRST: a token flanked by OR
+  // belongs to a chain that must stay together — consuming `from:a` into the
+  // "From" field out of `from:a OR from:b` would silently change the meaning.
+  // The explicit AND keyword is a combinator (juxtaposition), never a word.
+  const chains: string[][] = []
+  let joinNext = false
   for (const tok of topLevelTokens(q.trim())) {
+    if (tok.toUpperCase() === 'AND') continue
+    if (tok.toUpperCase() === 'OR' && chains.length) { joinNext = true; continue }
+    if (joinNext) { chains[chains.length - 1].push(tok); joinNext = false }
+    else chains.push([tok])
+  }
+  const singles: string[] = []
+  for (const chain of chains) {
+    if (chain.length > 1) rest.push(chain.join(' OR '))
+    else singles.push(chain[0])
+  }
+  for (const tok of singles) {
     const m = /^(-?)([a-z_]+):(.+)$/i.exec(tok)
     if (!m || m[1]) {
       // Bare word, group, quoted phrase or any negated token. A lone negated
@@ -191,22 +226,19 @@ export function queryToFilters(q: string): Partial<Filters> {
   }
   if (noWords.length) f.noWords = noWords.join(' ')
   // Split the leftovers: FREE WORDS (bare words, quoted phrases) belong to
-  // « Contient les mots »; operator fragments, groups and OR chains become
-  // removable « additional filter » chips instead of polluting that field.
-  // Adjacent `a OR b` units are merged into a single chip first.
-  const units: string[] = []
-  for (const tok of rest) {
-    const prev = units[units.length - 1]
-    if (tok.toUpperCase() === 'OR' && prev != null) units[units.length - 1] = `${prev} OR`
-    else if (prev?.endsWith(' OR')) units[units.length - 1] = `${prev} ${tok}`
-    else units.push(tok)
-  }
+  // « Contient les mots »; operator fragments, groups and OR chains (already
+  // pre-grouped above) become editable builder rows instead.
   const isFreeWord = (u: string) =>
     !/[:(){}]/.test(u.replace(/^"|"$/g, '')) && !u.includes(' OR ') && !u.startsWith('-') && !u.startsWith('+')
-  const words = units.filter(isFreeWord)
-  const extraUnits = units.filter(u => !isFreeWord(u))
+  const words = rest.filter(isFreeWord)
+  const extraUnits = rest.filter(u => !isFreeWord(u))
   if (words.length) f.hasWords = words.join(' ')
-  if (extraUnits.length) f.extras = extraUnits.flatMap(unitToRows)
+  if (extraUnits.length) {
+    const nodes = extraUnits.map(u => parseSeq(topLevelTokens(u))).filter((n): n is XNode => n != null)
+    f.extras = nodes.length === 1 && nodes[0].kind === 'group'
+      ? nodes[0]
+      : { kind: 'group', combinator: 'and', children: nodes }
+  }
   return f
 }
 
@@ -223,7 +255,7 @@ const INIT: Filters = {
   customDate: null,
   searchIn:   'all',
   hasAttach:  false,
-  extras:     [],
+  extras:     emptyGroup(),
 }
 
 // ── Row layout ────────────────────────────────────────────────────────────────
@@ -341,19 +373,138 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   }
   const X_OPS = ['label', 'is', 'in', 'has', 'category', 'list', 'filename', 'cc', 'bcc', 'deliveredto',
                  'newer_than', 'older_than', 'after', 'before', 'larger', 'smaller', 'rfc822msgid']
-  const updateExtra = (idx: number, patch: Partial<ExtraRow>) =>
-    set({ extras: f.extras.map((r, i2) => {
-      if (i2 !== idx) return r
-      const next = { ...r, ...patch }
+  // Path-based tree edits (react-querybuilder style): a node is addressed by
+  // its index path from the root group; every edit clones along the path and
+  // goes through set() so the bar's text follows live.
+  const editTree = (mut: (root: XGroup) => void) => {
+    const clone = (g: XGroup): XGroup => ({ ...g, children: g.children.map(c => (c.kind === 'group' ? clone(c) : { ...c })) })
+    const root = clone(f.extras)
+    mut(root)
+    set({ extras: root })
+  }
+  const groupAt = (root: XGroup, path: number[]): XGroup => {
+    let cur: XGroup = root
+    for (const idx of path) {
+      const child = cur.children[idx]
+      if (child?.kind !== 'group') break
+      cur = child
+    }
+    return cur
+  }
+  const patchNode = (path: number[], patch: Partial<XNode>) => editTree(root => {
+    const parent = groupAt(root, path.slice(0, -1))
+    const idx = path[path.length - 1]
+    const node = parent.children[idx]
+    if (node) {
+      const next = { ...node, ...patch } as XNode
       // Switching to an enumerated operator whose list doesn't hold the current
       // value resets it, so the dropdown never shows a foreign value.
-      if (patch.op && OP_VALUES[patch.op] && !OP_VALUES[patch.op].includes(next.val)) next.val = ''
-      return next
-    }) })
-  const addExtraRow = () =>
-    set({ extras: [...f.extras, { connector: 'and', neg: false, op: 'label', val: '' }] })
-  const removeExtraRow = (idx: number) =>
-    set({ extras: f.extras.filter((_, i2) => i2 !== idx) })
+      if (next.kind === 'cond' && 'op' in patch && OP_VALUES[next.op] && !OP_VALUES[next.op].includes(next.val)) next.val = ''
+      parent.children[idx] = next
+    }
+  })
+  const removeNode = (path: number[]) => editTree(root => {
+    const parent = groupAt(root, path.slice(0, -1))
+    parent.children.splice(path[path.length - 1], 1)
+  })
+  const addNode = (groupPath: number[], node: XNode) => editTree(root => {
+    groupAt(root, groupPath).children.push(node)
+  })
+  const setCombinator = (groupPath: number[], combinator: 'and' | 'or') => editTree(root => {
+    groupAt(root, groupPath).combinator = combinator
+  })
+
+  // ── Recursive rendering (react-querybuilder layout) ─────────────────────────
+  const renderCondRow = (n: Exclude<XNode, XGroup>, path: number[]) => (
+    <div key={path.join('.')} className="flex items-center gap-2 flex-wrap">
+      {n.kind === 'raw' ? (
+        <Input
+          value={n.text}
+          onChange={e => patchNode(path, { text: e.target.value } as Partial<XNode>)}
+          placeholder={t('mail_filter_expression', { defaultValue: 'expression' })}
+          className="flex-1 min-w-44"
+        />
+      ) : (
+        <>
+          <Dropdown
+            value={n.op}
+            onChange={v => patchNode(path, { op: v } as Partial<XNode>)}
+            options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
+            height={36} fontSize={14} width={150} focusable
+          />
+          {OP_VALUES[n.op] ? (
+            <Dropdown
+              value={n.val}
+              onChange={v => patchNode(path, { val: v } as Partial<XNode>)}
+              options={OP_VALUES[n.op].map(v => ({ value: v, label: v }))}
+              placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
+              height={36} fontSize={14} width={180} focusable
+            />
+          ) : (
+            <Input
+              value={n.val}
+              onChange={e => patchNode(path, { val: e.target.value } as Partial<XNode>)}
+              placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
+              className="w-44"
+            />
+          )}
+          <Checkbox
+            label={t('mail_filter_extra_not', { defaultValue: 'Exclure (-)' })}
+            checked={n.neg}
+            onChange={v => patchNode(path, { neg: v } as Partial<XNode>)}
+          />
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => removeNode(path)}
+        title={t('mail_filter_extra_remove', { defaultValue: 'Retirer cette condition' })}
+        className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
+      >
+        <X size={15} />
+      </button>
+    </div>
+  )
+
+  const renderGroup = (g: XGroup, path: number[]): React.ReactNode => (
+    <div key={path.join('.') || 'root'}
+      className={path.length ? 'border-l-2 border-border pl-3 py-1 space-y-2' : 'space-y-2'}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm text-text-secondary">
+          {t('mail_filter_match', { defaultValue: 'Correspond à' })}
+        </span>
+        <Dropdown
+          value={g.combinator}
+          onChange={v => setCombinator(path, v as 'and' | 'or')}
+          options={[
+            { value: 'and', label: t('mail_filter_match_all', { defaultValue: 'toutes les conditions (ET)' }) },
+            { value: 'or', label: t('mail_filter_match_any', { defaultValue: "l'une des conditions (OU)" }) },
+          ]}
+          height={36} fontSize={14} width={240} focusable
+        />
+        <Button type="button" variant="ghost" icon={<Plus size={14} />}
+          onClick={() => addNode(path, { kind: 'cond', neg: false, op: 'label', val: '' })}>
+          {t('mail_filter_add_condition', { defaultValue: 'Condition' })}
+        </Button>
+        <Button type="button" variant="ghost" icon={<Plus size={14} />}
+          onClick={() => addNode(path, { kind: 'group', combinator: g.combinator === 'or' ? 'and' : 'or', children: [{ kind: 'cond', neg: false, op: 'label', val: '' }] })}>
+          {t('mail_filter_add_group', { defaultValue: 'Groupe' })}
+        </Button>
+        {path.length > 0 && (
+          <button
+            type="button"
+            onClick={() => removeNode(path)}
+            title={t('mail_filter_group_remove', { defaultValue: 'Retirer ce groupe' })}
+            className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+      {g.children.map((c, i) =>
+        c.kind === 'group' ? renderGroup(c, [...path, i]) : renderCondRow(c, [...path, i]))}
+    </div>
+  )
 
   // The panel's two facets: the classic criteria fields, and the dynamic
   // operator filters — kept in separate tabs (user request).
@@ -436,7 +587,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
         tabs={[
           { id: 'criteria', label: t('mail_filter_tab_criteria', { defaultValue: 'Critères' }) },
           { id: 'extras', label: t('mail_filter_extras', { defaultValue: 'Filtres supplémentaires' }),
-            badge: f.extras.length || undefined },
+            badge: countConds(f.extras) || undefined },
         ]}
         value={tab}
         onChange={v => setTab(v)}
@@ -532,79 +683,13 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
       </div>
 
       {/* ── Additional operator filters tab ──────────────────────────────────
-          Classic filter-builder rows (AG Grid / Airtable pattern): each row is
-          fully editable in place — connector (ET/OU), negation, operator and
-          value — and the bar's query follows live. Consecutive OR rows
-          serialize as a parenthesized group. */}
-      <div className={tab === 'extras' ? 'mb-5 space-y-2' : 'hidden'}>
-        {f.extras.map((r, idx) => (
-          <div key={idx} className="flex items-center gap-2 flex-wrap">
-            {idx === 0 ? (
-              <span className="w-[72px] text-sm text-text-secondary flex-shrink-0">
-                {t('mail_filter_where', { defaultValue: 'Où' })}
-              </span>
-            ) : (
-              <Dropdown
-                value={r.connector}
-                onChange={v => updateExtra(idx, { connector: v as 'and' | 'or' })}
-                options={[
-                  { value: 'and', label: t('mail_filter_and', { defaultValue: 'ET' }) },
-                  { value: 'or', label: t('mail_filter_or', { defaultValue: 'OU' }) },
-                ]}
-                height={36} fontSize={14} width={72} focusable
-              />
-            )}
-            {r.raw != null ? (
-              <Input
-                value={r.raw}
-                onChange={e => updateExtra(idx, { raw: e.target.value })}
-                placeholder={t('mail_filter_expression', { defaultValue: 'expression' })}
-                className="flex-1 min-w-44"
-              />
-            ) : (
-              <>
-                <Dropdown
-                  value={r.op}
-                  onChange={v => updateExtra(idx, { op: v })}
-                  options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
-                  height={36} fontSize={14} width={150} focusable
-                />
-                {OP_VALUES[r.op] ? (
-                  <Dropdown
-                    value={r.val}
-                    onChange={v => updateExtra(idx, { val: v })}
-                    options={OP_VALUES[r.op].map(v => ({ value: v, label: v }))}
-                    placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
-                    height={36} fontSize={14} width={180} focusable
-                  />
-                ) : (
-                  <Input
-                    value={r.val}
-                    onChange={e => updateExtra(idx, { val: e.target.value })}
-                    placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
-                    className="w-44"
-                  />
-                )}
-                <Checkbox
-                  label={t('mail_filter_extra_not', { defaultValue: 'Exclure (-)' })}
-                  checked={r.neg}
-                  onChange={v => updateExtra(idx, { neg: v })}
-                />
-              </>
-            )}
-            <button
-              type="button"
-              onClick={() => removeExtraRow(idx)}
-              title={t('mail_filter_extra_remove', { defaultValue: 'Retirer cette condition' })}
-              className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
-            >
-              <X size={15} />
-            </button>
-          </div>
-        ))}
-        <Button type="button" variant="ghost" icon={<Plus size={14} />} onClick={addExtraRow}>
-          {t('mail_filter_add_condition', { defaultValue: 'Ajouter une condition' })}
-        </Button>
+          The standard recursive query-builder (react-querybuilder model): each
+          group has ONE combinator (all/any) and holds conditions, raw
+          expressions and nested groups — representing any parenthesized AND/OR
+          mix, e.g. `(-in:spam AND in:trash) OR is:subscription`. Every edit
+          rewrites the bar's query live. */}
+      <div className={tab === 'extras' ? 'mb-5' : 'hidden'}>
+        {renderGroup(f.extras, [])}
       </div>
 
       {/* Actions */}

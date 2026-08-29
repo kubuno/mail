@@ -11,6 +11,18 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **The search language accepts an explicit `AND`.** `(-in:spam AND in:trash) OR
+  is:subscription` now parses as intended: `AND` is a combinator (juxtaposition
+  already meant AND), no longer a literal word to search for.
+- **The "Additional filters" tab is now a full recursive condition tree** — the
+  standard query-builder model: every group carries one combinator ("all
+  conditions (AND)" / "any condition (OR)") and holds conditions, raw
+  expressions and nested groups, with "Condition" / "Group" buttons and per-node
+  deletion at every level. Any parenthesized AND/OR mix decomposes into editable
+  rows, and every edit rewrites the search bar live with correct parentheses.
+  Top-level OR chains are kept whole when pre-filling (so `from:a OR from:b` is
+  never silently split into a plain "From" field).
+
 - **A new search operator, `is:subscription`.** It matches messages that carry
   a `List-Unsubscribe` header — the same population the "Manage subscriptions"
   view is built on. It combines with every other operator (`from:`, `in:`,

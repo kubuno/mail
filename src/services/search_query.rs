@@ -186,6 +186,10 @@ fn tokenize(raw: &str) -> Vec<Tok> {
                 }
             } else if word.eq_ignore_ascii_case("or") {
                 toks.push(Tok::Or);
+            } else if word.eq_ignore_ascii_case("and") {
+                // Explicit AND combinator (Gmail accepts it): juxtaposition is
+                // already an AND, so the keyword is simply skipped — it must
+                // NOT fall through and be searched as the literal word "and".
             } else if !word.is_empty() {
                 // Re-attach a lone ':' (e.g. inside URLs) to the word.
                 if i < n && chars[i] == ':' {
@@ -800,6 +804,22 @@ mod tests {
         let p = parse("from:x@y.z (-in:spam OR in:trash) is:subscription");
         assert!(p.has_in);
         assert!(crit_count(&p.root) >= 3);
+    }
+
+    /// Explicit `AND` is a combinator, not a word to search: inside the group it
+    /// joins the two conditions (juxtaposition semantics), and the top-level
+    /// `group OR is:subscription` parses as an Or between the group and the
+    /// criterion — with `from:` AND-combined around it.
+    #[test]
+    fn explicit_and_keyword() {
+        let p = parse("from:a@b.c (-in:spam AND in:trash) OR is:subscription");
+        assert!(p.has_in);
+        // 4 criteria: from, -in:spam, in:trash, is:subscription — the AND/OR
+        // words themselves must not appear as text criteria.
+        assert_eq!(crit_count(&p.root), 4);
+        // And the lone keyword is inert: "and" as a WORD is only skipped when
+        // uppercase-insensitively alone between terms, never searched.
+        assert_eq!(crit_count(&parse("a AND b").root), 2);
     }
 
     #[test]
