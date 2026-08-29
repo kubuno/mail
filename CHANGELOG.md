@@ -14,8 +14,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Multiple sources and destinations in the search criteria.** The "From"
   field accepts several addresses, OR-combined (any of these senders); the "To"
   field is a full AND/OR rule tree with nested groups — the same builder as the
-  "Additional filters" tab, its conditions locked on `to:`. Both round-trip
-  with the bar's query text (`(from:a OR from:b)`, parenthesized pure-`to:`
+  "Additional filters" tab, its conditions locked on `to:`. "To" starts
+  compact like "From" — one input and a [+] — and switches to the multi-line
+  builder when a second condition is added, collapsing back at one. Both
+  round-trip with the bar's query text (`(from:a OR from:b)`, parenthesized pure-`to:`
   groups).
 - **Gmail-style contact suggestions in address fields of the search panel.**
   From/To criteria and builder rows whose operator takes an address (`cc:`,

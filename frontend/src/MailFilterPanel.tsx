@@ -946,9 +946,31 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           </div>
         </Row>
         <Row label={t('mail_filter_to')}>
-          {/* Destinations: full AND/OR rule tree with nested groups — the same
-              builder as the additional-filters tab, conditions locked on `to:`. */}
-          {renderGroup(f.to, [], 'to')}
+          {/* Destinations start COMPACT, exactly like the De field: one address
+              input and a [+]. Adding a second condition switches to the full
+              AND/OR builder (same as the additional-filters tab, conditions
+              locked on `to:`); deleting back down to one collapses it again. */}
+          {f.to.combinator === 'and' && f.to.children.length === 1 &&
+           f.to.children[0].kind === 'cond' && !f.to.children[0].neg ? (
+            <div className="flex items-center gap-2">
+              <AddressSuggestInput
+                value={f.to.children[0].val}
+                onChange={v => patchNode('to', [0], { val: v } as Partial<XNode>)}
+                className="flex-1 min-w-0"
+                style={{ fontSize: 14 }}
+              />
+              <Tooltip label={t('mail_filter_add_dest', { defaultValue: 'Ajouter une destination' })} side="top">
+                <button
+                  type="button"
+                  aria-label={t('mail_filter_add_dest', { defaultValue: 'Ajouter une destination' })}
+                  onClick={() => addNode('to', [], { kind: 'cond', neg: false, op: 'to', val: '' })}
+                  className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
+                >
+                  <SquarePlus size={16} />
+                </button>
+              </Tooltip>
+            </div>
+          ) : renderGroup(f.to, [], 'to')}
         </Row>
         <Row label={t('subject')}>
           <LineInput value={f.subject} onChange={v => set({ subject: v })} />
