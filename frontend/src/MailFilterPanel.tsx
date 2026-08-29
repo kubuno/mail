@@ -3,14 +3,18 @@ import { X, GripVertical, SquarePlus, CopyPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatePicker, Dropdown, Checkbox, Button, Input, Tabs, Tooltip } from '@ui'
-import { useMailStore } from './store'
+import { useMailStore, type AdvancedSearchSeed } from './store'
 import { mailApi } from './api'
+import { AddressSuggestInput } from './AddressSuggest'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Filters {
-  from:       string
-  to:         string
+  /** Sources — several addresses are OR-combined (any of these senders). */
+  from:       string[]
+  /** Destinations — an AND/OR rule tree of `to:` conditions with nested
+   *  groups, edited with the same builder as « Filtres supplémentaires ». */
+  to:         XGroup
   subject:    string
   hasWords:   string
   noWords:    string
@@ -36,6 +40,23 @@ export type XNode =
 export interface XGroup { kind: 'group'; combinator: 'and' | 'or'; children: XNode[] }
 
 const emptyGroup = (): XGroup => ({ kind: 'group', combinator: 'and', children: [] })
+const emptyToCond  = (): XNode  => ({ kind: 'cond', neg: false, op: 'to', val: '' })
+const emptyToGroup = (): XGroup => ({ kind: 'group', combinator: 'and', children: [emptyToCond()] })
+
+/** Display invariant: the destinations tree always offers at least one row. */
+const withSeeds = (f: Filters): Filters =>
+  f.to.children.length ? f : { ...f, to: emptyToGroup() }
+
+/** The folder filter bar's seed (plain strings) → panel fields. */
+const seedPatch = (ini?: AdvancedSearchSeed): Partial<Filters> | null => ini ? {
+  ...(ini.from ? { from: [ini.from] } : null),
+  ...(ini.to ? { to: { kind: 'group', combinator: 'and',
+                       children: [{ kind: 'cond', neg: false, op: 'to', val: ini.to }] } as XGroup } : null),
+  ...(ini.hasAttach != null ? { hasAttach: ini.hasAttach } : null),
+  ...(ini.searchIn ? { searchIn: ini.searchIn } : null),
+  ...(ini.dateRange ? { dateRange: ini.dateRange } : null),
+  ...(ini.customDate != null ? { customDate: ini.customDate } : null),
+} : null
 
 const parseCond = (sv: string) => {
   const m = /^(-?)([a-z_0-9]+):(.+)$/i.exec(sv.trim())
@@ -96,6 +117,71 @@ export function countConds(n: XNode): number {
   return n.text.trim() ? 1 : 0
 }
 
+// ── Logical simplification (applied when the search is validated) ────────────
+// Detects and removes LOGICAL repetitions in the rule tree at commit time:
+//  • duplicate siblings (order-insensitive canonical comparison): A OR A → A,
+//  • same-combinator nesting flattened: and(a, and(b,c)) → and(a,b,c),
+//  • single-child groups unwrapped,
+//  • boolean absorption: A OR (A AND B) → A ; A AND (A OR B) → A,
+//  • empty conditions dropped.
+
+/** Order-insensitive canonical form of a node ('' when logically empty). */
+function canonNode(n: XNode): string {
+  if (n.kind === 'raw') return n.text.trim() ? `r:${n.text.trim()}` : ''
+  if (n.kind === 'cond') {
+    const v = n.val.trim()
+    return v ? `c:${n.neg ? '-' : ''}${n.op}:${v.toLowerCase()}` : ''
+  }
+  const parts = n.children.map(canonNode).filter(Boolean).sort()
+  return parts.length ? `g:${n.combinator}(${parts.join('|')})` : ''
+}
+
+/** The node's conjunct set (an AND group's members; itself otherwise). */
+const conjunctsOf = (n: XNode): string[] =>
+  n.kind === 'group' && n.combinator === 'and'
+    ? n.children.map(canonNode).filter(Boolean)
+    : [canonNode(n)].filter(Boolean)
+
+/** The node's disjunct set (an OR group's members; itself otherwise). */
+const disjunctsOf = (n: XNode): string[] =>
+  n.kind === 'group' && n.combinator === 'or'
+    ? n.children.map(canonNode).filter(Boolean)
+    : [canonNode(n)].filter(Boolean)
+
+export function simplifyNode(n: XNode): XNode | null {
+  if (n.kind === 'raw') return n.text.trim() ? n : null
+  if (n.kind === 'cond') return n.val.trim() ? n : null
+  let kids = n.children.map(simplifyNode).filter((c): c is XNode => c != null)
+  // Same-combinator nesting carries no logic — flatten it.
+  kids = kids.flatMap(k => (k.kind === 'group' && k.combinator === n.combinator ? k.children : [k]))
+  // Idempotence: drop duplicate siblings (first occurrence wins).
+  const seen = new Set<string>()
+  const uniq: XNode[] = []
+  for (const k of kids) {
+    const c = canonNode(k)
+    if (c && seen.has(c)) continue
+    if (c) seen.add(c)
+    uniq.push(k)
+  }
+  // Absorption: in an OR group, a sibling whose conjuncts STRICTLY include
+  // another sibling's is redundant — A OR (A AND B) = A. Dually for AND.
+  const sets = n.combinator === 'or' ? uniq.map(conjunctsOf) : uniq.map(disjunctsOf)
+  const kept = uniq.filter((_, iy) => !sets.some((xs, ix) => {
+    if (ix === iy || !xs.length) return false
+    const ys = new Set(sets[iy])
+    return xs.length < ys.size && xs.every(c => ys.has(c))
+  }))
+  if (!kept.length) return null
+  if (kept.length === 1) return kept[0]
+  return { ...n, children: kept }
+}
+
+export function simplifyGroup(g: XGroup): XGroup {
+  const s = simplifyNode(g)
+  if (!s) return emptyGroup()
+  return s.kind === 'group' ? s : { kind: 'group', combinator: 'and', children: [s] }
+}
+
 // ── Query → fields (Gmail behaviour) ─────────────────────────────────────────
 // Opening the advanced panel with a query in the bar pre-fills the fields:
 // recognized operators land in their field (from:, to:, subject:, has:attachment,
@@ -125,8 +211,23 @@ function topLevelTokens(q: string): string[] {
  *  `queryToFilters`, so bar ⇄ fields round-trips are stable. */
 export function buildQuery(f: Filters): string {
   const parts: string[] = []
-  if (f.from)      parts.push(`from:${f.from.trim()}`)
-  if (f.to)        parts.push(`to:${f.to.trim()}`)
+  const fromVals = f.from.map(v => v.trim()).filter(Boolean)
+  if (fromVals.length) {
+    const g: XGroup = { kind: 'group', combinator: 'or',
+      children: fromVals.map(v => ({ kind: 'cond' as const, neg: false, op: 'from', val: v })) }
+    parts.push(serNode(g, fromVals.length > 1))
+  }
+  // Destinations tree: an AND root joins the top-level parts like siblings
+  // (implicit AND); an OR root keeps its parentheses.
+  if (f.to.combinator === 'and') {
+    for (const c of f.to.children) {
+      const sc = serNode(c, c.kind === 'group' && c.children.length > 1)
+      if (sc) parts.push(sc)
+    }
+  } else {
+    const sc = serNode(f.to, f.to.children.length > 1)
+    if (sc) parts.push(sc)
+  }
   if (f.subject)   parts.push(`subject:${f.subject.trim()}`)
   if (f.hasWords)  parts.push(f.hasWords.trim())
   if (f.noWords)   parts.push(...f.noWords.trim().split(/\s+/).map(w => `-${w}`))
@@ -153,10 +254,32 @@ export function buildQuery(f: Filters): string {
   return parts.join(' ')
 }
 
+/** True when the whole node is made of `to:` conditions only (groups allowed). */
+function isPureTo(n: XNode): boolean {
+  if (n.kind === 'cond') return n.op === 'to'
+  if (n.kind === 'raw') return false
+  return n.children.length > 0 && n.children.every(isPureTo)
+}
+
+/** The address list of a pure `from:a OR from:b …` group, or null. */
+function pureFromOrValues(n: XNode): string[] | null {
+  if (n.kind === 'group' && n.combinator === 'or' && n.children.length &&
+      n.children.every(c => c.kind === 'cond' && c.op === 'from' && !c.neg)) {
+    return n.children.map(c => (c.kind === 'cond' ? c.val : ''))
+  }
+  return null
+}
+
 export function queryToFilters(q: string): Partial<Filters> {
   const f: Partial<Filters> = {}
   const rest: string[] = []
   const noWords: string[] = []
+  // Destinations accumulate into ONE rule tree under an AND root: `to:a to:b`,
+  // `-to:x` and any parenthesized pure-`to:` group all land here.
+  const pushTo = (node: XNode) => {
+    if (!f.to) f.to = { kind: 'group', combinator: 'and', children: [] }
+    f.to.children.push(node)
+  }
   // Pre-group top-level tokens into OR chains FIRST: a token flanked by OR
   // belongs to a chain that must stay together — consuming `from:a` into the
   // "From" field out of `from:a OR from:b` would silently change the meaning.
@@ -171,12 +294,29 @@ export function queryToFilters(q: string): Partial<Filters> {
   }
   const singles: string[] = []
   for (const chain of chains) {
-    if (chain.length > 1) rest.push(chain.join(' OR '))
-    else singles.push(chain[0])
+    if (chain.length > 1) {
+      // A pure `from:` OR chain is the multi-source field; a pure `to:` chain
+      // joins the destinations tree. Anything mixed stays a builder row.
+      const node = parseSeq(chain.flatMap((tk, i) => (i ? ['OR', tk] : [tk])))
+      const fromOr = node ? pureFromOrValues(node) : null
+      if (fromOr && f.from == null) f.from = fromOr
+      else if (node && isPureTo(node)) pushTo(node)
+      else rest.push(chain.join(' OR '))
+    } else singles.push(chain[0])
   }
   for (const tok of singles) {
     const m = /^(-?)([a-z_]+):(.+)$/i.exec(tok)
     if (!m || m[1]) {
+      // A parenthesized group made purely of from:/to: conditions belongs to
+      // its criteria field, exactly like the bare operator would.
+      if (tok.startsWith('(') && tok.endsWith(')')) {
+        const node = tokenToNode(tok)
+        const fromOr = pureFromOrValues(node)
+        if (fromOr && f.from == null) { f.from = fromOr; continue }
+        if (isPureTo(node)) { pushTo(node); continue }
+      }
+      const negTo = /^-to:(.+)$/i.exec(tok)
+      if (negTo) { pushTo({ kind: 'cond', neg: true, op: 'to', val: negTo[1].replace(/^"|"$/g, '') }); continue }
       // Bare word, group, quoted phrase or any negated token. A lone negated
       // WORD feeds « Ne contient pas »; everything else stays in the query text.
       if (/^-[^\s:(){}"]+$/.test(tok)) noWords.push(tok.slice(1))
@@ -185,8 +325,8 @@ export function queryToFilters(q: string): Partial<Filters> {
     }
     const [, , op, value] = m
     switch (op.toLowerCase()) {
-      case 'from':    if (f.from == null) f.from = value; else rest.push(tok); break
-      case 'to':      if (f.to == null) f.to = value; else rest.push(tok); break
+      case 'from':    if (f.from == null) f.from = [value]; else rest.push(tok); break
+      case 'to':      pushTo({ kind: 'cond', neg: false, op: 'to', val: value.replace(/^"|"$/g, '') }); break
       case 'subject': if (f.subject == null) f.subject = value.replace(/^\(|\)$/g, '').replace(/^"|"$/g, ''); else rest.push(tok); break
       case 'has':
         if (value.toLowerCase() === 'attachment' || value.toLowerCase() === 'attachments') f.hasAttach = true
@@ -233,6 +373,8 @@ export function queryToFilters(q: string): Partial<Filters> {
   const words = rest.filter(isFreeWord)
   const extraUnits = rest.filter(u => !isFreeWord(u))
   if (words.length) f.hasWords = words.join(' ')
+  // A destinations tree whose root only wraps ONE group collapses to that group.
+  if (f.to && f.to.children.length === 1 && f.to.children[0].kind === 'group') f.to = f.to.children[0]
   if (extraUnits.length) {
     const nodes = extraUnits.map(u => parseSeq(topLevelTokens(u))).filter((n): n is XNode => n != null)
     f.extras = nodes.length === 1 && nodes[0].kind === 'group'
@@ -243,8 +385,8 @@ export function queryToFilters(q: string): Partial<Filters> {
 }
 
 const INIT: Filters = {
-  from:       '',
-  to:         '',
+  from:       [],
+  to:         emptyToGroup(),
   subject:    '',
   hasWords:   '',
   noWords:    '',
@@ -285,7 +427,7 @@ function LineInput({
 
 export default function MailFilterPanel({ onClose, initial, query, onQueryChange }: {
   onClose: () => void
-  initial?: Partial<Filters>
+  initial?: AdvancedSearchSeed
   /** Live text of the search bar — the single source of truth the fields mirror. */
   query?: string
   /** Called with the rebuilt query whenever a field is edited (two-way sync). */
@@ -298,11 +440,11 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   // into the fields; editing a field rebuilds the query into the bar. A ref
   // remembers the last query WE built so its echo doesn't reparse our state.
   // `initial` (folder filter bar chips) still wins at mount.
-  const [f, setF] = useState<Filters>({ ...INIT, ...(query ? queryToFilters(query) : null), ...initial })
+  const [f, setF] = useState<Filters>(withSeeds({ ...INIT, ...(query ? queryToFilters(query) : null), ...seedPatch(initial) }))
   const lastBuilt = useRef<string | null>(null)
   useEffect(() => {
     if (query == null || query === lastBuilt.current) return
-    setF({ ...INIT, ...queryToFilters(query) })
+    setF(withSeeds({ ...INIT, ...queryToFilters(query) }))
   }, [query])
 
   const SIZE_OPS = [
@@ -348,7 +490,17 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   })
 
   const handleSearch = () => {
-    setSearchQuery(buildQuery(f))
+    // Validation = the moment logical repetitions are detected and removed
+    // (duplicates, same-combinator nesting, absorption). The cleaned tree is
+    // reflected back into the panel so what runs is what is shown.
+    const seenFrom = new Set<string>()
+    const from = f.from.map(v => v.trim()).filter(Boolean)
+      .filter(v => { const k = v.toLowerCase(); if (seenFrom.has(k)) return false; seenFrom.add(k); return true })
+    const cleaned = withSeeds({ ...f, from, to: simplifyGroup(f.to), extras: simplifyGroup(f.extras) })
+    setF(cleaned)
+    const q = buildQuery(cleaned)
+    lastBuilt.current = q
+    setSearchQuery(q)
     onClose()
   }
 
@@ -376,11 +528,14 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   // Path-based tree edits (react-querybuilder style): a node is addressed by
   // its index path from the root group; every edit clones along the path and
   // goes through set() so the bar's text follows live.
-  const editTree = (mut: (root: XGroup) => void) => {
+  // Two rule trees share the machinery: 'extras' (additional-filters tab) and
+  // 'to' (the destinations criteria).
+  type TreeField = 'extras' | 'to'
+  const editTree = (field: TreeField, mut: (root: XGroup) => void) => {
     const clone = (g: XGroup): XGroup => ({ ...g, children: g.children.map(c => (c.kind === 'group' ? clone(c) : { ...c })) })
-    const root = clone(f.extras)
+    const root = clone(field === 'extras' ? f.extras : f.to)
     mut(root)
-    set({ extras: root })
+    set({ [field]: root } as Partial<Filters>)
   }
   const groupAt = (root: XGroup, path: number[]): XGroup => {
     let cur: XGroup = root
@@ -391,7 +546,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
     }
     return cur
   }
-  const patchNode = (path: number[], patch: Partial<XNode>) => editTree(root => {
+  const patchNode = (field: TreeField, path: number[], patch: Partial<XNode>) => editTree(field, root => {
     const parent = groupAt(root, path.slice(0, -1))
     const idx = path[path.length - 1]
     const node = parent.children[idx]
@@ -403,14 +558,14 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
       parent.children[idx] = next
     }
   })
-  const removeNode = (path: number[]) => editTree(root => {
+  const removeNode = (field: TreeField, path: number[]) => editTree(field, root => {
     const parent = groupAt(root, path.slice(0, -1))
     parent.children.splice(path[path.length - 1], 1)
   })
-  const addNode = (groupPath: number[], node: XNode) => editTree(root => {
+  const addNode = (field: TreeField, groupPath: number[], node: XNode) => editTree(field, root => {
     groupAt(root, groupPath).children.push(node)
   })
-  const setCombinator = (groupPath: number[], combinator: 'and' | 'or') => editTree(root => {
+  const setCombinator = (field: TreeField, groupPath: number[], combinator: 'and' | 'or') => editTree(field, root => {
     groupAt(root, groupPath).combinator = combinator
   })
 
@@ -418,7 +573,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   // No translucent browser ghost (project rule): the drag image is a blank 1×1,
   // the only feedback is a crisp accent insertion bar between siblings — the
   // same doctrine as the Gantt row reordering.
-  const dragPathRef = useRef<number[] | null>(null)
+  const dragPathRef = useRef<{ field: TreeField; path: number[] } | null>(null)
   const [dropMark, setDropMark] = useState<{ key: string; slot?: number } | null>(null)
   const blankDragImg = useRef<HTMLImageElement | null>(null)
   useEffect(() => {
@@ -427,10 +582,10 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
     blankDragImg.current = img
   }, [])
   const isPrefix = (a: number[], b: number[]) => a.length <= b.length && a.every((v, i2) => v === b[i2])
-  const moveNode = (from: number[], toParent: number[], toIndex: number) => {
+  const moveNode = (field: TreeField, from: number[], toParent: number[], toIndex: number) => {
     // A group cannot be dropped into itself or its own descendants.
     if (isPrefix(from, toParent)) return
-    editTree(root => {
+    editTree(field, root => {
       const fParent = groupAt(root, from.slice(0, -1))
       const fIdx = from[from.length - 1]
       const [node] = fParent.children.splice(fIdx, 1)
@@ -442,8 +597,8 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
       tParent.children.splice(Math.max(0, Math.min(ti, tParent.children.length)), 0, node)
     })
   }
-  const onGripDragStart = (path: number[]) => (e: React.DragEvent) => {
-    dragPathRef.current = path
+  const onGripDragStart = (field: TreeField, path: number[]) => (e: React.DragEvent) => {
+    dragPathRef.current = { field, path }
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', '')
     if (blankDragImg.current) e.dataTransfer.setDragImage(blankDragImg.current, 0, 0)
@@ -451,36 +606,48 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   const onGripDragEnd = () => { dragPathRef.current = null; setDropMark(null) }
 
   // ── Recursive rendering (react-querybuilder layout) ─────────────────────────
-  const renderCondRow = (n: Exclude<XNode, XGroup>, path: number[]) => (
+  // Operators whose value is an address get Gmail-style contact suggestions.
+  const ADDRESS_OPS = new Set(['to', 'cc', 'bcc', 'deliveredto', 'from'])
+  const renderCondRow = (n: Exclude<XNode, XGroup>, path: number[], field: TreeField) => (
     <div key={path.join('.')} className="flex items-center gap-2 flex-wrap">
       {n.kind === 'raw' ? (
         <Input
           value={n.text}
-          onChange={e => patchNode(path, { text: e.target.value } as Partial<XNode>)}
+          onChange={e => patchNode(field, path, { text: e.target.value } as Partial<XNode>)}
           placeholder={t('mail_filter_expression', { defaultValue: 'expression' })}
           className="flex-1 min-w-44"
           style={{ fontSize: 14 }}
         />
       ) : (
         <>
-          <Dropdown
-            value={n.op}
-            onChange={v => patchNode(path, { op: v } as Partial<XNode>)}
-            options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
-            height={36} fontSize={14} width={150} focusable
-          />
-          {OP_VALUES[n.op] ? (
+          {field === 'extras' && (
+            <Dropdown
+              value={n.op}
+              onChange={v => patchNode(field, path, { op: v } as Partial<XNode>)}
+              options={X_OPS.map(o => ({ value: o, label: `${o}:` }))}
+              height={36} fontSize={14} width={150} focusable
+            />
+          )}
+          {field === 'extras' && OP_VALUES[n.op] ? (
             <Dropdown
               value={n.val}
-              onChange={v => patchNode(path, { val: v } as Partial<XNode>)}
+              onChange={v => patchNode(field, path, { val: v } as Partial<XNode>)}
               options={OP_VALUES[n.op].map(v => ({ value: v, label: v }))}
               placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
               height={36} fontSize={14} width={180} focusable
             />
+          ) : field === 'to' || ADDRESS_OPS.has(n.op) ? (
+            <AddressSuggestInput
+              value={n.val}
+              onChange={v => patchNode(field, path, { val: v } as Partial<XNode>)}
+              placeholder={t('mail_filter_addr_ph', { defaultValue: 'adresse@exemple.com' })}
+              className={field === 'to' ? 'flex-1 min-w-44' : 'w-44'}
+              style={{ fontSize: 14 }}
+            />
           ) : (
             <Input
               value={n.val}
-              onChange={e => patchNode(path, { val: e.target.value } as Partial<XNode>)}
+              onChange={e => patchNode(field, path, { val: e.target.value } as Partial<XNode>)}
               placeholder={t('mail_filter_extra_value', { defaultValue: 'valeur' })}
               className="w-44"
               style={{ fontSize: 14 }}
@@ -489,13 +656,13 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           <Checkbox
             label={t('mail_filter_extra_not', { defaultValue: 'Exclure (-)' })}
             checked={n.neg}
-            onChange={v => patchNode(path, { neg: v } as Partial<XNode>)}
+            onChange={v => patchNode(field, path, { neg: v } as Partial<XNode>)}
           />
         </>
       )}
       <button
         type="button"
-        onClick={() => removeNode(path)}
+        onClick={() => removeNode(field, path)}
         title={t('mail_filter_extra_remove', { defaultValue: 'Retirer cette condition' })}
         className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
       >
@@ -504,28 +671,28 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
     </div>
   )
 
-  const renderGroup = (g: XGroup, path: number[]): React.ReactNode => (
-    <div key={path.join('.') || 'root'}
+  const renderGroup = (g: XGroup, path: number[], field: TreeField): React.ReactNode => (
+    <div key={`${field}:${path.join('.') || 'root'}`}
       className={path.length ? 'border-l-2 border-border pl-3 py-1 space-y-2' : 'space-y-2'}>
       <div
         className={`flex items-center gap-2 flex-wrap rounded px-1 -mx-1 ${
-          dropMark?.key === `grp:${path.join('.')}` ? 'bg-primary/10 outline outline-1 outline-primary' : ''
+          dropMark?.key === `grp:${field}:${path.join('.')}` ? 'bg-primary/10 outline outline-1 outline-primary' : ''
         }`}
         onDragOver={e => {
           const from = dragPathRef.current
-          if (!from || isPrefix(from, path)) return
+          if (!from || from.field !== field || isPrefix(from.path, path)) return
           e.preventDefault()
           e.stopPropagation()
           e.dataTransfer.dropEffect = 'move'
-          const k2 = `grp:${path.join('.')}`
-          setDropMark(m => (m && m.key === k2 ? m : { key: k2, before: false }))
+          const k2 = `grp:${field}:${path.join('.')}`
+          setDropMark(m => (m && m.key === k2 ? m : { key: k2 }))
         }}
         onDrop={e => {
           e.preventDefault()
           e.stopPropagation()
           const from = dragPathRef.current
-          if (!from) return
-          moveNode(from, path, g.children.length)
+          if (!from || from.field !== field) return
+          moveNode(field, from.path, path, g.children.length)
           dragPathRef.current = null
           setDropMark(null)
         }}
@@ -536,7 +703,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
         </span>
         <Dropdown
           value={g.combinator}
-          onChange={v => setCombinator(path, v as 'and' | 'or')}
+          onChange={v => setCombinator(field, path, v as 'and' | 'or')}
           options={[
             { value: 'and', label: t('mail_filter_match_all', { defaultValue: 'toutes les conditions (ET)' }) },
             { value: 'or', label: t('mail_filter_match_any', { defaultValue: "l'une des conditions (OU)" }) },
@@ -547,7 +714,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           <button
             type="button"
             aria-label={t('mail_filter_add_condition', { defaultValue: 'Ajouter une condition' })}
-            onClick={() => addNode(path, { kind: 'cond', neg: false, op: 'label', val: '' })}
+            onClick={() => addNode(field, path, { kind: 'cond', neg: false, op: field === 'to' ? 'to' : 'label', val: '' })}
             className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
           >
             <SquarePlus size={16} />
@@ -557,7 +724,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           <button
             type="button"
             aria-label={t('mail_filter_add_group', { defaultValue: 'Ajouter un groupe' })}
-            onClick={() => addNode(path, { kind: 'group', combinator: g.combinator === 'or' ? 'and' : 'or', children: [{ kind: 'cond', neg: false, op: 'label', val: '' }] })}
+            onClick={() => addNode(field, path, { kind: 'group', combinator: g.combinator === 'or' ? 'and' : 'or', children: [{ kind: 'cond', neg: false, op: field === 'to' ? 'to' : 'label', val: '' }] })}
             className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
           >
             <CopyPlus size={16} />
@@ -566,7 +733,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
         {path.length > 0 && (
           <button
             type="button"
-            onClick={() => removeNode(path)}
+            onClick={() => removeNode(field, path)}
             title={t('mail_filter_group_remove', { defaultValue: 'Retirer ce groupe' })}
             className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
           >
@@ -582,7 +749,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
             key={key}
             className="relative"
             onDragOver={e => {
-              if (!dragPathRef.current) return
+              if (dragPathRef.current?.field !== field) return
               e.preventDefault()
               e.stopPropagation()
               e.dataTransfer.dropEffect = 'move'
@@ -593,17 +760,17 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               // slot actually changes (a write per dragover event re-renders in
               // a loop and makes the whole panel shiver).
               const slot = e.clientY < r2.top + r2.height / 2 ? i : i + 1
-              const gkey = path.join('.') || 'root'
+              const gkey = `${field}:${path.join('.') || 'root'}`
               setDropMark(m => (m && m.key === gkey && m.slot === slot ? m : { key: gkey, slot }))
             }}
             onDrop={e => {
               e.preventDefault()
               e.stopPropagation()
               const from = dragPathRef.current
-              if (!from) return
-              const gkey = path.join('.') || 'root'
+              if (!from || from.field !== field) return
+              const gkey = `${field}:${path.join('.') || 'root'}`
               const slot = dropMark?.key === gkey && dropMark.slot != null ? dropMark.slot : i
-              moveNode(from, path, slot)
+              moveNode(field, from.path, path, slot)
               dragPathRef.current = null
               setDropMark(null)
             }}
@@ -612,14 +779,14 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
                 shifts the layout under the pointer. Rendered once per slot: at
                 the top of the slot's child, or under the last child for the
                 final slot. No dragleave-clear — the mark simply moves on. */}
-            {dropMark?.key === (path.join('.') || 'root') && dropMark.slot === i && (
+            {dropMark?.key === `${field}:${path.join('.') || 'root'}` && dropMark.slot === i && (
               <div className="absolute -top-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
             )}
             <div className="flex items-start gap-1">
               <button
                 type="button"
                 draggable
-                onDragStart={onGripDragStart(childPath)}
+                onDragStart={onGripDragStart(field, childPath)}
                 onDragEnd={onGripDragEnd}
                 title={t('mail_filter_reorder', { defaultValue: 'Réordonner' })}
                 className="cursor-grab p-1 mt-1.5 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
@@ -627,11 +794,11 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
                 <GripVertical size={14} />
               </button>
               <div className="flex-1 min-w-0">
-                {c.kind === 'group' ? renderGroup(c, childPath) : renderCondRow(c, childPath)}
+                {c.kind === 'group' ? renderGroup(c, childPath, field) : renderCondRow(c, childPath, field)}
               </div>
             </div>
             {i === g.children.length - 1 &&
-              dropMark?.key === (path.join('.') || 'root') && dropMark.slot === i + 1 && (
+              dropMark?.key === `${field}:${path.join('.') || 'root'}` && dropMark.slot === i + 1 && (
               <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
             )}
           </div>
@@ -655,11 +822,15 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
     queryFn:  mailApi.listLabels,
   })
   const labels = labelsData?.labels?.filter(l => !l.is_system) ?? []
-  const hasCondition = !!(f.from || f.to || f.subject || f.hasWords)
+  const firstToVal = (n: XNode): string =>
+    n.kind === 'cond' ? n.val.trim()
+    : n.kind === 'group' ? n.children.map(firstToVal).find(Boolean) ?? ''
+    : ''
+  const hasCondition = !!(f.from.some(v => v.trim()) || firstToVal(f.to) || f.subject || f.hasWords)
   const createFilter = async () => {
     await mailApi.createFilter({
-      from_contains:    f.from    || undefined,
-      to_contains:      f.to      || undefined,
+      from_contains:    f.from.find(v => v.trim()) || undefined,
+      to_contains:      firstToVal(f.to) || undefined,
       subject_contains: f.subject || undefined,
       query_contains:   f.hasWords || undefined,
       act_archive:   act.archive,
@@ -733,10 +904,51 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
       {/* Fields */}
       <div className={tab === 'criteria' ? undefined : 'hidden'}>
         <Row label={t('mail_filter_from')}>
-          <LineInput value={f.from} onChange={v => set({ from: v })} />
+          {/* Several sources, OR-combined (any of these senders matches). */}
+          <div className="space-y-2">
+            {(f.from.length ? f.from : ['']).map((v, i, arr) => (
+              <div key={i} className="flex items-center gap-2">
+                {arr.length > 1 && (
+                  <span className="w-7 shrink-0 text-xs text-text-tertiary text-right">
+                    {i > 0 ? t('mail_filter_or_sep', { defaultValue: 'OU' }) : ''}
+                  </span>
+                )}
+                <AddressSuggestInput
+                  value={v}
+                  onChange={nv => { const next = [...arr]; next[i] = nv; set({ from: next }) }}
+                  className="flex-1 min-w-0"
+                  style={{ fontSize: 14 }}
+                />
+                {arr.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => set({ from: arr.filter((_, j) => j !== i) })}
+                    title={t('mail_filter_extra_remove', { defaultValue: 'Retirer cette condition' })}
+                    className="p-1 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 flex-shrink-0"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+                {i === arr.length - 1 && (
+                  <Tooltip label={t('mail_filter_add_source', { defaultValue: 'Ajouter une source (OU)' })} side="top">
+                    <button
+                      type="button"
+                      aria-label={t('mail_filter_add_source', { defaultValue: 'Ajouter une source (OU)' })}
+                      onClick={() => set({ from: [...arr, ''] })}
+                      className="p-1.5 rounded text-text-secondary hover:text-text-primary hover:bg-surface-2 flex-shrink-0"
+                    >
+                      <SquarePlus size={16} />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            ))}
+          </div>
         </Row>
         <Row label={t('mail_filter_to')}>
-          <LineInput value={f.to} onChange={v => set({ to: v })} />
+          {/* Destinations: full AND/OR rule tree with nested groups — the same
+              builder as the additional-filters tab, conditions locked on `to:`. */}
+          {renderGroup(f.to, [], 'to')}
         </Row>
         <Row label={t('subject')}>
           <LineInput value={f.subject} onChange={v => set({ subject: v })} />
@@ -823,7 +1035,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
           mix, e.g. `(-in:spam AND in:trash) OR is:subscription`. Every edit
           rewrites the bar's query live. */}
       <div className={tab === 'extras' ? 'mb-5' : 'hidden'}>
-        {renderGroup(f.extras, [])}
+        {renderGroup(f.extras, [], 'extras')}
       </div>
 
       {/* Actions */}

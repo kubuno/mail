@@ -11,6 +11,22 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Multiple sources and destinations in the search criteria.** The "From"
+  field accepts several addresses, OR-combined (any of these senders); the "To"
+  field is a full AND/OR rule tree with nested groups — the same builder as the
+  "Additional filters" tab, its conditions locked on `to:`. Both round-trip
+  with the bar's query text (`(from:a OR from:b)`, parenthesized pure-`to:`
+  groups).
+- **Gmail-style contact suggestions in address fields of the search panel.**
+  From/To criteria and builder rows whose operator takes an address (`cc:`,
+  `bcc:`, `deliveredto:`) suggest contacts as you type — avatar, display name
+  and address, merged from the contacts module and the mail address index.
+- **Logical repetitions are detected and removed when the search is
+  validated.** Clicking "Search" simplifies the rule trees: duplicate
+  conditions collapse (`label:x OR label:x` → `label:x`), same-combinator
+  nesting flattens, single-child groups unwrap, and boolean absorption applies
+  (`A OR (A AND B)` → `A`); duplicate sources are deduplicated too.
+
 - **Search results always carry the filter-chip row** — date, "Has attachment",
   "To", "Exclude promotional offers" (new), "Unread" and the "Advanced search"
   link. On a search view the chips refine the committed query (they append to

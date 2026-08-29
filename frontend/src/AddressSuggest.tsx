@@ -9,6 +9,7 @@
 //     polyrepo rule « ne jamais supposer qu'un module est installé ».
 import { useEffect, useRef, useState } from 'react'
 import { X, Users } from 'lucide-react'
+import { Input } from '@ui'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@kubuno/sdk'
 import { mailApi } from './api'
@@ -198,6 +199,52 @@ export function AddressSuggestList({ items, activeIndex, onPick }: {
           )}
         </button>
       ))}
+    </div>
+  )
+}
+
+/** Single-value address input with Gmail-style suggestions (avatar, name,
+ *  address) — used by the advanced search panel's De / À / cc… fields. Unlike
+ *  RecipientField there are no chips: picking a suggestion fills the field
+ *  with the picked address. */
+export function AddressSuggestInput({ value, onChange, placeholder, className, style }: {
+  value:        string
+  onChange:     (v: string) => void
+  placeholder?: string
+  className?:   string
+  style?:       React.CSSProperties
+}) {
+  const [focused, setFocused] = useState(false)
+  const [active, setActive]   = useState(-1)
+  // After a pick the field holds the picked address: don't re-suggest it.
+  const picked = useRef<string | null>(null)
+  const suggestions = useAddressSuggestions(focused && value !== picked.current ? value : '')
+  const pick = (sug: AddressSuggestion) => { picked.current = sug.email; onChange(sug.email); setActive(-1) }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!suggestions.length) return
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActive(a => (a + (e.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length)
+    } else if (e.key === 'Enter' && active >= 0) {
+      e.preventDefault(); pick(suggestions[active])
+    } else if (e.key === 'Escape') {
+      e.stopPropagation(); picked.current = value; setActive(-1)
+    }
+  }
+  return (
+    <div className={`relative ${className ?? ''}`}>
+      <Input
+        type="email"
+        value={value}
+        onChange={e => { picked.current = null; onChange(e.target.value); setActive(-1) }}
+        onKeyDown={onKeyDown}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); setActive(-1) }}
+        placeholder={placeholder}
+        className="w-full"
+        style={style}
+      />
+      {focused && <AddressSuggestList items={suggestions} activeIndex={active} onPick={pick} />}
     </div>
   )
 }
