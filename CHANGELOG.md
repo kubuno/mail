@@ -18,6 +18,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The advanced search panel mirrors the search bar — both ways.** Opening it
+  decomposes the bar's query into the fields (From, To, Subject, "Has the
+  words", size, date, scope…), unknown fragments landing verbatim in "Has the
+  words"; editing any field rewrites the bar's text live. Fields and query text
+  can no longer disagree.
+
 - **Manage subscriptions, redesigned.** The subscription list now shows each
   sender with a coloured avatar, its address on its own column and a
   plain-language frequency ("More than 20 emails recently", "10-20 emails

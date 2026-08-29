@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DatePicker, Dropdown, Checkbox, Button } from '@ui'
@@ -20,6 +20,118 @@ interface Filters {
   customDate: string | null
   searchIn:   string
   hasAttach:  boolean
+}
+
+// ── Query → fields (Gmail behaviour) ─────────────────────────────────────────
+// Opening the advanced panel with a query in the bar pre-fills the fields:
+// recognized operators land in their field (from:, to:, subject:, has:attachment,
+// larger:/smaller:, newer_than:/after:, in:/is:), a lone `-word` goes to
+// « Ne contient pas », and everything else — parenthesized groups, OR chains,
+// unknown operators — is dumped verbatim into « Contient les mots », exactly as
+// Gmail does with `(-label:spam OR label:trash)`.
+
+/** Splits a query into top-level tokens, keeping quotes and (…)/{…} groups whole. */
+function topLevelTokens(q: string): string[] {
+  const toks: string[] = []
+  let cur = '', depth = 0, quoted = false
+  for (const c of q) {
+    if (c === '"') { quoted = !quoted; cur += c; continue }
+    if (!quoted && (c === '(' || c === '{')) depth++
+    if (!quoted && (c === ')' || c === '}')) depth = Math.max(0, depth - 1)
+    if (c === ' ' && !quoted && depth === 0) {
+      if (cur) toks.push(cur)
+      cur = ''
+    } else cur += c
+  }
+  if (cur) toks.push(cur)
+  return toks
+}
+
+/** Rebuilds the query string from the fields — the exact inverse of
+ *  `queryToFilters`, so bar ⇄ fields round-trips are stable. */
+export function buildQuery(f: Filters): string {
+  const parts: string[] = []
+  if (f.from)      parts.push(`from:${f.from.trim()}`)
+  if (f.to)        parts.push(`to:${f.to.trim()}`)
+  if (f.subject)   parts.push(`subject:${f.subject.trim()}`)
+  if (f.hasWords)  parts.push(f.hasWords.trim())
+  if (f.noWords)   parts.push(...f.noWords.trim().split(/\s+/).map(w => `-${w}`))
+  if (f.hasAttach) parts.push('has:attachment')
+  if (f.sizeValue) {
+    const unit = { ko: 'K', mo: 'M', go: 'G' }[f.sizeUnit] ?? 'M'
+    parts.push(`${f.sizeOp === 'smaller' ? 'smaller' : 'larger'}:${f.sizeValue}${unit}`)
+  }
+  if (f.dateRange !== '1d' || f.customDate) {
+    if (f.dateRange === 'custom' && f.customDate) {
+      parts.push(`after:${f.customDate.slice(0, 10).replace(/-/g, '/')}`)
+    } else if (f.dateRange !== '1d') {
+      parts.push(`newer_than:${f.dateRange}`)
+    }
+  }
+  // Portée : unread/starred → opérateurs is:, sinon un dossier → in:
+  if (f.searchIn === 'unread')       parts.push('is:unread')
+  else if (f.searchIn === 'starred') parts.push('is:starred')
+  else if (f.searchIn !== 'all')     parts.push(`in:${f.searchIn}`)
+  return parts.join(' ')
+}
+
+export function queryToFilters(q: string): Partial<Filters> {
+  const f: Partial<Filters> = {}
+  const rest: string[] = []
+  const noWords: string[] = []
+  for (const tok of topLevelTokens(q.trim())) {
+    const m = /^(-?)([a-z_]+):(.+)$/i.exec(tok)
+    if (!m || m[1]) {
+      // Bare word, group, quoted phrase or any negated token. A lone negated
+      // WORD feeds « Ne contient pas »; everything else stays in the query text.
+      if (/^-[^\s:(){}"]+$/.test(tok)) noWords.push(tok.slice(1))
+      else if (tok) rest.push(tok)
+      continue
+    }
+    const [, , op, value] = m
+    switch (op.toLowerCase()) {
+      case 'from':    if (f.from == null) f.from = value; else rest.push(tok); break
+      case 'to':      if (f.to == null) f.to = value; else rest.push(tok); break
+      case 'subject': if (f.subject == null) f.subject = value.replace(/^\(|\)$/g, '').replace(/^"|"$/g, ''); else rest.push(tok); break
+      case 'has':
+        if (value.toLowerCase() === 'attachment' || value.toLowerCase() === 'attachments') f.hasAttach = true
+        else rest.push(tok)
+        break
+      case 'larger': case 'size': case 'smaller': {
+        const sm = /^(\d+)\s*(k|ko|m|mo|g|go)?$/i.exec(value)
+        if (sm && f.sizeValue == null) {
+          f.sizeOp = op.toLowerCase() === 'smaller' ? 'smaller' : 'larger'
+          f.sizeValue = sm[1]
+          f.sizeUnit = { k: 'ko', ko: 'ko', m: 'mo', mo: 'mo', g: 'go', go: 'go' }[sm[2]?.toLowerCase() ?? 'm'] ?? 'mo'
+        } else rest.push(tok)
+        break
+      }
+      case 'newer_than':
+        if (['1d', '3d', '1w', '2w', '1m', '6m', '1y'].includes(value.toLowerCase())) f.dateRange = value.toLowerCase()
+        else rest.push(tok)
+        break
+      case 'after': {
+        const d = value.replace(/\//g, '-')
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) { f.dateRange = 'custom'; f.customDate = d }
+        else rest.push(tok)
+        break
+      }
+      case 'is':
+        if (value.toLowerCase() === 'unread') f.searchIn = 'unread'
+        else if (value.toLowerCase() === 'starred') f.searchIn = 'starred'
+        else rest.push(tok)
+        break
+      case 'in':
+        if (['inbox', 'sent', 'drafts', 'spam', 'trash', 'archive', 'all', 'anywhere'].includes(value.toLowerCase())) {
+          f.searchIn = value.toLowerCase() === 'anywhere' ? 'all' : value.toLowerCase()
+        } else rest.push(tok)
+        break
+      default: rest.push(tok)
+    }
+  }
+  if (noWords.length) f.noWords = noWords.join(' ')
+  if (rest.length) f.hasWords = rest.join(' ')
+  return f
 }
 
 const INIT: Filters = {
@@ -69,12 +181,27 @@ function LineInput({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function MailFilterPanel({ onClose, initial }: { onClose: () => void; initial?: Partial<Filters> }) {
+export default function MailFilterPanel({ onClose, initial, query, onQueryChange }: {
+  onClose: () => void
+  initial?: Partial<Filters>
+  /** Live text of the search bar — the single source of truth the fields mirror. */
+  query?: string
+  /** Called with the rebuilt query whenever a field is edited (two-way sync). */
+  onQueryChange?: (q: string) => void
+}) {
   const { t } = useTranslation('mail')
   const { setSearchQuery } = useMailStore()
-  // Opened from a folder filter bar's « Recherche avancée » → pre-fill with the
-  // chip values (same field names as `Filters`).
-  const [f, setF] = useState<Filters>({ ...INIT, ...initial })
+  // Fields and the bar's text are kept SYNCHRONOUS both ways (platform rule):
+  // opening pre-fills from the bar's current query; typing in the bar reparses
+  // into the fields; editing a field rebuilds the query into the bar. A ref
+  // remembers the last query WE built so its echo doesn't reparse our state.
+  // `initial` (folder filter bar chips) still wins at mount.
+  const [f, setF] = useState<Filters>({ ...INIT, ...(query ? queryToFilters(query) : null), ...initial })
+  const lastBuilt = useRef<string | null>(null)
+  useEffect(() => {
+    if (query == null || query === lastBuilt.current) return
+    setF({ ...INIT, ...queryToFilters(query) })
+  }, [query])
 
   const SIZE_OPS = [
     { value: 'larger',  label: t('mail_filter_larger') },
@@ -109,32 +236,17 @@ export default function MailFilterPanel({ onClose, initial }: { onClose: () => v
     { value: 'trash',   label: t('folder_trash') },
   ]
 
-  const set = (patch: Partial<Filters>) => setF(prev => ({ ...prev, ...patch }))
+  // Field edits rebuild the query and push it to the bar right away (two-way sync).
+  const set = (patch: Partial<Filters>) => setF(prev => {
+    const next = { ...prev, ...patch }
+    const built = buildQuery(next)
+    lastBuilt.current = built
+    onQueryChange?.(built)
+    return next
+  })
 
   const handleSearch = () => {
-    const parts: string[] = []
-    if (f.from)      parts.push(`from:${f.from.trim()}`)
-    if (f.to)        parts.push(`to:${f.to.trim()}`)
-    if (f.subject)   parts.push(`subject:${f.subject.trim()}`)
-    if (f.hasWords)  parts.push(f.hasWords.trim())
-    if (f.noWords)   parts.push(`-${f.noWords.trim()}`)
-    if (f.hasAttach) parts.push('has:attachment')
-    if (f.sizeValue) {
-      const unit = { ko: 'K', mo: 'M', go: 'G' }[f.sizeUnit] ?? 'M'
-      parts.push(`${f.sizeOp === 'smaller' ? 'smaller' : 'larger'}:${f.sizeValue}${unit}`)
-    }
-    if (f.dateRange !== '1d' || f.customDate) {
-      if (f.dateRange === 'custom' && f.customDate) {
-        parts.push(`after:${f.customDate.slice(0, 10).replace(/-/g, '/')}`)
-      } else if (f.dateRange !== '1d') {
-        parts.push(`newer_than:${f.dateRange}`)
-      }
-    }
-    // Portée : unread/starred → opérateurs is:, sinon un dossier → in:
-    if (f.searchIn === 'unread')       parts.push('is:unread')
-    else if (f.searchIn === 'starred') parts.push('is:starred')
-    else if (f.searchIn !== 'all')     parts.push(`in:${f.searchIn}`)
-    setSearchQuery(parts.join(' '))
+    setSearchQuery(buildQuery(f))
     onClose()
   }
 

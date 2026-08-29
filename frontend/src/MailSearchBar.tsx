@@ -506,6 +506,10 @@ export default function MailSearchBar() {
             <MailFilterPanel
               key={advancedSearchSeed ? 'seeded' : 'blank'}
               initial={advancedSearchSeed ?? undefined}
+              // Two-way live sync (platform rule): the panel's fields mirror the
+              // bar's text, and editing a field rewrites the bar's text.
+              query={q}
+              onQueryChange={setQ}
               onClose={() => { setFilterOpen(false); setAdvancedSearchSeed(null) }}
             />
           </>
