@@ -16,7 +16,7 @@ import { registerMailAdmin } from './admin/MailAdminPanel'
 export const sdkVersion = SDK_VERSION
 
 export function register() {
-  FaviconRegistry.register('mail', '/mail-logo.svg')
+  FaviconRegistry.register('mail', '/mail-logo.png')
 
   // « Envoyer ce fichier par e-mail » dans le menu Partager de Drive (l'entrée
   // n'existe que si le module mail est actif) + composeur monté globalement

@@ -84,6 +84,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **New Mail logo.** The old inline SVG mark is replaced by a raster PNG (blue
+  hexagon with an envelope), used in the waffle menu, icon slots and as the
+  browser-tab favicon.
+
 - **Square corners on the composer.** The floating composer, its docked
   minimized bar and its full-screen panel now have square corners, matching
   the platform's flat floating-window look.
