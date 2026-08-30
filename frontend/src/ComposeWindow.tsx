@@ -518,7 +518,7 @@ export default function ComposeWindow() {
   if (minimized && !isMobile) {
     return (
       <div
-        className="fixed bottom-0 right-4 w-72 bg-[#404040] rounded-t-xl shadow-xl z-50 flex items-center justify-between px-4 py-2.5 cursor-pointer"
+        className="fixed bottom-0 right-4 w-72 bg-[#404040] shadow-xl z-50 flex items-center justify-between px-4 py-2.5 cursor-pointer"
         onClick={() => setMinimized(false)}
       >
         <span className="text-sm text-white font-medium truncate">{subject || t('new_message')}</span>
@@ -728,7 +728,7 @@ export default function ComposeWindow() {
   if (maximized && !isMobile) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-        <div className="w-full max-w-4xl h-full bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="w-full max-w-4xl h-full bg-white shadow-2xl flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2 bg-surface-1 border-b border-border flex-shrink-0">
             <span className="text-sm font-medium text-text-primary truncate">{subject || t('new_message')}</span>
             <div className="flex items-center gap-0.5 flex-shrink-0">

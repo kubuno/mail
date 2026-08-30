@@ -84,6 +84,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Square corners on the composer.** The floating composer, its docked
+  minimized bar and its full-screen panel now have square corners, matching
+  the platform's flat floating-window look.
+
 - **Composer caption buttons match the close button.** Minimize and
   maximize/restore use the same size, hover veil and outer spacing as the
   close button.
