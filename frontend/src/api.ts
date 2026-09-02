@@ -107,6 +107,11 @@ export interface ThreadLabelRef {
   color: string | null
 }
 
+/** A raw schema.org node as extracted by the backend (JSON-LD or an ICS invite
+ *  normalized to an Event). Loosely typed on purpose — the rich-card layer maps
+ *  the recognized shapes and ignores the rest. */
+export type SchemaNode = Record<string, unknown>
+
 export interface EmailMessage {
   id:            string
   thread_id:     string
@@ -128,6 +133,9 @@ export interface EmailMessage {
   received_at:   string
   spam_score?:   number | null
   list_unsubscribe?: string | null
+  /** schema.org rich-card nodes (JSON-LD + ICS invites) extracted at sync,
+   *  rendered as Gmail-style cards above the body. Absent for ordinary mail. */
+  structured_data?: SchemaNode[] | null
   /** Provenance headers, shown in the details panel. */
   reply_to?:  string | null
   mailed_by?: string | null

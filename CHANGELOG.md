@@ -11,6 +11,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Gmail-style rich cards for structured mail.** Emails carrying schema.org
+  annotations (JSON-LD) or a calendar invitation (ICS) now show a card above the
+  body: calendar events/invitations, flight, hotel, train/bus, restaurant, car
+  rental, and order/parcel — with the key details laid out and, where relevant,
+  a check-in or tracking link. Event and invitation cards offer "Add to
+  calendar" (creates the event in the Calendar module) and a ".ics" download.
+  Extraction runs at delivery/sync time, so cards appear on mail received from
+  then on.
+
 - **Multiple sources and destinations in the search criteria.** The "From"
   field accepts several addresses, OR-combined (any of these senders); the "To"
   field is a full AND/OR rule tree with nested groups — the same builder as the

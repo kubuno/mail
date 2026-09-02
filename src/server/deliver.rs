@@ -246,6 +246,24 @@ pub async fn deliver_local(
         .or(body_html.as_deref())
         .map(|s| s.chars().take(200).collect::<String>());
 
+    // schema.org rich cards (Gmail-style), same as the sync path: JSON-LD from
+    // the RAW html (before sanitising) plus any text/calendar (ICS) invite part.
+    let ics_parts: Vec<String> = parsed
+        .attachments()
+        .filter(|p| {
+            let is_cal = p.content_type().is_some_and(|c| {
+                c.ctype().eq_ignore_ascii_case("text")
+                    && c.subtype().is_some_and(|s| s.eq_ignore_ascii_case("calendar"))
+            });
+            is_cal
+                || p.attachment_name()
+                    .is_some_and(|n| n.to_ascii_lowercase().ends_with(".ics"))
+        })
+        .filter_map(|p| String::from_utf8(p.contents().to_vec()).ok())
+        .collect();
+    let structured_data =
+        crate::services::structured_data::extract(body_html_raw.as_deref(), &ics_parts);
+
     // Attachments: metadata now, files on disk only after the transaction
     // commits, so a rolled back delivery leaves no orphan files behind.
     let msg_id = Uuid::new_v4();
@@ -337,9 +355,10 @@ pub async fn deliver_local(
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
             from_name, from_email, to_addresses, cc_addresses, attachments,
             subject, body_text, body_html, is_read, folder, sent_at, list_unsubscribe,
-            reply_to, mailed_by, signed_by, security, category, auth_dmarc, is_starred, received_at)
+            reply_to, mailed_by, signed_by, security, category, auth_dmarc, is_starred, received_at,
+            structured_data)
            VALUES ($1,$2,$3,$4,$5,$6,NULL,'INBOX',$7,$8,$9,$10,$11,$12,$13,$14,FALSE,$15,$16,$17,
-                   $18,$19,$20,$21,$22,$23,FALSE,NOW())"#,
+                   $18,$19,$20,$21,$22,$23,FALSE,NOW(),$24)"#,
     )
     .bind(msg_id)
     .bind(thread_id)
@@ -364,6 +383,7 @@ pub async fn deliver_local(
     .bind(security)
     .bind(category)
     .bind(auth_dmarc)
+    .bind(structured_data)
     .execute(&mut *tx)
     .await
     .map_err(|e| {

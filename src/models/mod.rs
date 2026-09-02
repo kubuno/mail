@@ -119,6 +119,11 @@ pub struct EmailMessage {
     pub created_at:     DateTime<Utc>,
     pub spam_score:     Option<f32>,
     pub list_unsubscribe: Option<String>,
+    /// schema.org rich-card nodes (JSON-LD + ICS invites) extracted at sync,
+    /// rendered as Gmail-style cards above the body. NULL for ordinary mail.
+    #[sqlx(default)]
+    #[serde(default)]
+    pub structured_data: Option<Value>,
     /// Provenance shown in the message details panel.
     pub mailed_by: Option<String>,
     pub signed_by: Option<String>,

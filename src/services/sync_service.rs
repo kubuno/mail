@@ -487,6 +487,24 @@ pub(crate) async fn store_message(
         .or(body_html.as_deref())
         .map(|s| s.chars().take(200).collect::<String>());
 
+    // schema.org rich cards (Gmail-style): JSON-LD from the RAW html (before the
+    // sanitizer strips <script>) plus any text/calendar (ICS) invite part.
+    let ics_parts: Vec<String> = parsed
+        .attachments()
+        .filter(|p| {
+            let is_cal = p.content_type().is_some_and(|c| {
+                c.ctype().eq_ignore_ascii_case("text")
+                    && c.subtype().is_some_and(|s| s.eq_ignore_ascii_case("calendar"))
+            });
+            is_cal
+                || p.attachment_name()
+                    .is_some_and(|n| n.to_ascii_lowercase().ends_with(".ics"))
+        })
+        .filter_map(|p| String::from_utf8(p.contents().to_vec()).ok())
+        .collect();
+    let structured_data =
+        crate::services::structured_data::extract(body_html_raw.as_deref(), &ics_parts);
+
     // Incoming attachments: collect metadata + bytes now, but only write the files
     // to disk AFTER the INSERT succeeds (ON CONFLICT DO NOTHING → no orphan files
     // duplicated on every sync). Served later by download_attachment (fs read).
@@ -557,9 +575,10 @@ pub(crate) async fn store_message(
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
             from_name, from_email, to_addresses, cc_addresses, attachments,
             subject, body_text, body_html, is_read, folder, sent_at, list_unsubscribe,
-            reply_to, mailed_by, signed_by, security, category, is_starred, received_at, pgp_raw)
+            reply_to, mailed_by, signed_by, security, category, is_starred, received_at, pgp_raw,
+            structured_data)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                   $21,$22,$23,$24,$25,$26,COALESCE($19, NOW()),$27)
+                   $21,$22,$23,$24,$25,$26,COALESCE($19, NOW()),$27,$28)
            ON CONFLICT (account_id, imap_folder, imap_uid) DO NOTHING"#,
     )
     .bind(msg_id)
@@ -591,6 +610,7 @@ pub(crate) async fn store_message(
     .bind(category)
     .bind(flagged)
     .bind(pgp_raw)
+    .bind(structured_data)
     .execute(db)
     .await?;
 
