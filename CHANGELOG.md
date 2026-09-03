@@ -95,6 +95,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 
 
+
+- **The RPM package now names the same maintainer as the Debian one.** Its
+  changelog entry read `Kubuno Contributors <contact@kubuno.io>`, an address on
+  a domain the project does not use; it now reads
+  `Martinien OLINGA <kubuno@martinienolinga.com>`, matching the `.deb`. Nothing
+  about what the package installs changes.
+
 - **The package maintainer address moved to the project's own domain.** The
   Debian package's `Maintainer` field now reads
   `Martinien OLINGA <kubuno@martinienolinga.com>`. Nothing about what the
