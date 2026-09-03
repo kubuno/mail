@@ -93,6 +93,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+
+- **The README now opens with the module's logo.** The public README on
+  GitHub now shows the module's designer logo (the same PNG shown as the
+  browser tab icon and in the applications menu) at the top of the page — the
+  repository landing now matches the icon a signed-in user sees inside the
+  platform. The image ships in-repo, under `.github/logo.png`, so it renders
+  even when the repo is browsed offline.
+
 - **New Mail logo.** The old inline SVG mark is replaced by a raster PNG (blue
   hexagon with an envelope), used in the waffle menu, icon slots and as the
   browser-tab favicon.

@@ -3,6 +3,10 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+<p align="center">
+  <img src=".github/logo.png" alt="Kubuno Mail logo" width="128" height="128">
+</p>
+
 # Kubuno Mail
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
