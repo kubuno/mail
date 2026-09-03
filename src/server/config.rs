@@ -1220,13 +1220,13 @@ mod tests {
     #[test]
     fn served_domains_are_the_union_of_the_instance_and_the_stop_gap_list() {
         let mut cfg = from_settings(&json!({ "server_domains": "kubuno.local" }));
-        cfg.set_instance_domains(vec![declared("toiledev.com", true)]);
+        cfg.set_instance_domains(vec![declared("martinienolinga.com", true)]);
 
-        assert_eq!(cfg.domains, vec!["toiledev.com", "kubuno.local"]);
-        assert_eq!(cfg.domain_source("toiledev.com"), Some(DomainSource::Instance));
+        assert_eq!(cfg.domains, vec!["martinienolinga.com", "kubuno.local"]);
+        assert_eq!(cfg.domain_source("martinienolinga.com"), Some(DomainSource::Instance));
         assert_eq!(cfg.domain_source("kubuno.local"), Some(DomainSource::Extra));
         assert_eq!(cfg.domain_source("elsewhere.net"), None);
-        assert!(cfg.is_local_domain("marie@toiledev.com"));
+        assert!(cfg.is_local_domain("marie@martinienolinga.com"));
         assert!(cfg.is_local_domain("admin@KUBUNO.LOCAL"));
     }
 
@@ -1235,11 +1235,11 @@ mod tests {
     /// walk it twice.
     #[test]
     fn a_domain_in_both_sources_is_served_once() {
-        let mut cfg = from_settings(&json!({ "server_domains": "toiledev.com\ntoiledev.com" }));
-        cfg.set_instance_domains(vec![declared("toiledev.com", true)]);
+        let mut cfg = from_settings(&json!({ "server_domains": "martinienolinga.com\nmartinienolinga.com" }));
+        cfg.set_instance_domains(vec![declared("martinienolinga.com", true)]);
 
-        assert_eq!(cfg.domains, vec!["toiledev.com"]);
-        assert_eq!(cfg.domain_source("toiledev.com"), Some(DomainSource::Both));
+        assert_eq!(cfg.domains, vec!["martinienolinga.com"]);
+        assert_eq!(cfg.domain_source("martinienolinga.com"), Some(DomainSource::Both));
     }
 
     /// A claim is not a proof: a declared domain whose TXT record is not
@@ -1276,7 +1276,7 @@ mod tests {
     fn a_silent_core_keeps_the_previously_read_domains() {
         let settings = json!({ "server_domains": "kubuno.local" });
         let mut before = from_settings(&settings);
-        before.set_instance_domains(vec![declared("toiledev.com", true)]);
+        before.set_instance_domains(vec![declared("martinienolinga.com", true)]);
 
         // Next cycle: the settings still read, the registry did not. The
         // remembered list is applied again rather than an empty one.
@@ -1285,13 +1285,13 @@ mod tests {
         after.set_instance_domains(remembered);
 
         assert_eq!(after.domains, before.domains);
-        assert!(after.is_local_domain("marie@toiledev.com"));
+        assert!(after.is_local_domain("marie@martinienolinga.com"));
 
         // And the failure mode being guarded against: had the module applied an
         // empty registry instead, only the stop-gap list would remain.
         let mut without = from_settings(&settings);
         without.set_instance_domains(Vec::new());
-        assert!(!without.is_local_domain("marie@toiledev.com"));
+        assert!(!without.is_local_domain("marie@martinienolinga.com"));
     }
 
     /// The core's payload, as `/internal/domains` sends it.
@@ -1299,8 +1299,8 @@ mod tests {
     fn the_core_payload_is_read_whole_and_normalised() {
         let parsed = parse_instance_domains(&json!({
             "domains": [
-                { "name": "Toiledev.COM", "kind": "primary",   "verified": true,  "verified_at": "2026-08-05T10:00:00Z", "parent": null },
-                { "name": "alias.fr",     "kind": "alias",     "verified": true,  "verified_at": null, "parent": "toiledev.com" },
+                { "name": "Martinienolinga.COM", "kind": "primary",   "verified": true,  "verified_at": "2026-08-05T10:00:00Z", "parent": null },
+                { "name": "alias.fr",     "kind": "alias",     "verified": true,  "verified_at": null, "parent": "martinienolinga.com" },
                 { "name": "attente.fr",   "kind": "secondary", "verified": false, "verified_at": null, "parent": null },
                 // A row with no usable name is dropped, never guessed at.
                 { "kind": "secondary", "verified": true },
@@ -1309,10 +1309,10 @@ mod tests {
         }));
 
         assert_eq!(parsed.len(), 3);
-        assert_eq!(parsed[0].name, "toiledev.com");
+        assert_eq!(parsed[0].name, "martinienolinga.com");
         assert_eq!(parsed[0].kind, "primary");
         assert!(parsed[0].verified);
-        assert_eq!(parsed[1].parent.as_deref(), Some("toiledev.com"));
+        assert_eq!(parsed[1].parent.as_deref(), Some("martinienolinga.com"));
         assert!(!parsed[2].verified);
 
         // A malformed payload reads as "declares nothing", not as a panic.
@@ -1472,13 +1472,13 @@ mod tests {
             "restrict_outbound_domains": "partenaire.fr",
             "server_domains":            "kubuno.local",
         }));
-        cfg.set_instance_domains(vec![declared("toiledev.com", true)]);
+        cfg.set_instance_domains(vec![declared("martinienolinga.com", true)]);
 
         assert!(cfg.inbound_sender_allowed("marie@partenaire.fr"));
         assert!(cfg.inbound_sender_allowed("marie@compta.partenaire.fr"));
         assert!(cfg.inbound_sender_allowed("x@client.example"));
         // Our own domains are never cut off by the restriction.
-        assert!(cfg.inbound_sender_allowed("admin@toiledev.com"));
+        assert!(cfg.inbound_sender_allowed("admin@martinienolinga.com"));
         assert!(cfg.inbound_sender_allowed("admin@kubuno.local"));
         // …and a bounce (null return path) is never restricted.
         assert!(cfg.inbound_sender_allowed(""));

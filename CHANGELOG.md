@@ -94,6 +94,16 @@ number at release time, and CI publishes that section as the GitHub Release note
 ### Changed
 
 
+
+- **The package maintainer address moved to the project's own domain.** The
+  Debian package's `Maintainer` field now reads
+  `Martinien OLINGA <kubuno@martinienolinga.com>`. Nothing about what the
+  package installs changes.
+
+- **Security reports now go to `security@martinienolinga.com`.** The address
+  published in `SECURITY.md` moved to the project's own domain; the previous
+  one is retired. Reporting through GitHub Security Advisories is unaffected.
+
 - **The README now opens with the module's logo.** The public README on
   GitHub now shows the module's designer logo (the same PNG shown as the
   browser tab icon and in the applications menu) at the top of the page — the
