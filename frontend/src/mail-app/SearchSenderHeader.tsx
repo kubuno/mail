@@ -1,5 +1,6 @@
 import { Mail } from 'lucide-react'
 import SenderAvatar from './SenderAvatar'
+import { analyzeSender } from './senderSafety'
 import { useMailStore } from '../store'
 
 /** The sender card shown above search results when the query filters on a
@@ -8,7 +9,11 @@ import { useMailStore } from '../store'
  *  (not the OS mailto handler). */
 export default function SearchSenderHeader({ email, name }: { email: string; name?: string | null }) {
   const { setComposeInitial, setComposeOpen } = useMailStore()
-  const display = name || email.split('@')[0]
+  // Card for a searched sender: the address is right beside the name, but the
+  // name itself is still attacker-controlled — neutralize it, and let it fall
+  // back to the address when it impersonates a different one.
+  const safety  = analyzeSender(name, email)
+  const display = safety.name || email.split('@')[0]
 
   const compose = () => {
     setComposeInitial({ to: [{ email, name: name ?? undefined }], cc: [], subject: '', bodyHtml: '' })
@@ -18,7 +23,7 @@ export default function SearchSenderHeader({ email, name }: { email: string; nam
   return (
     <div className="flex items-center gap-4 min-w-0 px-3 py-1.5 -mx-3 rounded-lg hover:bg-surface-2 transition-colors">
       <SenderAvatar email={email} name={name} size={32} />
-      <div className="text-sm font-medium text-text-primary truncate max-w-64">{display}</div>
+      <div className="text-sm font-medium text-text-primary truncate max-w-64" title={safety.full}>{display}</div>
       <button
         type="button"
         onClick={compose}

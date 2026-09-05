@@ -17,6 +17,8 @@ import MessageDetails from './MessageDetails'
 import SenderAvatar from './SenderAvatar'
 import RichCards from './richCards/RichCards'
 import { useImagePolicy } from './useImagePolicy'
+import { analyzeSender } from './senderSafety'
+import SenderWarningBadges from './SenderWarningBadges'
 
 /** Reply / Reply-all / Forward: 36px pills with a hairline border, like Gmail's. */
 function ReplyPill({ onClick, icon, label }: {
@@ -197,7 +199,10 @@ export default function MessageCard({
     },
   })
 
-  const senderDisplay = message.from_name || message.from_email
+  // Never render `from_name` raw: it can carry bidi overrides, or claim an
+  // address that is not the one the message came from.
+  const sender = analyzeSender(message.from_name, message.from_email)
+  const senderDisplay = sender.label
 
   if (!expanded) {
     return (
@@ -214,7 +219,7 @@ export default function MessageCard({
         <SenderAvatar email={message.from_email} name={message.from_name} size={40} dmarc={message.auth_dmarc} />
         {/* Sender and preview on their own line each — one block per line. */}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-[#202124] truncate">{senderDisplay}</div>
+          <div className="text-sm font-semibold text-[#202124] truncate" title={sender.full}>{senderDisplay}</div>
           <div className="text-sm text-[#5f6368] truncate">{previewSnippet(message.body_text).substring(0, 100)}</div>
         </div>
         <span className="text-xs text-[#5f6368] flex-shrink-0">{formatDate(message.received_at, t, i18n.language)}</span>
@@ -252,11 +257,15 @@ export default function MessageCard({
             {/* Sender */}
             <div className="min-w-0 flex-1">
               <span className="text-sm font-semibold text-[#202124]">
-                {message.from_name || message.from_email}
+                {sender.name || sender.email}
               </span>
-              {message.from_name && !isMobile && (
-                <span className="text-xs text-[#5f6368] ml-1.5">
-                  &lt;{message.from_email}&gt;
+              {/* The real address is normally desktop-only chrome, but a display
+                  name claiming ANOTHER address is exactly the case where hiding
+                  it completes the impersonation — so it stays on mobile too, in
+                  the warning colour, when the name is deceptive. */}
+              {sender.name && (!isMobile || !!sender.spoofedAddress) && (
+                <span className={`text-xs ml-1.5 ${sender.spoofedAddress ? 'text-[#c5221f] font-medium' : 'text-[#5f6368]'}`}>
+                  &lt;{sender.email}&gt;
                 </span>
               )}
               {/* "Unsubscribe" — only when the message exposes List-Unsubscribe. */}
@@ -324,9 +333,12 @@ export default function MessageCard({
               className="flex items-center gap-1 text-xs text-[#5f6368] hover:text-text-primary rounded px-1 -ml-1"
             >
               <span className="truncate max-w-[420px]">
-                {t('mail_to_prefix')} {(message.to_addresses as Array<{name?:string;email:string}>).map(a => a.name || a.email).join(', ')}
+                {/* Recipient names are attacker-controlled too — same treatment
+                    as the sender's: neutralized, and replaced by the address
+                    when they impersonate a different one. */}
+                {t('mail_to_prefix')} {(message.to_addresses as Array<{name?:string;email:string}>).map(a => analyzeSender(a.name, a.email).label).join(', ')}
                 {(message.cc_addresses as Array<{name?:string;email:string}>).length > 0 && (
-                  <> · {t('mail_cc_prefix')} {(message.cc_addresses as Array<{name?:string;email:string}>).map(a => a.name || a.email).join(', ')}</>
+                  <> · {t('mail_cc_prefix')} {(message.cc_addresses as Array<{name?:string;email:string}>).map(a => analyzeSender(a.name, a.email).label).join(', ')}</>
                 )}
               </span>
               <ChevronDown size={14} className={`flex-shrink-0 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
@@ -341,7 +353,9 @@ export default function MessageCard({
             )}
           </div>
 
-          {/* OpenPGP trust chips (encrypted / signature verdict). */}
+          {/* Impersonation warnings (deceptive display name, IDN domain), then
+              the OpenPGP trust chips — same chip language, same row. */}
+          <SenderWarningBadges safety={sender} />
           <PgpBadges message={message} />
 
         </div>
@@ -356,7 +370,7 @@ export default function MessageCard({
           </div>
           <pre className="p-3 text-[11px] leading-relaxed text-text-secondary overflow-x-auto max-h-80 whitespace-pre-wrap break-all">
 {`Message-ID: ${message.message_id ?? '—'}
-From: ${message.from_name ?? ''} <${message.from_email}>
+From: ${sender.full}
 Date: ${new Date(message.sent_at ?? message.received_at).toISOString()}
 Folder: ${message.folder}  ·  Spam score: ${message.spam_score ?? '—'}
 List-Unsubscribe: ${message.list_unsubscribe ?? '—'}
@@ -415,7 +429,7 @@ ${message.body_html ?? message.body_text ?? ''}`}
             quoteContext={{
               lang:    i18n.language,
               compact: isMobile,
-              to:      message.from_name ? `${message.from_name} <${message.from_email}>` : message.from_email,
+              to:      sender.full,
               subject: message.subject?.replace(/^\s*(re|fwd|tr)\s*:\s*/i, '') || message.subject,
             }}
           />

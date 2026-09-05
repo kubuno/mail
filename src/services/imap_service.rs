@@ -2,8 +2,30 @@ use anyhow::{Context, Result};
 use async_imap::Session;
 use futures::TryStreamExt;
 use native_tls::TlsConnector as NativeTlsConnector;
+use std::collections::HashMap;
 use tokio::net::TcpStream;
 use tokio_native_tls::{TlsConnector, TlsStream};
+
+/// Largest single message this module will pull down from a remote IMAP server.
+///
+/// The peer is not ours: a hostile — or merely broken — server can answer a
+/// FETCH with a literal of any length, and the whole body has to be buffered
+/// before `mail_parser` can even look at it. The value mirrors the inbound SMTP
+/// ceiling (`server::config::ServerConfig::max_message_bytes`, 25 MiB by
+/// default) so both ingestion paths agree on what is too big to accept.
+/// Deliberately a constant rather than an instance setting: those live in the
+/// core and cost an internal HTTP round trip, which the sync loop must not pay
+/// once per batch.
+pub const MAX_MESSAGE_BYTES: usize = 25 * 1024 * 1024;
+
+/// Ceiling on what one FETCH round trip may bring back at once.
+///
+/// `mail.max_fetch_per_sync` bounds the NUMBER of messages in a batch (200 by
+/// default) but says nothing about their weight: 200 messages at the
+/// per-message ceiling would be 5 GiB resident. A batch is therefore split
+/// again into groups whose announced sizes stay under this budget. Must stay
+/// above `MAX_MESSAGE_BYTES` so an accepted message always fits in a group.
+pub const MAX_FETCH_GROUP_BYTES: usize = 64 * 1024 * 1024;
 
 // With async-imap runtime-tokio feature, Session<T> requires:
 // T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Debug
@@ -295,17 +317,102 @@ pub async fn uid_list(session: &mut ImapSession, range: &str) -> Result<Vec<u32>
     Ok(uids)
 }
 
+/// Announced sizes (RFC822.SIZE) for a list of UIDs, for the ones the server
+/// reports. One cheap round trip whose whole point is that an oversized message
+/// can then be skipped WITHOUT ever being downloaded.
+pub async fn uid_sizes(session: &mut ImapSession, uids: &[u32]) -> Result<HashMap<u32, u32>> {
+    if uids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let set = uid_set(uids);
+    match session {
+        ImapSession::Tls(s)   => uid_sizes_inner(s, &set).await,
+        ImapSession::Plain(s) => uid_sizes_inner(s, &set).await,
+    }
+}
+
+async fn uid_sizes_inner<T>(session: &mut Session<T>, set: &str) -> Result<HashMap<u32, u32>>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + std::fmt::Debug + Send,
+{
+    let messages = session
+        .uid_fetch(set, "(UID RFC822.SIZE)")
+        .await
+        .context("UID FETCH RFC822.SIZE")?;
+    Ok(messages
+        .try_collect::<Vec<_>>()
+        .await
+        .context("Collecte tailles IMAP")?
+        .into_iter()
+        .filter_map(|msg| Some((msg.uid?, msg.size?)))
+        .collect())
+}
+
+/// One batch of UIDs turned into FETCH round trips that stay within the memory
+/// ceilings, plus the UIDs that are too big to be downloaded at all.
+#[derive(Debug, Default)]
+pub struct FetchPlan {
+    pub groups: Vec<Vec<u32>>,
+    /// `(uid, announced size)` of the messages left on the server untouched.
+    pub oversized: Vec<(u32, u32)>,
+}
+
+/// Plans the FETCHes for one batch of UIDs from their announced sizes.
+pub fn plan_fetches(uids: &[u32], sizes: &HashMap<u32, u32>) -> FetchPlan {
+    plan_fetches_with(uids, sizes, MAX_MESSAGE_BYTES, MAX_FETCH_GROUP_BYTES)
+}
+
+/// A UID the server reported no size for is budgeted at the full per-message
+/// ceiling: silence is not a promise of smallness, and paying one extra round
+/// trip is cheaper than discovering the truth with the bytes already in RAM.
+fn plan_fetches_with(
+    uids: &[u32],
+    sizes: &HashMap<u32, u32>,
+    max_message_bytes: usize,
+    max_group_bytes: usize,
+) -> FetchPlan {
+    let mut plan = FetchPlan::default();
+    let mut current: Vec<u32> = Vec::new();
+    let mut current_bytes = 0usize;
+
+    for &uid in uids {
+        let announced = sizes.get(&uid).copied();
+        if let Some(size) = announced {
+            if size as usize > max_message_bytes {
+                plan.oversized.push((uid, size));
+                continue;
+            }
+        }
+        let weight = announced.map_or(max_message_bytes, |s| s as usize);
+        if !current.is_empty() && current_bytes.saturating_add(weight) > max_group_bytes {
+            plan.groups.push(std::mem::take(&mut current));
+            current_bytes = 0;
+        }
+        current.push(uid);
+        current_bytes = current_bytes.saturating_add(weight);
+    }
+    if !current.is_empty() {
+        plan.groups.push(current);
+    }
+    plan
+}
+
 /// Bodies for an explicit list of UIDs of the currently selected mailbox.
-/// Callers pass one batch at a time — the whole batch is held in memory.
+/// Callers pass one group at a time — the whole group is held in memory, so it
+/// must have gone through [`plan_fetches`] first.
 pub async fn fetch_uids(session: &mut ImapSession, uids: &[u32]) -> Result<Vec<RawMessage>> {
     if uids.is_empty() {
         return Ok(Vec::new());
     }
-    let set = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+    let set = uid_set(uids);
     match session {
         ImapSession::Tls(s)   => fetch_set_inner(s, &set).await,
         ImapSession::Plain(s) => fetch_set_inner(s, &set).await,
     }
+}
+
+fn uid_set(uids: &[u32]) -> String {
+    uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",")
 }
 
 async fn fetch_set_inner<T>(session: &mut Session<T>, set: &str) -> Result<Vec<RawMessage>>
@@ -322,9 +429,18 @@ where
         .context("Collecte messages IMAP")?
         .into_iter()
         .filter_map(|msg| {
-                    let (seen, flagged) = flags_of(&msg);
-                    Some(RawMessage { uid: msg.uid?, body: msg.body()?.to_vec(), seen, flagged })
-                })
+            let (seen, flagged) = flags_of(&msg);
+            let uid  = msg.uid?;
+            let body = msg.body()?;
+            // Second line of defence: RFC822.SIZE is only what the server
+            // CLAIMS. One that under-reports, or reports nothing at all, must
+            // not be able to push an unbounded body down to the parser.
+            if body.len() > MAX_MESSAGE_BYTES {
+                tracing::warn!(uid, size = body.len(), "Message IMAP hors limite de taille — ignoré");
+                return None;
+            }
+            Some(RawMessage { uid, body: body.to_vec(), seen, flagged })
+        })
         .collect();
     Ok(out)
 }
@@ -338,6 +454,60 @@ mod tests {
         assert_eq!(decode_imap_utf7("INBOX.&AMk-l&AOk-ments envoy&AOk-s"), "INBOX.Éléments envoyés");
         assert_eq!(decode_imap_utf7("Projets/2026"), "Projets/2026");
         assert_eq!(decode_imap_utf7("R&AOk-ponses &- suivi"), "Réponses & suivi");
+    }
+
+    fn sizes(pairs: &[(u32, u32)]) -> HashMap<u32, u32> {
+        pairs.iter().copied().collect()
+    }
+
+    #[test]
+    fn ecarte_un_message_trop_volumineux_avant_de_le_telecharger() {
+        let too_big = (MAX_MESSAGE_BYTES + 1) as u32;
+        let plan = plan_fetches(&[1, 2, 3], &sizes(&[(1, 1_000), (2, too_big), (3, 2_000)]));
+        assert_eq!(
+            plan.oversized,
+            vec![(2, too_big)],
+            "le message hors limite doit être signalé et jamais fetché"
+        );
+        assert_eq!(
+            plan.groups,
+            vec![vec![1, 3]],
+            "les autres UID doivent rester dans un seul groupe"
+        );
+    }
+
+    #[test]
+    fn decoupe_le_lot_selon_le_volume_cumule_annonce() {
+        let plan = plan_fetches_with(
+            &[1, 2, 3, 4],
+            &sizes(&[(1, 40), (2, 40), (3, 40), (4, 40)]),
+            100,
+            100,
+        );
+        assert_eq!(
+            plan.groups,
+            vec![vec![1, 2], vec![3, 4]],
+            "aucun groupe ne doit dépasser le budget mémoire du lot"
+        );
+        assert!(plan.oversized.is_empty(), "aucun message n'est hors limite ici");
+    }
+
+    #[test]
+    fn budgete_au_maximum_un_uid_sans_taille_annoncee() {
+        let plan = plan_fetches_with(&[1, 2], &HashMap::new(), 100, 100);
+        assert_eq!(
+            plan.groups,
+            vec![vec![1], vec![2]],
+            "un serveur muet sur RFC822.SIZE doit être traité au pire cas, un message à la fois"
+        );
+    }
+
+    #[test]
+    fn un_lot_entierement_hors_limite_ne_declenche_aucun_fetch() {
+        let too_big = (MAX_MESSAGE_BYTES + 1) as u32;
+        let plan = plan_fetches(&[7, 8], &sizes(&[(7, too_big), (8, too_big)]));
+        assert!(plan.groups.is_empty(), "aucun FETCH ne doit être planifié");
+        assert_eq!(plan.oversized.len(), 2, "les deux UID doivent être signalés");
     }
 
     #[test]

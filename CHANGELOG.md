@@ -107,6 +107,27 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **A sender can no longer impersonate someone in the interface.** A display
+  name carrying somebody else's address ("Support <admin@banque.fr>" sent from
+  elsewhere) now shows the real address next to it — on mobile too, where it
+  used to be hidden — with a warning chip. Bidi and invisible characters are
+  stripped from every attacker-authored text, so an attachment named
+  `annexe_<RLO>gpj.exe` no longer paints itself `annexe_exe.jpg`. Punycode
+  domains are flagged, with their Unicode form in the tooltip.
+- **Links in rich cards are restricted to http(s).** The `url`, `checkinUrl` and
+  `trackingUrl` fields come from the sender's own JSON-LD or `.ics`, and were
+  stored and rendered unchecked — protection rested on React refusing
+  `javascript:` hrefs, i.e. on a framework version. They are now validated at
+  extraction (the key is dropped from the stored node), again when parsed, and
+  once more where the link is built.
+- **IMAP ingestion is bounded.** A hostile or misbehaving IMAP server could make
+  the module load an unbounded batch into memory: message sizes are now read
+  first (`RFC822.SIZE`) so oversized messages are skipped without downloading,
+  fetches are grouped under a byte budget, and attachments are capped per
+  message in count and in total size — the message is kept, only the excess
+  parts are dropped. Attachment bytes are borrowed rather than copied, halving
+  the resident cost of an ingest.
+
 - **Trust indicators no longer read as guarantees when nothing was verified.**
   "Sent by", "signed by" and "security" are read from headers the message
   carries. Our own SMTP server checks SPF/DKIM/DMARC on delivery, but a message

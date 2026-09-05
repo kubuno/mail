@@ -27,6 +27,7 @@ import { useMaxMessageSize } from './mail-app/useMaxMessageSize'
 import { LabelChecklist } from './mail-app/compose/parts'
 import ComposeFormatToolbar from './mail-app/compose/ComposeFormatToolbar'
 import ComposeActionBar from './mail-app/compose/ComposeActionBar'
+import { sanitizeEmailHtml } from './mail-app/EmailHtmlView'
 
 const MIN_W = 420, MIN_H = 320
 
@@ -124,7 +125,10 @@ export default function ComposeWindow() {
     const html = composeInitial?.bodyHtml ?? ''
     requestAnimationFrame(() => {
       const el = bodyRef.current
-      if (el && html) el.innerHTML = html
+      // A resumed draft carries whatever was quoted into it, possibly from a
+      // hostile message: clean it with the reader's policy before it lands in
+      // the app's own DOM.
+      if (el && html) el.innerHTML = sanitizeEmailHtml(html)
       // Auto-insert the default "new message" signature (Gmail-style), UNLESS the
       // body was prefilled (resuming a draft — it already carries its content) or
       // already contains a signature block. The caret sits ABOVE it, so the user

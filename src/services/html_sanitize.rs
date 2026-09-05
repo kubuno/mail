@@ -14,8 +14,60 @@
 /// CSS at all, so every `<style>` block and every `style=` value goes through
 /// here. The whole declaration (or at-rule) holding the hazard is dropped, not
 /// just the keyword: leaving its URL behind would be pointless and confusing.
+/// Undoes CSS identifier escapes so the hazard scan cannot be walked around.
+/// `@\69 mport` and `@\000069mport` are valid CSS that browsers parse as
+/// `@import`, yet neither contains the substring "@import". Every `\<hex>` (1–6
+/// digits, optional trailing space) becomes the character it denotes, and a
+/// `\<char>` escape becomes that character — the result is only ever scanned,
+/// never served, so an approximate decoding is exactly what is needed.
+fn unescape_css(css: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut chars = css.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let mut hex = String::new();
+        while hex.len() < 6 && chars.peek().is_some_and(|n| n.is_ascii_hexdigit()) {
+            hex.push(chars.next().unwrap_or_default());
+        }
+        if hex.is_empty() {
+            // `\@` and friends: the escape just means the literal character.
+            if let Some(n) = chars.next() {
+                out.push(n);
+            }
+            continue;
+        }
+        // One optional whitespace terminates a hex escape and is consumed.
+        if chars.peek().is_some_and(|n| n.is_whitespace()) {
+            chars.next();
+        }
+        match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+            Some(decoded) => out.push(decoded),
+            None => out.push('\u{fffd}'),
+        }
+    }
+    out
+}
+
 fn clean_css(css: &str) -> String {
     const HAZARDS: [&str; 4] = ["@import", "expression(", "behavior:", "-moz-binding"];
+    // Scan the UNESCAPED form, but cut the ORIGINAL text: rewriting the CSS we
+    // serve would change legitimate declarations. Escapes only ever lengthen a
+    // token, so a hazard found at index `i` of the decoded text starts at or
+    // after `i` in the source — hence the conservative rule below: as soon as
+    // the decoded form carries a hazard the whole declaration is dropped.
+    let decoded = unescape_css(css);
+    if !HAZARDS.iter().any(|h| decoded.to_ascii_lowercase().contains(h)) {
+        return css.to_string();
+    }
+    // The plain path handles the common (unescaped) case precisely; an escaped
+    // hazard is rare enough that dropping the whole block is the safe answer.
+    if !HAZARDS.iter().any(|h| css.to_ascii_lowercase().contains(h)) {
+        tracing::debug!("CSS d'e-mail contenant un danger échappé — bloc entier retiré");
+        return String::new();
+    }
     let lower = css.to_ascii_lowercase();
     let mut out = String::with_capacity(css.len());
     let mut cursor = 0usize;
@@ -152,6 +204,22 @@ mod tests {
                            "-moz-binding", "behavior:", "data:text/html"] {
                 assert!(!out.contains(needle), "{name}: « {needle} » a survécu → {out}");
             }
+        }
+    }
+
+    /// A hazard hidden behind CSS identifier escapes must not slip through:
+    /// `@\69 mport` is valid CSS that a browser parses as `@import`.
+    #[test]
+    fn escaped_css_hazards_are_caught() {
+        for html in [
+            r#"<style>@\69 mport url("https://evil.example/x.css");</style>"#,
+            r#"<style>@\000069mport url("https://evil.example/x.css");</style>"#,
+            r#"<div style="width:expr\65 ssion(alert(1))">x</div>"#,
+        ] {
+            let out = s(html).to_ascii_lowercase();
+            assert!(!out.contains("evil.example"), "URL distante conservée → {out}");
+            assert!(!out.contains("mport"), "at-rule conservée → {out}");
+            assert!(!out.contains("ssion("), "expression conservée → {out}");
         }
     }
 

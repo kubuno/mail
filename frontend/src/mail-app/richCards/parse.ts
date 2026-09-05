@@ -2,6 +2,7 @@
 // invites) into a small set of view models, one per Gmail-style card. The nodes
 // arrive loosely typed (Record<string, unknown>); we read defensively.
 import type { SchemaNode } from '../../api'
+import { safeUrl } from './safeUrl'
 
 export type RichCard =
   | EventCard
@@ -74,6 +75,8 @@ export interface OrderCard extends Base {
 }
 
 // ── helpers (defensive reads) ────────────────────────────────────────────────
+// Link fields are read with `safeUrl`, never `str`: their value comes from the
+// sender and ends up in an `href` (see safeUrl.ts).
 type Obj = Record<string, unknown>
 const asObj = (v: unknown): Obj => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : {})
 const str = (v: unknown): string | undefined =>
@@ -107,7 +110,7 @@ function nodeToCard(node: SchemaNode): RichCard | null {
   if (t === 'Event' || t.endsWith('Event')) {
     return { kind: 'event', title: str(o.name) ?? 'Événement', start: str(o.startDate), end: str(o.endDate),
       location: nameOf(o.location), address: addr(asObj(o.location).address ?? o.location),
-      description: str(o.description), url: str(o.url), organizer: nameOf(o.organizer),
+      description: str(o.description), url: safeUrl(o.url), organizer: nameOf(o.organizer),
       organizerEmail: str(o.organizerEmail), uid: str(o.uid),
       isInvite: o._invite === true, ...base }
   }
@@ -115,7 +118,7 @@ function nodeToCard(node: SchemaNode): RichCard | null {
     const e = asObj(o.reservationFor)
     return { kind: 'event', title: nameOf(e) ?? 'Réservation', start: str(e.startDate), end: str(e.endDate),
       location: nameOf(e.location), address: addr(asObj(e.location).address ?? e.location),
-      url: str(o.url ?? e.url), ...base }
+      url: safeUrl(o.url) ?? safeUrl(e.url), ...base }
   }
   if (t === 'FlightReservation') {
     const f = asObj(o.reservationFor)
@@ -124,12 +127,12 @@ function nodeToCard(node: SchemaNode): RichCard | null {
       from: { ...airport(f.departureAirport), time: str(f.departureTime), terminal: str(f.departureTerminal), gate: str(f.departureGate) },
       to:   { ...airport(f.arrivalAirport),   time: str(f.arrivalTime),   terminal: str(f.arrivalTerminal) },
       seat: str(asObj(o.airplaneSeat).seatNumber ?? o.airplaneSeat), boardingGroup: str(o.boardingGroup),
-      checkinUrl: str(o.checkinUrl), ...base }
+      checkinUrl: safeUrl(o.checkinUrl), ...base }
   }
   if (t === 'LodgingReservation') {
     const l = asObj(o.reservationFor)
     return { kind: 'lodging', name: nameOf(l), address: addr(l.address), checkin: str(o.checkinTime),
-      checkout: str(o.checkoutTime), url: str(o.url ?? l.url), ...base }
+      checkout: str(o.checkoutTime), url: safeUrl(o.url) ?? safeUrl(l.url), ...base }
   }
   if (t === 'TrainReservation' || t === 'BusReservation') {
     const r = asObj(o.reservationFor)
@@ -141,21 +144,21 @@ function nodeToCard(node: SchemaNode): RichCard | null {
   if (t === 'FoodEstablishmentReservation') {
     const r = asObj(o.reservationFor)
     return { kind: 'reservation', variant: 'restaurant', name: nameOf(r), address: addr(r.address),
-      time: str(o.startTime ?? r.startDate), partySize: Number(o.partySize) || undefined, url: str(o.url), ...base }
+      time: str(o.startTime ?? r.startDate), partySize: Number(o.partySize) || undefined, url: safeUrl(o.url), ...base }
   }
   if (t === 'RentalCarReservation') {
     const r = asObj(o.reservationFor)
     return { kind: 'reservation', variant: 'car', name: nameOf(r.rentalCompany ?? r), time: str(o.pickupTime),
-      address: addr(asObj(o.pickupLocation).address ?? o.pickupLocation), url: str(o.url), ...base }
+      address: addr(asObj(o.pickupLocation).address ?? o.pickupLocation), url: safeUrl(o.url), ...base }
   }
   if (t === 'Order') {
     return { kind: 'order', seller: nameOf(o.seller ?? o.merchant), orderNumber: str(o.orderNumber),
       total: str(asObj(o.priceSpecification).price ?? o.totalPrice),
-      trackingUrl: str(asObj(o.orderStatus).trackingUrl ?? o.url), ...base }
+      trackingUrl: safeUrl(asObj(o.orderStatus).trackingUrl) ?? safeUrl(o.url), ...base }
   }
   if (t === 'ParcelDelivery') {
     return { kind: 'order', seller: nameOf(o.provider), orderNumber: str(o.trackingNumber),
-      trackingUrl: str(o.trackingUrl), deliveryTo: addr(o.deliveryAddress), ...base }
+      trackingUrl: safeUrl(o.trackingUrl), deliveryTo: addr(o.deliveryAddress), ...base }
   }
   return null
 }

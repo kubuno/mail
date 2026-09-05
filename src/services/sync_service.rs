@@ -259,6 +259,13 @@ async fn sync_folder(
 
 /// Fetches one batch of UIDs and stores each message. Returns how many were
 /// handled; a single bad message never aborts the batch.
+///
+/// The announced sizes are asked for FIRST (one extra round trip): a message
+/// over `imap_service::MAX_MESSAGE_BYTES` is then skipped without a single byte
+/// of its body crossing the wire, and the rest of the batch is split into
+/// groups small enough to hold in memory at once. Skipping is deliberate and
+/// final — the folder cursor moves past those UIDs — because retrying a message
+/// we will never accept would stall the mailbox forever.
 async fn store_batch(
     db: &PgPool,
     account: &EmailAccount,
@@ -268,23 +275,43 @@ async fn store_batch(
     folder_name: &str,
     mail_cfg: &MailSettings,
 ) -> usize {
-    let raws = match imap_service::fetch_uids(session, uids).await {
-        Ok(r) => r,
+    let sizes = match imap_service::uid_sizes(session, uids).await {
+        Ok(s) => s,
         Err(e) => {
-            tracing::warn!(folder = imap_folder, error = %e, "FETCH lot échoué");
-            return 0;
+            // No sizes means no pre-filter, not no limits: the planner then
+            // budgets every UID at the worst case and the post-fetch guard in
+            // `imap_service` still drops whatever comes back too big.
+            tracing::warn!(folder = imap_folder, error = %e, "RFC822.SIZE indisponible — repli sur le pire cas");
+            std::collections::HashMap::new()
         }
     };
+    let plan = imap_service::plan_fetches(uids, &sizes);
+    for &(uid, size) in &plan.oversized {
+        tracing::warn!(
+            uid, size, folder = imap_folder, limit = imap_service::MAX_MESSAGE_BYTES,
+            "Message hors limite de taille — non téléchargé"
+        );
+    }
+
     let mut n = 0;
-    for raw in raws {
-        match store_message(
-            db, account, &raw.body, raw.uid, imap_folder, folder_name,
-            raw.seen, raw.flagged, &mail_cfg.attachments_dir,
-        )
-        .await
-        {
-            Ok(()) => n += 1,
-            Err(e) => tracing::warn!(uid = raw.uid, folder = imap_folder, error = %e, "Stockage message échoué"),
+    for group in &plan.groups {
+        let raws = match imap_service::fetch_uids(session, group).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(folder = imap_folder, error = %e, "FETCH lot échoué");
+                continue;
+            }
+        };
+        for raw in raws {
+            match store_message(
+                db, account, &raw.body, raw.uid, imap_folder, folder_name,
+                raw.seen, raw.flagged, &mail_cfg.attachments_dir,
+            )
+            .await
+            {
+                Ok(()) => n += 1,
+                Err(e) => tracing::warn!(uid = raw.uid, folder = imap_folder, error = %e, "Stockage message échoué"),
+            }
         }
     }
     n
@@ -328,6 +355,29 @@ async fn save_folder_state(
     {
         tracing::error!(error = %e, folder = imap_folder, "Écriture état de synchronisation échouée");
     }
+}
+
+/// Ceilings on what ONE ingested message may contribute in attachments.
+///
+/// Both the IMAP sync and the mailbox importer decode every attachment of a
+/// message into memory before the row is inserted — files can only be written
+/// once the INSERT succeeded, otherwise a losing `ON CONFLICT DO NOTHING`
+/// leaves orphans on disk that every later sync re-creates. That ordering is
+/// worth keeping, so the buffer is bounded instead: without these, a crafted
+/// message with thousands of tiny parts (a MIME bomb) or a handful of huge ones
+/// sizes the process, not the sender.
+///
+/// The byte budget matches `imap_service::MAX_MESSAGE_BYTES`: an attachment set
+/// can never legitimately outweigh the message that carried it. It still bites
+/// on the importer path, which ingests local files rather than IMAP bodies.
+const MAX_ATTACHMENTS_PER_MESSAGE: usize = 100;
+const MAX_ATTACHMENT_BYTES_PER_MESSAGE: usize = imap_service::MAX_MESSAGE_BYTES;
+
+/// Whether one more attachment of `next_len` bytes still fits in a message that
+/// already holds `kept` attachments totalling `kept_bytes`.
+fn attachment_fits(kept: usize, kept_bytes: usize, next_len: usize) -> bool {
+    kept < MAX_ATTACHMENTS_PER_MESSAGE
+        && kept_bytes.saturating_add(next_len) <= MAX_ATTACHMENT_BYTES_PER_MESSAGE
 }
 
 /// Shared with the migration importer (`services::import_service`): copying a
@@ -508,13 +558,26 @@ pub(crate) async fn store_message(
     // Incoming attachments: collect metadata + bytes now, but only write the files
     // to disk AFTER the INSERT succeeds (ON CONFLICT DO NOTHING → no orphan files
     // duplicated on every sync). Served later by download_attachment (fs read).
+    // The parts are BORROWED from `parsed`, which outlives the write below:
+    // copying them would double the resident size of every attachment for no
+    // reason.
     let msg_id = Uuid::new_v4();
     let msg_dir = std::path::Path::new(attachments_dir).join(msg_id.to_string());
     let mut att_meta:  Vec<serde_json::Value> = Vec::new();
-    let mut att_files: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
+    let mut att_files: Vec<(std::path::PathBuf, &[u8])> = Vec::new();
+    let mut att_bytes   = 0usize;
+    let mut att_skipped = 0usize;
     for (idx, part) in parsed.attachments().enumerate() {
         let bytes = part.contents();
         if bytes.is_empty() { continue }
+        if !attachment_fits(att_files.len(), att_bytes, bytes.len()) {
+            // The message itself is never dropped over its attachments: losing
+            // the mail would be a worse outcome than losing a part of it. The
+            // excess parts are left out of the metadata too, so the reader is
+            // not offered a download that has no file behind it.
+            att_skipped += 1;
+            continue;
+        }
         let raw_name = part.attachment_name().unwrap_or("piece-jointe").to_string();
         // Keep the filename readable but safe for the filesystem (no separators/control chars).
         let safe: String = raw_name.chars()
@@ -534,7 +597,15 @@ pub(crate) async fn store_message(
             "size": bytes.len(),
             "storage_path": path.to_string_lossy(),
         }));
-        att_files.push((path, bytes.to_vec()));
+        att_bytes = att_bytes.saturating_add(bytes.len());
+        att_files.push((path, bytes));
+    }
+    if att_skipped > 0 {
+        tracing::warn!(
+            uid, folder = imap_folder, skipped = att_skipped,
+            kept = att_files.len(), kept_bytes = att_bytes,
+            "Pièces jointes hors limites — message stocké sans les excédentaires"
+        );
     }
     let has_attachments = !att_meta.is_empty();
 
@@ -972,4 +1043,58 @@ async fn apply_filters(
     let _ = sqlx::query("UPDATE mail.threads SET unread_count = $1 WHERE id = $2")
         .bind(unread as i32).bind(thread_id).execute(db).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs the acceptance loop of `store_message` over a synthetic part list and
+    /// reports what would actually have been buffered.
+    fn ingest(parts: &[usize]) -> (usize, usize) {
+        let mut kept = 0usize;
+        let mut bytes = 0usize;
+        for &len in parts {
+            if attachment_fits(kept, bytes, len) {
+                kept += 1;
+                bytes += len;
+            }
+        }
+        (kept, bytes)
+    }
+
+    #[test]
+    fn tronque_un_message_portant_500_pieces_jointes() {
+        let (kept, _) = ingest(&[1024; 500]);
+        assert_eq!(
+            kept, MAX_ATTACHMENTS_PER_MESSAGE,
+            "le nombre de pièces jointes retenues doit être plafonné"
+        );
+    }
+
+    #[test]
+    fn plafonne_le_volume_cumule_des_pieces_jointes() {
+        let chunk = 8 * 1024 * 1024;
+        assert!(
+            attachment_fits(2, 2 * chunk, chunk),
+            "24 Mio cumulés doivent encore tenir sous le plafond"
+        );
+        assert!(
+            !attachment_fits(3, 3 * chunk, chunk),
+            "au-delà du volume cumulé, la pièce jointe doit être écartée"
+        );
+        let (kept, bytes) = ingest(&[chunk; 10]);
+        assert_eq!(kept, 3, "seules les pièces jointes tenant dans le budget sont gardées");
+        assert!(
+            bytes <= MAX_ATTACHMENT_BYTES_PER_MESSAGE,
+            "le volume bufferisé ne doit jamais dépasser le budget"
+        );
+    }
+
+    #[test]
+    fn une_piece_jointe_geante_ne_bloque_pas_les_suivantes() {
+        let (kept, bytes) = ingest(&[MAX_ATTACHMENT_BYTES_PER_MESSAGE + 1, 1_024, 2_048]);
+        assert_eq!(kept, 2, "la pièce jointe hors limite est sautée, pas les autres");
+        assert_eq!(bytes, 3_072, "seules les pièces jointes acceptées comptent");
+    }
 }

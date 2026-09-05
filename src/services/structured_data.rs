@@ -23,6 +23,69 @@ const RECOGNIZED: &[&str] = &[
     "ParcelDelivery",
 ];
 
+// ── URL hardening ───────────────────────────────────────────────────────────
+//
+// Every value in these nodes is authored by the SENDER (JSON-LD embedded in the
+// HTML body, or an attached .ics) and the frontend turns some of them into
+// clickable links. A link whose scheme can run code in the page — `javascript:`,
+// `data:text/html`, `vbscript:` — or hand the click to an arbitrary local
+// handler must therefore never be stored in the first place: filtering at
+// display time would leave the payload one framework change away from being
+// honoured. Only the two schemes the cards actually need survive extraction.
+// `mailto:` is deliberately NOT allowed: no card renders a mail link (the
+// organizer's address travels in its own `organizerEmail` field, not as a URL).
+const ALLOWED_URL_SCHEMES: &[&str] = &["http", "https"];
+
+/// Fields the rich cards render as a link target (`url`, `checkinUrl`,
+/// `trackingUrl`, …). Matching on the suffix keeps unknown vendor spellings
+/// covered instead of relying on an allow-list we would have to maintain.
+fn is_url_key(key: &str) -> bool {
+    key.to_ascii_lowercase().ends_with("url")
+}
+
+/// True when the string carries an explicit, allowed scheme. A URL without a
+/// scheme is rejected too: relative links are resolved against the webmail
+/// itself, which is never what a remote sender meant.
+fn is_safe_url(raw: &str) -> bool {
+    // Browsers ignore ASCII whitespace and C0 controls while parsing the scheme,
+    // so `java\tscript:` reaches the same handler as `javascript:`; normalize
+    // the same way before comparing.
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| !c.is_whitespace() && !c.is_control())
+        .collect();
+    let Some(colon) = cleaned.find(':') else { return false };
+    let scheme = &cleaned[..colon];
+    // A colon further down a path (`/a:b`) is not a scheme.
+    if scheme.is_empty() || scheme.contains(['/', '?', '#']) {
+        return false;
+    }
+    ALLOWED_URL_SCHEMES.contains(&scheme.to_ascii_lowercase().as_str())
+}
+
+/// Drop every link field whose value is not a safe absolute URL, at any depth
+/// (a reservation nests its `url` inside `reservationFor`). The key disappears
+/// from the stored node, so a hostile link is simply not part of the data any
+/// consumer — this webmail or another client — can ever read back.
+fn strip_unsafe_urls(v: &mut Value) {
+    match v {
+        Value::Array(a) => a.iter_mut().for_each(strip_unsafe_urls),
+        Value::Object(o) => {
+            o.retain(|k, val| match val {
+                _ if !is_url_key(k) => true,
+                // A non-string link (number, object, array) is meaningless to
+                // the cards; drop it rather than store an unvalidated shape.
+                Value::String(s) => is_safe_url(s),
+                _ => false,
+            });
+            for (_, val) in o.iter_mut() {
+                strip_unsafe_urls(val);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn type_of(node: &Value) -> Option<String> {
     match node.get("@type") {
         Some(Value::String(s)) => Some(s.clone()),
@@ -252,7 +315,9 @@ fn event_from_ics(ics: &str) -> Option<Value> {
     if let Some(e) = end { obj.insert("endDate".into(), json!(e)); }
     if let Some(l) = location { obj.insert("location".into(), json!(l)); }
     if let Some(d) = description { obj.insert("description".into(), json!(d)); }
-    if let Some(u) = url { obj.insert("url".into(), json!(u)); }
+    // The invitation file comes from the sender; its URL property is checked
+    // here rather than trusted and cleaned up downstream.
+    if let Some(u) = url.filter(|u| is_safe_url(u)) { obj.insert("url".into(), json!(u)); }
     if let Some(o) = organizer { obj.insert("organizer".into(), json!({ "name": o })); }
     // Fields an iMIP REPLY needs: organizer address, event UID/SEQUENCE, and the
     // raw ICS so the reply can echo the request's timing exactly.
@@ -281,6 +346,9 @@ pub fn extract(html: Option<&str>, ics_parts: &[String]) -> Option<Value> {
             cards.push(ev);
         }
     }
+    // Nodes are kept verbatim, so this is the single point where sender-authored
+    // link fields are vetted before they reach the database.
+    cards.iter_mut().for_each(strip_unsafe_urls);
     (!cards.is_empty()).then_some(Value::Array(cards))
 }
 
@@ -420,5 +488,98 @@ mod tests {
     #[test]
     fn nothing_found_is_none() {
         assert!(extract(Some("<p>plain mail</p>"), &[]).is_none());
+    }
+
+    /// Build a one-node JSON-LD mail carrying `url` set to `raw`.
+    fn jsonld_with_url(raw: &str) -> Value {
+        let html = format!(
+            r#"<script type="application/ld+json">{{"@type":"Event","name":"X","startDate":"2026-10-01T20:00:00Z","url":{}}}</script>"#,
+            serde_json::to_string(raw).expect("url encodable en JSON")
+        );
+        extract(Some(&html), &[]).expect("une carte")
+    }
+
+    #[test]
+    fn jsonld_url_javascript_est_supprimee() {
+        let out = jsonld_with_url("javascript:alert(1)");
+        let n = &out.as_array().expect("tableau de cartes")[0];
+        assert_eq!(n["name"], "X", "la carte doit rester extraite");
+        assert!(n.get("url").is_none(), "une URL javascript: ne doit pas être stockée");
+    }
+
+    #[test]
+    fn jsonld_url_data_html_est_supprimee() {
+        let out = jsonld_with_url("data:text/html;base64,PHNjcmlwdD4=");
+        let n = &out.as_array().expect("tableau de cartes")[0];
+        assert!(n.get("url").is_none(), "une URL data: ne doit pas être stockée");
+    }
+
+    #[test]
+    fn jsonld_url_https_est_conservee() {
+        let out = jsonld_with_url("https://exemple.test/billet?id=42");
+        let n = &out.as_array().expect("tableau de cartes")[0];
+        assert_eq!(
+            n["url"], "https://exemple.test/billet?id=42",
+            "une URL https normale doit passer intacte"
+        );
+    }
+
+    #[test]
+    fn schemas_exotiques_et_url_relatives_sont_rejetes() {
+        for raw in [
+            "JavaScript:alert(1)",       // scheme comparison is case-insensitive
+            "java\tscript:alert(1)",     // controls ignored by the browser parser
+            "  javascript:alert(1)",     // leading whitespace ignored too
+            "vbscript:msgbox(1)",
+            "file:///etc/passwd",
+            "/relatif/vers/le/webmail",
+            "sans-schema.example.com",
+        ] {
+            let out = jsonld_with_url(raw);
+            let n = &out.as_array().expect("tableau de cartes")[0];
+            assert!(n.get("url").is_none(), "URL refusée attendue pour {raw:?}");
+        }
+        assert!(
+            jsonld_with_url("http://exemple.test/x").as_array().expect("tableau")[0]
+                .get("url")
+                .is_some(),
+            "http doit rester autorisé"
+        );
+    }
+
+    #[test]
+    fn url_imbriquee_et_champ_tracking_sont_valides() {
+        let html = r#"<script type="application/ld+json">
+        {"@type":"FlightReservation","checkinUrl":"javascript:alert(1)",
+         "reservationFor":{"@type":"Flight","flightNumber":"7","url":"data:text/html,x"}}
+        </script>
+        <script type="application/ld+json">
+        {"@type":"ParcelDelivery","trackingNumber":"T1","trackingUrl":"https://suivi.test/T1"}
+        </script>"#;
+        let out = extract(Some(html), &[]).expect("des cartes");
+        let arr = out.as_array().expect("tableau de cartes");
+        assert!(arr[0].get("checkinUrl").is_none(), "checkinUrl hostile supprimée");
+        assert!(
+            arr[0]["reservationFor"].get("url").is_none(),
+            "une URL imbriquée doit être vérifiée elle aussi"
+        );
+        assert_eq!(arr[0]["reservationFor"]["flightNumber"], "7", "le reste du nœud est intact");
+        assert_eq!(arr[1]["trackingUrl"], "https://suivi.test/T1", "trackingUrl https conservée");
+    }
+
+    #[test]
+    fn url_ics_hostile_est_supprimee() {
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nSUMMARY:Piégé\r\nDTSTART:20260918T120000Z\r\nURL:javascript:alert(document.cookie)\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ics.to_string()]).expect("un événement");
+        let n = &out.as_array().expect("tableau de cartes")[0];
+        assert_eq!(n["name"], "Piégé", "l'événement reste affiché");
+        assert!(n.get("url").is_none(), "une URL javascript: d'un .ics ne doit pas être stockée");
+
+        let ok = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Ok\r\nDTSTART:20260918T120000Z\r\nURL:https://exemple.test/evt\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ok.to_string()]).expect("un événement");
+        assert_eq!(
+            out.as_array().expect("tableau")[0]["url"], "https://exemple.test/evt",
+            "une URL https d'un .ics doit être conservée"
+        );
     }
 }

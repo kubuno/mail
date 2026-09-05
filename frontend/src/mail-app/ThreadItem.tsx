@@ -14,6 +14,7 @@ import ThreadChips from '../ThreadChips'
 import ThreadAttachmentChips from '../ThreadAttachmentChips'
 import { formatDate } from './helpers'
 import SenderAvatar from './SenderAvatar'
+import { analyzeSender, sanitizeDisplayText } from './senderSafety'
 import { patchThreadCaches, restoreThreadCaches, toggleStar, toggleImportant } from './threadCache'
 import {
   SelectBox, DragGrip, RowAction, ListStar, ImportanceMarker, markOpacity,
@@ -50,7 +51,11 @@ export default function ThreadItem({
   const currentFolder  = useMailStore(s => s.currentFolder)
   const currentLabelId = useMailStore(s => s.currentLabelId)
   const unread = thread.unread_count > 0
-  const senderDisplay = thread.last_sender_name || thread.last_sender_email || '?'
+  // A list row has no room for a warning chip, so the safe label IS the warning:
+  // bidi/control characters are stripped, and a display name impersonating
+  // another address is replaced by the address the mail really came from.
+  const sender = analyzeSender(thread.last_sender_name, thread.last_sender_email)
+  const senderDisplay = sender.label || '?'
 
   // Optimistic: the star/marker flips on the next frame. Waiting for the
   // response and then for a full list refetch made these feel like they were
@@ -121,7 +126,7 @@ export default function ThreadItem({
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className={`flex-1 truncate text-[15px] ${unread ? 'font-semibold text-text-primary' : 'text-text-secondary'}`}>
+            <span title={sender.full} className={`flex-1 truncate text-[15px] ${unread ? 'font-semibold text-text-primary' : 'text-text-secondary'}`}>
               {senderDisplay}
             </span>
             <span className={`text-xs flex-shrink-0 ${unread ? 'font-semibold text-primary' : 'text-text-tertiary'}`}>
@@ -131,10 +136,10 @@ export default function ThreadItem({
           <div className="flex items-center gap-2 min-w-0">
             <div className="flex-1 min-w-0">
               <div className={`truncate text-sm ${unread ? 'font-semibold text-text-primary' : 'text-text-primary'}`}>
-                {thread.subject || t('mail_no_subject')}
+                {sanitizeDisplayText(thread.subject) || t('mail_no_subject')}
               </div>
               {thread.snippet && (
-                <div className="truncate text-xs text-text-tertiary">{thread.snippet}</div>
+                <div className="truncate text-xs text-text-tertiary">{sanitizeDisplayText(thread.snippet)}</div>
               )}
             </div>
             {thread.has_attachments && <Paperclip size={14} className="text-text-tertiary flex-shrink-0" />}
@@ -235,7 +240,7 @@ export default function ThreadItem({
       </button>
 
       {/* Sender — 200px column with 32px of breathing room, text starting at 106 */}
-      <div className={`flex-shrink-0 truncate text-sm w-[200px] ml-[6px] pr-8
+      <div title={sender.full} className={`flex-shrink-0 truncate text-sm w-[200px] ml-[6px] pr-8
         ${unread ? 'font-bold text-text-primary' : 'font-normal text-text-primary'}`}>
         {senderDisplay}
       </div>
@@ -246,11 +251,11 @@ export default function ThreadItem({
         <ThreadChips thread={thread} currentFolder={currentFolder} currentLabelId={currentLabelId} />
         <span className={`text-sm truncate flex-shrink-0 max-w-[60%]
           ${unread ? 'font-bold text-text-primary' : 'text-text-primary'}`}>
-          {thread.subject || t('mail_no_subject')}
+          {sanitizeDisplayText(thread.subject) || t('mail_no_subject')}
         </span>
         {thread.snippet && (
           <span className="text-sm text-[#5f6368] truncate ml-1">
-            &nbsp;–&nbsp;{thread.snippet}
+            &nbsp;–&nbsp;{sanitizeDisplayText(thread.snippet)}
           </span>
         )}
         {thread.has_attachments && !hasChips && (

@@ -46,7 +46,11 @@ function cleanCss(css: string): string {
 // message stored months ago carries whatever the policy of the day allowed, and
 // only this pass stands between it and a live DOM. Kept deliberately in step
 // with services::html_sanitize on the Rust side.
-function sanitizeEmailHtml(html: string): string {
+/** Exported so every path that injects e-mail HTML — the reader here, and the
+ *  reply/forward quote in the composer — goes through the SAME policy. A caller
+ *  reaching for a bare `DOMPurify.sanitize()` would silently get the library's
+ *  defaults instead of ours. */
+export function sanitizeEmailHtml(html: string): string {
   const clean = DOMPurify.sanitize(html, {
     WHOLE_DOCUMENT: true,                 // keeps <html>/<head>/<body> + the head <style>
     ADD_TAGS: ['style'],

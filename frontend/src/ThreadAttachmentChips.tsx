@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { mailApi, type ThreadAttachment } from './api'
+import { sanitizeDisplayText } from './mail-app/senderSafety'
 
 /** How many chips fit before we collapse the rest into "and N more". */
 const MAX_CHIPS = 3
@@ -46,10 +47,13 @@ export default function ThreadAttachmentChips({
     <div className="flex items-center gap-2.5 flex-wrap pt-0.5 pb-1.5" onClick={e => e.stopPropagation()}>
       {shown.map(att => {
         const badge = badgeFor(att.mime, att.name)
+        // Bidi overrides in a file name would flip the whole chip row, not just
+        // the label — strip them before the name reaches the DOM.
+        const label = sanitizeDisplayText(att.name)
         return (
           <button
             key={`${att.message_id}-${att.index}`}
-            title={att.name}
+            title={label}
             onClick={e => {
               e.stopPropagation()
               onPreview(att, mailApi.attachmentUrl(att.message_id, att.index))
@@ -68,7 +72,7 @@ export default function ThreadAttachmentChips({
             >
               {badge.label}
             </span>
-            <span className="truncate">{att.name}</span>
+            <span className="truncate">{label}</span>
           </button>
         )
       })}

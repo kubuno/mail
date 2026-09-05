@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import DOMPurify from 'dompurify'
 import {
   Reply, Loader2, Send, Paperclip, Smile, Trash2,
   Undo2, Redo2, Bold, Italic, Underline, Strikethrough,
@@ -25,6 +24,7 @@ import { useComposeMentions } from './useComposeMentions'
 import AttachmentBar from './AttachmentChip'
 import LargeFilesModal from './LargeFilesModal'
 import { useMaxMessageSize } from './useMaxMessageSize'
+import { sanitizeEmailHtml } from './EmailHtmlView'
 
 // ── Inline compose (reply / forward) ─────────────────────────────────────────
 
@@ -132,7 +132,7 @@ export default function InlineCompose({
     if (!el) return
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const orig = message.body_html
-      ? DOMPurify.sanitize(message.body_html)
+      ? sanitizeEmailHtml(message.body_html)
       : `<pre style="white-space:pre-wrap;font-family:inherit">${esc(message.body_text ?? '')}</pre>`
     const date = longDateTime(new Date(message.sent_at ?? message.received_at), i18n.language)
     const from = message.from_name ? `${message.from_name} <${message.from_email}>` : message.from_email

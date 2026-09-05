@@ -9,6 +9,7 @@ import { useIsMobile, ConfirmDialog } from '@ui'
 import { useConfirm } from '@kubuno/sdk'
 import { mailApi, Draft, type Subscription } from './api'
 import SenderAvatar from './mail-app/SenderAvatar'
+import { analyzeSender } from './mail-app/senderSafety'
 import { useMailStore } from './store'
 import { SelectBox, DragGrip } from './mail-app/rowChrome'
 import MailFolderFilterBar, { type FilterState, EMPTY_FILTER } from './mail-app/MailFolderFilterBar'
@@ -281,7 +282,9 @@ export function SubscriptionsView() {
 
   // Ask before unsubscribing (Gmail flow), then trigger the List-Unsubscribe.
   const doUnsubscribe = async (s: Subscription) => {
-    const name = s.from_name || s.from_email
+    // The confirmation quotes the sender: never with a raw display name, which
+    // could carry bidi marks or claim someone else's address.
+    const name = analyzeSender(s.from_name, s.from_email).label
     const ok = await confirm({
       title:        t('subs_unsubscribe', { defaultValue: 'Se désabonner' }),
       message:      t('subs_confirm', { name, email: s.from_email,
@@ -323,12 +326,15 @@ export function SubscriptionsView() {
                 <button
                   type="button"
                   onClick={() => openSenderSearch(s.from_email)}
-                  title={t('subs_view_messages', { defaultValue: `Voir les messages de ${s.from_name || s.from_email}` })}
+                  title={t('subs_view_messages', { defaultValue: `Voir les messages de ${analyzeSender(s.from_name, s.from_email).label}` })}
                   className="flex-1 flex items-center gap-4 min-w-0 text-left"
                 >
                   <SenderAvatar email={s.from_email} name={s.from_name} size={28} />
+                  {/* The address always sits next to it in this list, so the
+                      name only needs neutralizing — `label` still swaps in the
+                      address when the name impersonates another one. */}
                   <span className="w-56 min-w-0 flex-shrink-0 text-sm text-text-primary truncate">
-                    {s.from_name || s.from_email}
+                    {analyzeSender(s.from_name, s.from_email).label}
                   </span>
                   <span className="flex-1 min-w-0 text-sm text-text-secondary truncate">{s.from_email}</span>
                   <span className="text-sm text-text-secondary whitespace-nowrap flex-shrink-0">{freqLabel(s.count)}</span>

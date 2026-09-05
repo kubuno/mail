@@ -7,6 +7,7 @@ import {
 import { mailApi, type EmailMessage } from '../../api'
 import { cardsFromNodes, type RichCard, type EventCard, type FlightCard, type LodgingCard, type TransitCard, type ReservationCard, type OrderCard } from './parse'
 import { addEventToCalendar, downloadEventIcs, calendarService } from './actions'
+import { safeUrl } from './safeUrl'
 
 type Rsvp = 'accepted' | 'tentative' | 'declined'
 /** Context an event card needs to answer an invitation: which message it came
@@ -50,9 +51,14 @@ function Line({ icon, children }: { icon?: React.ReactNode; children: React.Reac
     </div>
   )
 }
+/** Last line of defence before a sender-authored link becomes an `href`: the
+ *  card fields are already filtered at parse time, but re-checking at the sink
+ *  means no future caller can hand this button a hostile URL. */
 function LinkBtn({ href, icon, children }: { href: string; icon: React.ReactNode; children: React.ReactNode }) {
+  const safe = safeUrl(href)
+  if (!safe) return null
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
+    <a href={safe} target="_blank" rel="noopener noreferrer"
       className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-primary hover:bg-primary/10 transition-colors">
       {icon}{children}
     </a>
