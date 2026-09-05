@@ -12,7 +12,7 @@ import {
 import { Button, Dropdown, MenuDropdown, useIsMobile, serializeMentions, type MenuItem, type MenuDropdownPos } from '@ui'
 import { mailApi, EmailMessage, apiErrorMessage } from '../api'
 import { loadSignatures, defaultSignatureId, resolveSignatureId } from '../signatures'
-import { longDateTime } from './helpers'
+import { longDateTime , replyAllExtras } from './helpers'
 import { activeSenders, defaultReplySender } from '../senderSelection'
 import { useMailStore } from '../store'
 import { RecipientField } from '../AddressSuggest'
@@ -111,11 +111,7 @@ export default function InlineCompose({
   )
   const [cc,         setCc]       = useState<{ email: string; name?: string }[]>(() => {
     if (mode !== 'reply' || !replyAll) return []
-    const mine = new Set(accounts.map(a => a.email_address.toLowerCase()))
-    mine.add(message.from_email.toLowerCase())
-    return [...(message.to_addresses ?? []), ...(message.cc_addresses ?? [])]
-      .filter(a => a?.email && !mine.has(a.email.toLowerCase()))
-      .map(a => ({ email: a.email, name: a.name ?? undefined }))
+    return replyAllExtras(message, accounts.map(a => a.email_address))
   })
   const [showCc,     setShowCc]   = useState(mode === 'reply' && replyAll)
   const [showFormat, setShowFormat] = useState(() => !isMobile)

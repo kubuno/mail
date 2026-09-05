@@ -78,3 +78,24 @@ export function isTyping(): boolean {
 export function plainKey(e: KeyboardEvent): boolean {
   return !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping()
 }
+
+/** The people a "reply all" would add on top of a plain reply: the original
+ *  recipients (To + Cc) minus ourselves and minus the sender, who is already
+ *  the reply's own recipient. Empty means "reply all" would send the exact same
+ *  message as "reply" — so the action has nothing to offer and is hidden. */
+export function replyAllExtras(
+  message: { from_email: string; to_addresses?: { email: string; name?: string }[] | null; cc_addresses?: { email: string; name?: string }[] | null },
+  myAddresses: string[],
+): { email: string; name?: string }[] {
+  const mine = new Set(myAddresses.map(a => a.toLowerCase()))
+  mine.add(message.from_email.toLowerCase())
+  const seen = new Set<string>()
+  const out: { email: string; name?: string }[] = []
+  for (const a of [...(message.to_addresses ?? []), ...(message.cc_addresses ?? [])]) {
+    const email = a?.email?.toLowerCase()
+    if (!email || mine.has(email) || seen.has(email)) continue
+    seen.add(email)
+    out.push({ email: a.email, name: a.name ?? undefined })
+  }
+  return out
+}

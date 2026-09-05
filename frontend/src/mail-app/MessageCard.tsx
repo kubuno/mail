@@ -9,7 +9,7 @@ import { useIsMobile } from '@ui'
 import { mailApi, EmailMessage, Attachment } from '../api'
 import { useMailStore } from '../store'
 import { unsubscribeTarget } from '../MailViews'
-import { formatDate, formatFullDate } from './helpers'
+import { formatDate, formatFullDate, replyAllExtras } from './helpers'
 import EmailHtmlView from './EmailHtmlView'
 import AttachmentRow from './AttachmentRow'
 import MessageActionsMenu from './MessageActionsMenu'
@@ -129,7 +129,10 @@ export default function MessageCard({
 }) {
   const { t, i18n } = useTranslation('mail')
   const qc = useQueryClient()
-  const { setSearchQuery } = useMailStore()
+  const { setSearchQuery, accounts } = useMailStore()
+  // Does a "reply all" reach anyone a plain reply wouldn't?
+  const hasOtherRecipients =
+    replyAllExtras(message, accounts.map(a => a.email_address)).length > 0
   // Mobile: lighter header — short date, no raw address, star + "⋮" only
   // (Reply stays as the big button under the message).
   const isMobile = useIsMobile()
@@ -393,10 +396,14 @@ ${message.body_html ?? message.body_text ?? ''}`}
       )}
 
       {/* ── Reply / Forward ───────────────────────────────────────────────────── */}
+      {/* "Reply all" only when it would actually reach someone else: with a
+          single correspondent it sends the very same message as "Reply". */}
       {isLast && (
         <div className="flex items-center gap-3 pt-5 pb-2 border-t border-[#e0e0e0] mt-4">
           <ReplyPill onClick={onReply} icon={<Reply size={18} />} label={t('mail_reply')} />
-          <ReplyPill onClick={onReplyAll} icon={<ReplyAll size={18} />} label={t('mail_reply_all')} />
+          {hasOtherRecipients && (
+            <ReplyPill onClick={onReplyAll} icon={<ReplyAll size={18} />} label={t('mail_reply_all')} />
+          )}
           <ReplyPill onClick={onForward} icon={<Forward size={18} />} label={t('mail_forward')} />
         </div>
       )}

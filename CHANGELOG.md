@@ -108,6 +108,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **"Reply all" is hidden when there is no one else to reply to.** On a message
+  whose only correspondent is the sender, it would send the exact same mail as
+  "Reply", so only "Reply" and "Forward" are offered.
+
 
 - **The README now opens with the module's logo.** The public README on
   GitHub now shows the module's designer logo (the same PNG shown as the
