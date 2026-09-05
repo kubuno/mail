@@ -141,7 +141,11 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
           <div className="text-xs text-text-secondary mb-1.5">{t('rc_going', { defaultValue: 'Participez-vous ?' })}</div>
           <div className="inline-flex rounded-lg border border-border overflow-hidden">
             {RSVP_OPTIONS.map((o, i) => {
-              const selected = rsvp === o.key
+              // Opening the decline panel IS choosing "No": light it up right
+              // away rather than only once the reply leaves. While the panel is
+              // open it is the only active choice, so a previous answer cannot
+              // stay lit next to it.
+              const selected = declineOpen ? o.key === 'declined' : rsvp === o.key
               return (
                 <button
                   key={o.key}
