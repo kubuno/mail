@@ -21,6 +21,17 @@ export type { MailCategory } from './mail-app/categories'
 
 // ── Main MailApp ──────────────────────────────────────────────────────────────
 
+/** The URL is the single source of truth for «in a search»: a «#search/<q>»
+ *  hash puts the query in the store, ANY other hash — «#inbox», «#category/…»,
+ *  a folder route's empty hash, back/forward out of a search — takes it out. */
+function applySearchFromUrl() {
+  const m = window.location.hash.match(/^#search\/(.*?)(\/[0-9a-f-]{36})?$/i)
+  const q = m ? decodeURIComponent(m[1]) : ''
+  const st = useMailStore.getState()
+  if (m && q !== st.searchQuery) st.setSearchQuery(q)
+  else if (!m && st.searchQuery) st.setSearchQuery('')
+}
+
 export default function MailApp() {
   const { t } = useTranslation('mail')
   const { composeOpen, setComposeOpen, setComposeInitial, setAccounts, accounts, setCurrentFolder, currentFolder, selectedThread, splitMode } = useMailStore()
@@ -75,12 +86,7 @@ export default function MailApp() {
     if (labelMatch)       setCurrentFolder('label', labelMatch[1])
     else if (folderMatch) setCurrentFolder('custom', null, decodeURIComponent(folderMatch[1]))
     else                  setCurrentFolder(folderFromPath(pathname))
-    // `routerKey` changes on EVERY router navigation — a sidebar hash link
-    // («/mail/#category/main», re-clicking the active folder) as much as a new
-    // path — but not on the raw `pushState` the search writer below performs.
-    // So every sidebar click re-enters its folder and thereby LEAVES the search
-    // (Gmail parity), while committing a search never bounces the folder.
-  }, [pathname, routerKey, setCurrentFolder])
+  }, [pathname, setCurrentFolder])
 
   // The open conversation lives in the URL hash — «#inbox/<id>» — so a reload
   // or a shared link lands back on the same message. The older «?thread=<id>»
@@ -107,21 +113,17 @@ export default function MailApp() {
   // otherwise the writer, still seeing an empty query, would strip `#search/…`
   // before it was ever applied.
   useEffect(() => {
-    const apply = () => {
-      const m = window.location.hash.match(/^#search\/(.*?)(\/[0-9a-f-]{36})?$/i)
-      const q = m ? decodeURIComponent(m[1]) : ''
-      if (m && q !== useMailStore.getState().searchQuery) useMailStore.getState().setSearchQuery(q)
-      // Any non-search hash — «#inbox», «#category/<id>», back/forward out of a
-      // search — leaves the search (Gmail parity). Folder ROUTES («/mail/spam»)
-      // never fire `hashchange`; they leave it through `setCurrentFolder`.
-      else if (!m && useMailStore.getState().searchQuery) {
-        useMailStore.getState().setSearchQuery('')
-      }
-    }
-    apply()
-    window.addEventListener('hashchange', apply)
-    return () => window.removeEventListener('hashchange', apply)
+    applySearchFromUrl()
+    window.addEventListener('hashchange', applySearchFromUrl)
+    return () => window.removeEventListener('hashchange', applySearchFromUrl)
   }, [])
+  // Router navigations (`<Link>`, `navigate()`) push state WITHOUT firing
+  // `hashchange`, so re-read the URL on each of them — `routerKey` changes on
+  // every one, a sidebar hash link or a re-click of the active folder included,
+  // but NOT on the raw `pushState` the writer below performs. A sidebar click
+  // thus leaves the search, and `navigate(searchTo(q))` enters one, whatever
+  // the store held before (Gmail parity: the URL decides).
+  useEffect(() => { applySearchFromUrl() }, [routerKey])
   // Store → URL: reads the FRESH store value (not the render-time closure) so
   // the mount run, which happens right after the reader above, never acts on a
   // stale empty query.

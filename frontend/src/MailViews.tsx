@@ -1,6 +1,7 @@
 // Vues dédiées : « Brouillons » (mail.drafts), « Planifié » (brouillons programmés)
 // et « Gérer les abonnements ».
 import { useMemo, useState } from 'react'
+import { searchTo } from './categoryRoute'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, MailX, ExternalLink, Loader2, RefreshCw, Paperclip, Trash2 } from 'lucide-react'
@@ -257,7 +258,6 @@ export function SubscriptionsView() {
   const { t } = useTranslation('mail')
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const { setSearchQuery } = useMailStore()
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm()
   const { data: subs = [], isLoading } = useQuery({
     queryKey: ['mail-subscriptions'], queryFn: mailApi.getSubscriptions,
@@ -268,10 +268,9 @@ export function SubscriptionsView() {
   // ours transposes it operator for operator: everywhere but spam (trash
   // included), subscription-type messages only (`is:subscription` = carries a
   // List-Unsubscribe header, our equivalent of the `^sub_m` system label).
-  // Navigating to /mail mounts ThreadList without clearing the search.
+  // Navigating to the search URL mounts ThreadList already IN that search.
   const openSenderSearch = (email: string) => {
-    setSearchQuery(`from:${email} (-in:spam OR in:trash) is:subscription`)
-    navigate('/mail')
+    navigate(searchTo(`from:${email} (-in:spam OR in:trash) is:subscription`))
   }
 
   // Gmail-style frequency bucket derived from the sender's message count.

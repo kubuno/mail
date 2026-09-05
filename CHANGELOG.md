@@ -121,7 +121,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   `OR`, negation, parentheses), and is suggested in the search bar.
 
 ### Fixed
-- **Clicking a folder or label in the sidebar now leaves the search**, the way it does in any mail client: the search box empties and the folder shows its own content. The committed query used to stay applied on top of every folder you clicked, so the list never changed — only the highlighted row did. Back/forward out of a search and the inbox categories behave the same way.
+- **Clicking a folder or label in the sidebar now leaves the search**, the way it does in any mail client: the search box empties and the folder shows its own content. The committed query used to stay applied on top of every folder you clicked, so the list never changed — only the highlighted row did. Back/forward out of a search and the inbox categories behave the same way. The URL is now the single source of truth for being in a search (`#search/<query>`).
+- **Searching from a page without a message list now shows the results.** A search committed from Settings, Manage subscriptions, Drafts or Scheduled — by typing in the bar or by clicking a sender on the subscriptions page — opens the mailbox on that search instead of leaving you on the page you came from.
 - An iMIP reply (RSVP) that omits `DTSTART` — allowed by RFC 5546 — is now recognised and forwarded to the organizer's calendar instead of being silently ignored.
 
 - **A sender can no longer impersonate someone in the interface.** A display

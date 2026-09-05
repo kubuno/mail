@@ -133,12 +133,8 @@ export const useMailStore = create<MailState>((set) => ({
   setDensity:         (density)        => { try { localStorage.setItem(DENSITY_KEY, density) } catch { /* ignore */ } set({ density }) },
   setSplitMode:       (mode)           => { try { localStorage.setItem(SPLIT_KEY, mode) } catch { /* ignore */ } set({ splitMode: mode }) },
   setSelectedAccount: (id)             => set({ selectedAccount: id, selectedThread: null }),
-  // Navigating to a folder / label LEAVES the search (Gmail parity): the
-  // committed query, like the open conversation, belongs to the view being
-  // left. A scope inside a search is expressed in the query (`in:spam`), never
-  // by the folder the sidebar highlights.
   setCurrentFolder:   (folder, labelId = null, imapFolder = null) =>
-    set({ currentFolder: folder, currentLabelId: labelId, currentImapFolder: imapFolder, selectedThread: null, searchQuery: '' }),
+    set({ currentFolder: folder, currentLabelId: labelId, currentImapFolder: imapFolder, selectedThread: null }),
   setInboxCategory:   (inboxCategory)  => set({ inboxCategory }),
   setSelectedThread:  (id)             => set({ selectedThread: id }),
   setLabels:          (labels)         => set({ labels }),

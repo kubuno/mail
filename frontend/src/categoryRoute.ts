@@ -18,3 +18,12 @@ export function categoryFromHash(hash: string): MailCategory {
     ? (id as MailCategory)
     : 'main'
 }
+
+/** The mailbox opened on a committed search — the Gmail «#search/<query>» URL.
+ *  Flows that leave another view to search (the subscriptions page, the bar
+ *  used from settings…) navigate HERE instead of setting the store and hoping
+ *  it survives the route change: the URL is the single source of truth for
+ *  «in a search», read back by MailApp on every navigation. */
+export function searchTo(query: string): string {
+  return `/mail/#search/${encodeURIComponent(query)}`
+}

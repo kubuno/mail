@@ -8,6 +8,7 @@
  *  - the tune button opens the existing advanced-filter panel
  */
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { searchTo } from './categoryRoute'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -16,6 +17,10 @@ import { useVoiceDictation } from '@kubuno/sdk'
 import { mailApi, Thread } from './api'
 import { useMailStore } from './store'
 import MailFilterPanel from './MailFilterPanel'
+
+/** Routes whose view is not the thread list: a search committed there must
+ *  leave for the mailbox to be seen at all. */
+const NON_LIST_ROUTE = /^\/mail\/(settings|subscriptions|drafts|scheduled)(\/|$)/
 
 function TuneIcon({ size = 20 }: { size?: number }) {
   return (
@@ -185,9 +190,15 @@ export default function MailSearchBar() {
   const ghost = suggestions.length > 0 ? suggestions[0].ins.slice(token.length) : ''
 
   const commit = (query: string) => {
-    setSearchQuery(query.trim())
+    const q = query.trim()
+    setSearchQuery(q)
     setOpen(false)
     setHi(-1)
+    // A view with no thread list (settings, subscriptions…) cannot show the
+    // results: open the mailbox ON the search URL — searching from anywhere
+    // shows results (Gmail parity). MailApp re-reads «#search/…» on the
+    // navigation, so the query set above survives the route change.
+    if (q && NON_LIST_ROUTE.test(pathname)) navigate(searchTo(q))
   }
 
   const acceptSuggestion = (s: Sg) => {
@@ -200,10 +211,12 @@ export default function MailSearchBar() {
   const openThread = (th: Thread) => {
     commit(q)
     if (pathname.startsWith('/mail/settings')) {
-      // The settings route has no thread reader: go back to the mailbox first.
+      // The settings route has no thread reader: go back to the mailbox first —
+      // ON the search URL, since MailApp re-reads «#search/…» on every router
+      // navigation and a bare «/mail» would read as leaving the search.
       // The route-change effect in MailApp resets the selected thread, so the
       // selection is applied on the next macrotask, after that reset ran.
-      navigate('/mail')
+      navigate(searchTo(q.trim()))
       setTimeout(() => useMailStore.getState().setSelectedThread(th.id), 0)
     } else {
       setSelectedThread(th.id)
