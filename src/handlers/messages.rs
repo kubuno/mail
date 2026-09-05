@@ -926,6 +926,16 @@ fn retain_owned_labels(requested: &[Uuid], owned: &[Uuid]) -> Vec<Uuid> {
 pub struct InviteReplyDto {
     /// accepted | tentative | declined
     pub response: String,
+    /// Optional note for the organizer — typically the reason for a decline.
+    /// Travels as the iCalendar COMMENT of the reply.
+    #[serde(default)]
+    pub comment: Option<String>,
+    /// An alternative time the invitee suggests. Turns the message into an iTIP
+    /// COUNTER: same event, proposed at this time instead.
+    #[serde(default)]
+    pub proposed_start: Option<String>,
+    #[serde(default)]
+    pub proposed_end: Option<String>,
 }
 
 /// Reply to a calendar invitation the way Gmail does: email the organizer a
@@ -1002,11 +1012,22 @@ pub async fn invite_reply(
     .fetch_one(&state.db)
     .await?;
 
+    let proposal = dto
+        .proposed_start
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|start| crate::services::imip::Proposal {
+            start: start.to_string(),
+            end: dto.proposed_end.clone().filter(|e| !e.trim().is_empty()),
+        });
     let reply_ics = crate::services::imip::build_reply(
         request_ics,
         &account.email_address,
         Some(&account.name),
         rsvp,
+        dto.comment.as_deref(),
+        proposal.as_ref(),
     );
 
     let verb = match rsvp {
@@ -1014,10 +1035,21 @@ pub async fn invite_reply(
         crate::services::imip::Rsvp::Tentative => "Provisoire",
         crate::services::imip::Rsvp::Declined => "Refusé",
     };
-    let body_html = format!(
-        "<p>{verb} : {}</p>",
-        html_escape(&summary)
-    );
+    // A counter-proposal is announced as such: the organizer is being asked to
+    // move the event, not merely told we decline.
+    let heading = if proposal.is_some() {
+        format!("Nouvel horaire proposé : {}", html_escape(&summary))
+    } else {
+        format!("{verb} : {}", html_escape(&summary))
+    };
+    let note = dto
+        .comment
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(|c| format!("<p>{}</p>", html_escape(c)))
+        .unwrap_or_default();
+    let body_html = format!("<p>{heading}</p>{note}");
     let ics_b64 = base64::engine::general_purpose::STANDARD.encode(reply_ics.as_bytes());
     let send_dto = SendMailDto {
         account_id,
@@ -1027,7 +1059,11 @@ pub async fn invite_reply(
         }],
         cc_addresses: None,
         bcc_addresses: None,
-        subject: format!("{verb} : {summary}"),
+        subject: if proposal.is_some() {
+            format!("Nouvel horaire proposé : {summary}")
+        } else {
+            format!("{verb} : {summary}")
+        },
         body_html,
         reply_to_id: None,
         draft_id: None,

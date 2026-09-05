@@ -112,6 +112,70 @@ pub async fn notify_incoming_mail(
     notify_interlocutor(core_url, internal_secret, recipient, sender_email, sender_name).await;
 }
 
+/// Notifies the recipient that a calendar message needs their attention: an
+/// invitation to answer, someone's reply to an invitation THEY sent, or a
+/// cancellation. Fired in addition to the plain "mail received" push because
+/// these carry an action, not just a message.
+///
+/// Best-effort like every publish here: a failure is logged, never propagated.
+pub async fn notify_calendar_message(
+    core_url: &str,
+    internal_secret: &str,
+    recipient: Uuid,
+    thread_id: Uuid,
+    notice: &crate::services::structured_data::InviteNotice,
+) {
+    use crate::services::structured_data::InviteNotice as N;
+    if core_url.trim().is_empty() || internal_secret.trim().is_empty() {
+        return;
+    }
+    let clip = |s: &str| -> String { s.trim().chars().take(120).collect() };
+
+    let (event_type, title, body) = match notice {
+        N::Invitation { summary, organizer } => (
+            "mail.invite_received",
+            "Invitation".to_string(),
+            match organizer {
+                Some(o) => format!("{} vous invite à « {} »", clip(o), clip(summary)),
+                None => format!("Invitation à « {} »", clip(summary)),
+            },
+        ),
+        N::Cancelled { summary, organizer } => (
+            "mail.invite_cancelled",
+            "Invitation annulée".to_string(),
+            match organizer {
+                Some(o) => format!("{} a annulé « {} »", clip(o), clip(summary)),
+                None => format!("« {} » a été annulé", clip(summary)),
+            },
+        ),
+        N::Reply { summary, who, partstat } => {
+            // The answer to an invitation WE sent.
+            let (kind, verb) = match partstat.as_str() {
+                "ACCEPTED" => ("mail.invite_accepted", "a accepté"),
+                "DECLINED" => ("mail.invite_declined", "a refusé"),
+                "TENTATIVE" => ("mail.invite_tentative", "participera peut-être à"),
+                _ => ("mail.invite_reply", "a répondu à"),
+            };
+            let who = who.as_deref().unwrap_or("Un invité");
+            (
+                kind,
+                "Réponse à votre invitation".to_string(),
+                format!("{} {} « {} »", clip(who), verb, clip(summary)),
+            )
+        }
+    };
+
+    let payload = serde_json::json!({
+        "recipient_user_ids": [recipient],
+        "title":              title,
+        "body":               body,
+        "resource_id":        thread_id.to_string(),
+    });
+    if let Err(e) = publish_custom(core_url, internal_secret, event_type, payload).await {
+        tracing::warn!(error = %e, %recipient, event_type, "Publication de l'event « invitation » échouée (push ignoré)");
+    }
+}
+
 /// Reports one person the user exchanged with, for the "Other contacts" list of
 /// whichever module collects them.
 ///

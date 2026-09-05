@@ -532,8 +532,17 @@ export const mailApi = {
   // Autocomplétion des destinataires (index d'adresses côté mail).
   /** Reply to a calendar invitation (iMIP): emails the organizer our PARTSTAT
    *  and records the choice on the message. */
-  inviteReply: (messageId: string, response: 'accepted' | 'tentative' | 'declined') =>
-    api.post<{ invite_response: string; sent: boolean }>(`/mail/messages/${messageId}/invite-reply`, { response }).then(r => r.data),
+  inviteReply: (
+    messageId: string,
+    response: 'accepted' | 'tentative' | 'declined',
+    opts?: { comment?: string; proposedStart?: string; proposedEnd?: string },
+  ) =>
+    api.post<{ invite_response: string; sent: boolean }>(`/mail/messages/${messageId}/invite-reply`, {
+      response,
+      comment:        opts?.comment,
+      proposed_start: opts?.proposedStart,
+      proposed_end:   opts?.proposedEnd,
+    }).then(r => r.data),
 
   suggestAddresses: (q: string) =>
     api.get<{ email: string; name: string | null }[]>('/mail/addresses', { params: { q } }).then(r => r.data),

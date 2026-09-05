@@ -11,6 +11,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Notifications for calendar invitations.** Receiving an invitation, a reply
+  to an invitation you sent (accepted / declined / maybe) or a cancellation now
+  raises its own notification, on top of the plain "new mail" one. Each is a
+  separate activity in Settings → Notifications.
+- **Declining an invitation can carry a reason, or propose another time.**
+  Choosing "No" opens an optional panel: a note for the organizer (sent as the
+  iCalendar COMMENT) and an alternative slot. Filling the slot turns the answer
+  into an iTIP counter-proposal (`METHOD:COUNTER`) the organizer can accept.
+
 - **RSVP to calendar invitations, Gmail-style.** An invitation card now offers
   Yes / Maybe / No. Answering emails the organizer a proper iMIP reply
   (`text/calendar; method=REPLY` with the attendee's PARTSTAT), mirrors the

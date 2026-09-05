@@ -66,6 +66,12 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
   const [added, setAdded] = useState(false)
   const [busy, setBusy] = useState<Rsvp | 'add' | null>(null)
   const [rsvp, setRsvp] = useState<Rsvp | null>(ctx?.inviteResponse ?? null)
+  // Decline panel: an optional reason and an optional alternative time
+  // (the latter turns the answer into an iTIP counter-proposal).
+  const [declineOpen, setDeclineOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [altStart, setAltStart] = useState('')
+  const [altEnd, setAltEnd] = useState('')
   const hasCalendar = !!calendarService()
   const isInvite = !!c.isInvite && !!ctx?.messageId
   const when = c.end && c.start && sameDay(c.start, c.end)
@@ -79,22 +85,35 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
 
   // RSVP to an invitation: email the organizer our answer (iMIP reply, backend)
   // and — for Yes/Maybe — mirror it into the calendar. Optimistic: the chosen
-  // button lights up immediately; a failure reverts it.
-  const respond = async (answer: Rsvp) => {
+  // button lights up immediately; a failure reverts it. Declining opens a panel
+  // first, where a reason and/or another time can be offered.
+  const respond = async (answer: Rsvp, opts?: { comment?: string; proposedStart?: string; proposedEnd?: string }) => {
     if (!ctx?.messageId || busy) return
     const previous = rsvp
     setRsvp(answer)
     setBusy(answer)
     try {
-      await mailApi.inviteReply(ctx.messageId, answer)
+      await mailApi.inviteReply(ctx.messageId, answer, opts)
       if (answer !== 'declined' && hasCalendar) {
         await addEventToCalendar(c, answer === 'accepted' ? 'confirmed' : 'tentative').catch(() => {})
       }
+      setDeclineOpen(false)
     } catch {
       setRsvp(previous) // revert on failure
     } finally {
       setBusy(null)
     }
+  }
+
+  // Declining: the answer alone is enough, so the panel is entirely optional —
+  // "Envoyer le refus" with both fields empty behaves like a plain No.
+  const onPick = (answer: Rsvp) => {
+    if (answer === 'declined') {
+      setDeclineOpen(o => !o)
+      return
+    }
+    setDeclineOpen(false)
+    void respond(answer)
   }
 
   const RSVP_OPTIONS: { key: Rsvp; label: string }[] = [
@@ -127,7 +146,7 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
                 <button
                   key={o.key}
                   type="button"
-                  onClick={() => respond(o.key)}
+                  onClick={() => onPick(o.key)}
                   disabled={!!busy}
                   className={`h-8 px-4 text-sm transition-colors disabled:opacity-60 ${i > 0 ? 'border-l border-border' : ''} ${
                     selected ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-2'
@@ -138,7 +157,69 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
               )
             })}
           </div>
-          {rsvp && (
+
+          {/* Declining: say why, and/or suggest another time (iTIP counter).
+              Both are optional — sending with empty fields is a plain refusal. */}
+          {declineOpen && (
+            <div className="mt-2.5 p-3 rounded-lg border border-border bg-surface-1 max-w-lg space-y-2.5">
+              <textarea
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                rows={2}
+                placeholder={t('rc_reason_ph', { defaultValue: 'Motif du refus (facultatif)' })}
+                className="w-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-text-primary
+                           placeholder:text-text-tertiary focus:outline-none focus:border-primary resize-y"
+                style={{ fontSize: 14 }}
+              />
+              <div>
+                <div className="text-xs text-text-secondary mb-1">
+                  {t('rc_propose', { defaultValue: 'Proposer un autre horaire (facultatif)' })}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="datetime-local"
+                    value={altStart}
+                    onChange={e => setAltStart(e.target.value)}
+                    className="rounded-md border border-border bg-surface-0 px-2 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                    style={{ fontSize: 14 }}
+                  />
+                  <span className="text-text-tertiary text-sm">→</span>
+                  <input
+                    type="datetime-local"
+                    value={altEnd}
+                    onChange={e => setAltEnd(e.target.value)}
+                    className="rounded-md border border-border bg-surface-0 px-2 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                    style={{ fontSize: 14 }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => respond('declined', {
+                    comment:       reason.trim() || undefined,
+                    proposedStart: altStart || undefined,
+                    proposedEnd:   altEnd || undefined,
+                  })}
+                  className="h-8 px-3 rounded-md text-sm bg-primary text-white hover:bg-primary-hover disabled:opacity-60 transition-colors"
+                >
+                  {altStart
+                    ? t('rc_send_counter', { defaultValue: 'Proposer ce créneau' })
+                    : t('rc_send_decline', { defaultValue: 'Envoyer le refus' })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeclineOpen(false)}
+                  className="h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors"
+                >
+                  {t('common_cancel', { defaultValue: 'Annuler' })}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {rsvp && !declineOpen && (
             <div className="flex items-center gap-1.5 text-xs text-text-tertiary mt-1.5">
               <Check size={13} className="text-success" />
               {rsvp === 'accepted'  && t('rc_replied_yes',   { defaultValue: 'Vous avez accepté — l\'organisateur a été prévenu.' })}

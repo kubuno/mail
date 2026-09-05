@@ -186,6 +186,8 @@ fn event_from_ics(ics: &str) -> Option<Value> {
         (None, None, None, None, None, None);
     let (mut organizer, mut organizer_email, mut uid, mut sequence) =
         (None, None, None, None);
+    // REPLY only: who answered and with which participation status.
+    let (mut reply_from, mut reply_name, mut reply_partstat) = (None, None, None);
 
     for line in &lines {
         let up = line.to_ascii_uppercase();
@@ -214,6 +216,19 @@ fn event_from_ics(ics: &str) -> Option<Value> {
                 organizer = n;
                 organizer_email = e;
             }
+            // In a REPLY there is exactly one ATTENDEE: the person answering.
+            "ATTENDEE" => {
+                let (n, e) = organizer_parts(&params, &value);
+                if reply_from.is_none() {
+                    reply_name = n;
+                    reply_from = e;
+                    reply_partstat = params.split(';').find_map(|p| {
+                        p.strip_prefix("PARTSTAT=")
+                            .or_else(|| p.strip_prefix("partstat="))
+                            .map(|v| v.trim().to_ascii_uppercase())
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -229,6 +244,9 @@ fn event_from_ics(ics: &str) -> Option<Value> {
         "startDate": start,
         "_source": "ics",
         "_invite": method.as_deref() == Some("REQUEST"),
+        // The iTIP method drives what this message MEANS: a request to attend,
+        // someone's answer to ours, or a cancellation.
+        "_method": method.as_deref().unwrap_or("PUBLISH").to_ascii_lowercase(),
     });
     let obj = node.as_object_mut().unwrap();
     if let Some(e) = end { obj.insert("endDate".into(), json!(e)); }
@@ -242,6 +260,11 @@ fn event_from_ics(ics: &str) -> Option<Value> {
     if let Some(u) = uid { obj.insert("uid".into(), json!(u)); }
     if let Some(sq) = sequence { obj.insert("sequence".into(), json!(sq)); }
     obj.insert("_ics".into(), json!(ics));
+    if method.as_deref() == Some("REPLY") {
+        if let Some(p) = reply_partstat { obj.insert("_replyPartstat".into(), json!(p)); }
+        if let Some(e) = reply_from { obj.insert("_replyFrom".into(), json!(e)); }
+        if let Some(n) = reply_name { obj.insert("_replyName".into(), json!(n)); }
+    }
     Some(node)
 }
 
@@ -259,6 +282,60 @@ pub fn extract(html: Option<&str>, ics_parts: &[String]) -> Option<Value> {
         }
     }
     (!cards.is_empty()).then_some(Value::Array(cards))
+}
+
+// ── Invitation notices (for push notifications) ─────────────────────────────
+
+/// What an incoming calendar message means for the recipient.
+#[derive(Debug, PartialEq)]
+pub enum InviteNotice {
+    /// Someone invites us to an event.
+    Invitation { summary: String, organizer: Option<String> },
+    /// Someone answered an invitation WE sent.
+    Reply { summary: String, who: Option<String>, partstat: String },
+    /// The organizer cancelled the event.
+    Cancelled { summary: String, organizer: Option<String> },
+}
+
+/// Reads the extracted nodes and reports the first calendar message that
+/// deserves its own notification (invitation / reply / cancellation).
+pub fn invite_notice(nodes: &Value) -> Option<InviteNotice> {
+    let arr = nodes.as_array()?;
+    for n in arr {
+        if n.get("_source").and_then(|v| v.as_str()) != Some("ics") {
+            continue;
+        }
+        let summary = n
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Événement")
+            .to_string();
+        let organizer = n
+            .get("organizer")
+            .and_then(|o| o.get("name"))
+            .and_then(|v| v.as_str())
+            .or_else(|| n.get("organizerEmail").and_then(|v| v.as_str()))
+            .map(str::to_string);
+        return match n.get("_method").and_then(|v| v.as_str()) {
+            Some("request") => Some(InviteNotice::Invitation { summary, organizer }),
+            Some("cancel") => Some(InviteNotice::Cancelled { summary, organizer }),
+            Some("reply") => Some(InviteNotice::Reply {
+                summary,
+                who: n
+                    .get("_replyName")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| n.get("_replyFrom").and_then(|v| v.as_str()))
+                    .map(str::to_string),
+                partstat: n
+                    .get("_replyPartstat")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("NEEDS-ACTION")
+                    .to_string(),
+            }),
+            _ => None,
+        };
+    }
+    None
 }
 
 #[cfg(test)]
@@ -310,6 +387,34 @@ mod tests {
         assert_eq!(arr[0]["startDate"], "2026-09-09T14:00:00");
         assert_eq!(arr[0]["_invite"], true);
         assert_eq!(arr[0]["organizer"]["name"], "Alice");
+    }
+
+    #[test]
+    fn reply_ics_carries_partstat_and_notice() {
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nBEGIN:VEVENT\r\nUID:u1\r\nSUMMARY:Comité\r\nDTSTART:20260915T080000Z\r\nORGANIZER;CN=Moi:mailto:moi@x\r\nATTENDEE;CN=Alice;PARTSTAT=ACCEPTED:mailto:alice@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ics.to_string()]).unwrap();
+        let n = &out.as_array().unwrap()[0];
+        assert_eq!(n["_method"], "reply");
+        assert_eq!(n["_replyPartstat"], "ACCEPTED");
+        assert_eq!(n["_replyName"], "Alice");
+        assert_eq!(
+            invite_notice(&out),
+            Some(InviteNotice::Reply {
+                summary: "Comité".into(),
+                who: Some("Alice".into()),
+                partstat: "ACCEPTED".into()
+            })
+        );
+    }
+
+    #[test]
+    fn request_ics_is_an_invitation_notice() {
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nSUMMARY:Atelier\r\nDTSTART:20260918T120000Z\r\nORGANIZER;CN=Bob:mailto:bob@x\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ics.to_string()]).unwrap();
+        assert_eq!(
+            invite_notice(&out),
+            Some(InviteNotice::Invitation { summary: "Atelier".into(), organizer: Some("Bob".into()) })
+        );
     }
 
     #[test]

@@ -263,6 +263,10 @@ pub async fn deliver_local(
         .collect();
     let structured_data =
         crate::services::structured_data::extract(body_html_raw.as_deref(), &ics_parts);
+    // Read the calendar meaning now: `structured_data` is moved into the INSERT.
+    let invite_notice = structured_data
+        .as_ref()
+        .and_then(crate::services::structured_data::invite_notice);
 
     // Attachments: metadata now, files on disk only after the transaction
     // commits, so a rolled back delivery leaves no orphan files behind.
@@ -504,6 +508,19 @@ pub async fn deliver_local(
             &subject,
         )
         .await;
+
+        // Calendar messages get their own notification on top: an invitation to
+        // answer, someone's reply to an invitation we sent, or a cancellation.
+        if let Some(notice) = &invite_notice {
+            crate::events::notify_calendar_message(
+                &cfg.core_url,
+                &cfg.internal_secret,
+                target.user_id,
+                thread_id,
+                notice,
+            )
+            .await;
+        }
     }
 
     // Vacation auto-reply — the single choke point every local delivery passes

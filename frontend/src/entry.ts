@@ -92,6 +92,9 @@ export function register() {
       { id: 'mail_received', label: 'Nouvel e-mail reçu', pushDefault: true },
       { id: 'mail_important', label: 'E-mail important reçu', emailDefault: true, pushDefault: true },
       { id: 'mail_spam', label: 'Un e-mail a été classé comme spam' },
+      { id: 'mail_invite_received', label: 'Invitation à un événement reçue', pushDefault: true },
+      { id: 'mail_invite_answered', label: 'Réponse à une invitation que vous avez envoyée', pushDefault: true },
+      { id: 'mail_invite_cancelled', label: 'Un événement auquel vous êtes invité est annulé', pushDefault: true },
     ],
   })
 
