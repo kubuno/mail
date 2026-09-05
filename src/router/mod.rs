@@ -135,6 +135,10 @@ pub fn build(state: AppState) -> Router {
         // Adresses bloquées
         .route("/blocked",               get(filters::list_blocked).post(filters::block_sender))
         .route("/blocked/:id",           delete(filters::unblock_sender))
+        // Senders whose remote images are always displayed (Gmail's "Always
+        // show images from X"); the GET also carries the instance allowlist.
+        .route("/image-senders",         get(filters::list_image_senders).post(filters::allow_image_sender))
+        .route("/image-senders/:id",     delete(filters::forget_image_sender))
         // Répondeur d'absence (réponse automatique)
         .route("/vacation",              get(vacation::get_vacation).put(vacation::put_vacation))
         // Délégation d'accès au compte (façon Gmail) : un mandant accorde à un

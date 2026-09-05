@@ -434,6 +434,9 @@ pub struct ServerConfig {
     /// lists. They never bypass DMARC: an allow-listed domain that fails
     /// alignment is exactly the phishing case.
     pub allowlist_senders:       Vec<String>,
+    /// Senders (address or `@domain`) whose remote images every account displays
+    /// without asking — the instance-wide counterpart of each user's own list.
+    pub image_allowlist:         Vec<String>,
     pub blocklist_senders:       Vec<String>,
     pub blocklist_domains:       Vec<String>,
     /// Prefix added to the subject of a message classified as spam. Rewriting
@@ -535,6 +538,7 @@ impl Default for ServerConfig {
             greylist_delay_secs:   300,
             greylist_window_hours: 4,
             allowlist_senders:     Vec::new(),
+            image_allowlist:       Vec::new(),
             blocklist_senders:     Vec::new(),
             blocklist_domains:     Vec::new(),
             spam_subject_prefix:   String::new(),
@@ -919,10 +923,13 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
             .map(|p| p as u16)
     };
     // A multiline list setting: one entry per line, lowercased, blanks dropped.
+    // A `#` line is a comment: it can never match an address anyway, and letting
+    // administrators label sections keeps a long list readable.
     let list_of = |key: &str| -> Vec<String> {
         str_of(key)
             .map(|raw| {
                 raw.lines()
+                    .filter(|line| !line.trim_start().starts_with('#'))
                     .flat_map(|line| line.split(','))
                     .map(|entry| entry.trim().to_ascii_lowercase())
                     .filter(|entry| !entry.is_empty())
@@ -1113,6 +1120,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
         greylist_delay_secs:   int_of("greylist_delay_secs", 30, 3_600, defaults.greylist_delay_secs),
         greylist_window_hours: int_of("greylist_window_hours", 1, 168, defaults.greylist_window_hours),
         allowlist_senders:     list_of("allowlist_senders"),
+        image_allowlist:       list_of("image_allowlist"),
         blocklist_senders:     list_of("blocklist_senders"),
         blocklist_domains:     list_of("blocklist_domains"),
         spam_subject_prefix:   str_of("spam_subject_prefix").unwrap_or_default(),
@@ -1435,6 +1443,15 @@ mod tests {
         let cfg = from_settings(&json!({}));
         assert!(cfg.trusted_upstreams.is_empty());
         assert!(!cfg.is_trusted_upstream(ip("15.100.1.1")));
+    }
+
+    /// A stocked list ships with section headers; they must not become entries.
+    #[test]
+    fn list_comments_are_not_entries() {
+        let cfg = from_settings(&json!({
+            "image_allowlist": "# Grandes plateformes\n@github.com\n   # commentaire indenté\n@ovhcloud.com\n",
+        }));
+        assert_eq!(cfg.image_allowlist, vec!["@github.com", "@ovhcloud.com"]);
     }
 
     #[test]

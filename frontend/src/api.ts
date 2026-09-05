@@ -530,6 +530,15 @@ export const mailApi = {
     api.delete(`/mail/mailbox-credentials/${id}`).then(r => r.data),
 
   // Autocomplétion des destinataires (index d'adresses côté mail).
+  /** Senders whose remote images are always displayed, plus the instance-wide
+   *  allowlist the administrator maintains (read-only for the user). */
+  listImageSenders: () =>
+    api.get<{ senders: { id: string; email: string; created_at: string }[]; instance: string[] }>('/mail/image-senders').then(r => r.data),
+  allowImageSender: (email: string) =>
+    api.post<{ email: string }>('/mail/image-senders', { email }).then(r => r.data),
+  forgetImageSender: (id: string) =>
+    api.delete(`/mail/image-senders/${id}`).then(r => r.data),
+
   /** Reply to a calendar invitation (iMIP): emails the organizer our PARTSTAT
    *  and records the choice on the message. */
   inviteReply: (

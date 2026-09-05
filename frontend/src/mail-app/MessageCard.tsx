@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown, Reply, ReplyAll, Forward, Star, MoreVertical, Paperclip, X,
-  Lock, ShieldCheck, ShieldAlert,
+  Lock, ShieldCheck, ShieldAlert, ImageOff,
 } from 'lucide-react'
 import { useIsMobile } from '@ui'
 import { mailApi, EmailMessage, Attachment } from '../api'
@@ -16,6 +16,7 @@ import MessageActionsMenu from './MessageActionsMenu'
 import MessageDetails from './MessageDetails'
 import SenderAvatar from './SenderAvatar'
 import RichCards from './richCards/RichCards'
+import { useImagePolicy } from './useImagePolicy'
 
 /** Reply / Reply-all / Forward: 36px pills with a hairline border, like Gmail's. */
 function ReplyPill({ onClick, icon, label }: {
@@ -133,6 +134,21 @@ export default function MessageCard({
   // Does a "reply all" reach anyone a plain reply wouldn't?
   const hasOtherRecipients =
     replyAllExtras(message, accounts.map(a => a.email_address)).length > 0
+
+  // ── Remote images ──────────────────────────────────────────────────────────
+  // Fetching one tells its host the message was opened, so an unknown sender's
+  // images are held back until the reader asks — Gmail's behaviour.
+  const imagePolicy = useImagePolicy()
+  const qcImages = useQueryClient()
+  const [showImagesOnce, setShowImagesOnce] = useState(false)
+  const [remoteImages, setRemoteImages] = useState(0)
+  const trusted =
+    imagePolicy.alwaysShow || imagePolicy.isAllowed(message.from_email, message.auth_dmarc)
+  const blockImages = !trusted && !showImagesOnce
+  const allowSender = useMutation({
+    mutationFn: () => mailApi.allowImageSender(message.from_email.toLowerCase()),
+    onSuccess: () => qcImages.invalidateQueries({ queryKey: ['mail-image-senders'] }),
+  })
   // Mobile: lighter header — short date, no raw address, star + "⋮" only
   // (Reply stays as the big button under the message).
   const isMobile = useIsMobile()
@@ -362,9 +378,37 @@ ${message.body_html ?? message.body_text ?? ''}`}
       </div>
 
       <div className={`mt-1 ${isMobile ? '' : 'ps-[52px]'}`}>
+        {/* Gmail-style notice: images held back, with a one-off reveal and a
+            "trust this sender" that persists. Only shown when the message
+            actually carries remote images. */}
+        {message.body_html && blockImages && remoteImages > 0 && (
+          <div className="flex items-center gap-2 flex-wrap mb-2 px-3 py-2 rounded-lg bg-surface-1 border border-border text-sm">
+            <ImageOff size={15} className="text-text-tertiary flex-shrink-0" />
+            <span className="text-text-secondary">
+              {t('mail_images_blocked', { defaultValue: 'Les images externes de ce message ne sont pas affichées.' })}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowImagesOnce(true)}
+              className="h-7 px-2 rounded-md text-primary hover:bg-primary/10 transition-colors"
+            >
+              {t('mail_images_show', { defaultValue: 'Afficher les images' })}
+            </button>
+            <button
+              type="button"
+              disabled={allowSender.isPending}
+              onClick={() => { setShowImagesOnce(true); allowSender.mutate() }}
+              className="h-7 px-2 rounded-md text-primary hover:bg-primary/10 disabled:opacity-60 transition-colors"
+            >
+              {t('mail_images_always', { defaultValue: 'Toujours afficher les images de {{sender}}', sender: message.from_email })}
+            </button>
+          </div>
+        )}
         {message.body_html ? (
           <EmailHtmlView
             html={message.body_html}
+            blockRemoteImages={blockImages}
+            onRemoteImages={setRemoteImages}
             // Lets the viewer rebuild a De/Envoyé/À/Objet block above the "•••"
             // when the quoted mail has none: its recipient is this message's
             // author, and its subject is the thread's.

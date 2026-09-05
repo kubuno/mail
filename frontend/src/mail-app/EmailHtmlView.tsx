@@ -25,6 +25,96 @@ function sanitizeEmailHtml(html: string): string {
   })
 }
 
+// ── Remote images ────────────────────────────────────────────────────────────
+// Loading a remote image tells its host the message was opened (and leaks the
+// reader's IP), which is why Gmail asks before displaying images from a sender
+// you have not trusted yet. We neutralise every URL that would leave the
+// instance — and ONLY those: `cid:` (the message's own inline parts), `data:`
+// and same-origin URLs carry nothing outward, so blocking them would break
+// signatures and attachments for no privacy gain.
+//
+// This MUST run while the body is still detached from the document: once it is
+// appended to the shadow root the browser has already started fetching.
+
+/** True when this URL would make the browser reach outside the instance. */
+function isRemoteUrl(raw: string): boolean {
+  const u = raw.trim()
+  if (!u || u.startsWith('cid:') || u.startsWith('data:') || u.startsWith('#')) return false
+  if (/^https?:\/\//i.test(u)) {
+    try { return new URL(u).origin !== window.location.origin } catch { return true }
+  }
+  return /^\/\//.test(u) // protocol-relative → remote
+}
+
+/** 1×1 transparent GIF: keeps the layout without asking anyone for bytes. */
+const BLANK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+/** Strips remote `url(...)` references from a CSS text (style sheets and inline
+ *  style attributes both carry background images). */
+function stripRemoteCssUrls(css: string): string {
+  return css.replace(/url\(\s*(['"]?)([^)'"]+)\1\s*\)/gi, (whole, _q, url: string) =>
+    isRemoteUrl(url) ? 'none' : whole)
+}
+
+/** Replaces every remote image reference in a detached email body with a blank
+ *  pixel, remembering the original in `data-kb-src` so it can be restored.
+ *  Returns how many were held back. */
+function blockRemoteImagesIn(body: HTMLElement, styles: HTMLStyleElement[]): number {
+  let blocked = 0
+  for (const img of Array.from(body.querySelectorAll('img'))) {
+    const src = img.getAttribute('src')
+    if (src && isRemoteUrl(src)) {
+      img.setAttribute('data-kb-src', src)
+      img.setAttribute('src', BLANK_PIXEL)
+      blocked++
+    }
+    // `srcset` would defeat a blocked `src` on its own.
+    const srcset = img.getAttribute('srcset')
+    if (srcset && srcset.split(',').some(c => isRemoteUrl(c.trim().split(/\s+/)[0] ?? ''))) {
+      img.setAttribute('data-kb-srcset', srcset)
+      img.removeAttribute('srcset')
+      blocked++
+    }
+  }
+  // Legacy `background="…"` attribute and CSS backgrounds in inline styles.
+  for (const el of Array.from(body.querySelectorAll<HTMLElement>('[background]'))) {
+    const bg = el.getAttribute('background') ?? ''
+    if (isRemoteUrl(bg)) {
+      el.setAttribute('data-kb-background', bg)
+      el.removeAttribute('background')
+      blocked++
+    }
+  }
+  for (const el of Array.from(body.querySelectorAll<HTMLElement>('[style*="url("]'))) {
+    const style = el.getAttribute('style') ?? ''
+    const stripped = stripRemoteCssUrls(style)
+    if (stripped !== style) {
+      el.setAttribute('data-kb-style', style)
+      el.setAttribute('style', stripped)
+      blocked++
+    }
+  }
+  // …and in the email's own stylesheets.
+  for (const st of styles) {
+    const css = st.textContent ?? ''
+    const stripped = stripRemoteCssUrls(css)
+    if (stripped !== css) {
+      st.setAttribute('data-kb-css', css)
+      st.textContent = stripped
+      blocked++
+    }
+  }
+  return blocked
+}
+
+/** Counts what WOULD be blocked, without touching anything — so the banner can
+ *  stay silent on a message that has no remote image at all. */
+function countRemoteImages(body: HTMLElement, styles: HTMLStyleElement[]): number {
+  const probe = body.cloneNode(true) as HTMLElement
+  const probeStyles = styles.map(st => st.cloneNode(true) as HTMLStyleElement)
+  return blockRemoteImagesIn(probe, probeStyles)
+}
+
 // Builds the email DOM nodes: the <style> elements (head + body) and the FULL
 // <body> element. We return real nodes (not a string) because injecting `<body>`
 // through innerHTML would have it REMOVED by the fragment parser (html/head/body
@@ -377,9 +467,16 @@ const BASE_CSS = `
   hr { border: none; border-top: 1px solid #dadce0; margin: 12px 0; }
 `
 
-export default function EmailHtmlView({ html, quoteContext }: { html: string; quoteContext?: QuoteContext }) {
+export default function EmailHtmlView({ html, quoteContext, blockRemoteImages = false, onRemoteImages }: {
+  html: string
+  quoteContext?: QuoteContext
+  /** Hold back images that would be fetched from outside the instance. */
+  blockRemoteImages?: boolean
+  /** Reports how many remote images the message carries (0 = no banner). */
+  onRemoteImages?: (count: number) => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
-  const ctxKey = `${quoteContext?.to ?? ''}|${quoteContext?.subject ?? ''}`
+  const ctxKey = `${quoteContext?.to ?? ''}|${quoteContext?.subject ?? ''}|${blockRemoteImages}`
 
   useEffect(() => {
     const el = ref.current
@@ -396,6 +493,9 @@ export default function EmailHtmlView({ html, quoteContext }: { html: string; qu
     // 2. The email <style> elements then its FULL <body> (append → the element
     //    survives, so the `body { … }` rules and the inline style / bgcolor apply).
     const { styles, body } = buildEmailNodes(html)
+    // Remote images: neutralise (or just count) them while the body is still
+    // detached — appending it is what starts the network fetches.
+    onRemoteImages?.(blockRemoteImages ? blockRemoteImagesIn(body, styles) : countRemoteImages(body, styles))
     // Fold the quoted history behind a "•••" toggle before it goes on screen, so
     // opening a reply shows the new content, not the whole thread (Gmail-style).
     installQuoteToggle(body, quoteContext)

@@ -121,7 +121,7 @@ description = "Les boîtes, alias, listes de diffusion et catch-all que cette in
 
 [[setting_groups]]
 id       = "provisioning"
-title    = "Attribution des adresses"
+label    = "Attribution des adresses"
 icon     = "AtSign"
 description = "Comment une adresse est attribuée automatiquement à chaque compte dès qu'un domaine primaire est vérifié, et selon quelle règle son local-part est construit. L'administrateur garde la main : une adresse posée à la main n'est jamais remplacée."
 
@@ -785,6 +785,72 @@ category    = "Filtrage et anti-abus"
 group       = "filtering"
 depends_on  = "greylisting_enabled"
 advanced    = true
+
+[[settings]]
+key         = "image_allowlist"
+scope       = "global"
+type        = "string"
+default     = """
+# Services publics et administrations (FR)
+@laposte.fr
+@impots.gouv.fr
+@ameli.fr
+@service-public.fr
+@urssaf.fr
+@francetravail.fr
+# Transport et energie
+@sncf-connect.com
+@sncf.com
+@ratp.fr
+@airfrance.fr
+@edf.fr
+@engie.fr
+# Operateurs et hebergeurs
+@orange.fr
+@sfr.fr
+@free.fr
+@bouyguestelecom.fr
+@ovhcloud.com
+@ovh.com
+@scaleway.com
+@online.net
+# Grandes plateformes
+@google.com
+@accounts.google.com
+@youtube.com
+@microsoft.com
+@apple.com
+@amazon.fr
+@amazon.com
+@linkedin.com
+@dropbox.com
+@paypal.com
+@stripe.com
+@adobe.com
+# Outils et developpement
+@github.com
+@gitlab.com
+@atlassian.com
+@slack.com
+@notion.so
+@figma.com
+@docker.com
+@npmjs.com
+@jetbrains.com
+@mozilla.org
+# Commerce et voyage
+@booking.com
+@fnac.com
+@cdiscount.com
+@leboncoin.fr
+"""
+label       = "Images distantes toujours affichées"
+description = "Une adresse ou un @domaine par ligne. Les images externes de ces expéditeurs s'affichent sans confirmation pour TOUS les comptes, en plus des expéditeurs que chacun autorise de son côté. Une entrée n'agit que si le message passe DMARC : personne n'ayant choisi cette liste individuellement, une adresse usurpée ne doit pas pouvoir s'en servir. Livrée pré-remplie des grands émetteurs légitimes ; vider la liste fait de chaque expéditeur une demande explicite — charger une image distante révèle à son hébergeur que le message a été ouvert."
+category    = "Filtrage et anti-abus"
+group       = "filtering"
+multiline   = true
+placeholder = "@partenaire.example\nnewsletter@interne.example"
+risk        = "warning"
 
 [[settings]]
 key         = "allowlist_senders"

@@ -179,6 +179,75 @@ pub async fn unblock_sender(
     Ok(Json(serde_json::json!({ "message": "Débloqué" })))
 }
 
+// ── Expéditeurs dont les images distantes sont affichées ─────────────────────
+// The user's own allowlist ("Always show images from X"), plus the instance-wide
+// one the administrator maintains — the latter is read-only here and applies to
+// everyone, the way a Workspace image allowlist set at the top level does.
+
+pub async fn list_image_senders(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<serde_json::Value>, MailError> {
+    let senders = sqlx::query_as::<_, BlockedSender>(
+        "SELECT id, email, created_at FROM mail.image_allowed_senders WHERE user_id = $1 ORDER BY email",
+    )
+    .bind(user.id)
+    .fetch_all(&state.db)
+    .await?;
+
+    // The instance policy is advisory to the client: unreadable means "no
+    // instance allowlist", never "block everything" — a missing policy must not
+    // silently widen NOR narrow what the user already allowed.
+    let http = reqwest::Client::new();
+    let instance = match crate::server::config::fetch(&http, &state.settings).await {
+        Some(cfg) => cfg.image_allowlist,
+        None => {
+            tracing::warn!("Politique d'instance illisible — liste blanche d'images ignorée");
+            Vec::new()
+        }
+    };
+
+    Ok(Json(serde_json::json!({ "senders": senders, "instance": instance })))
+}
+
+pub async fn allow_image_sender(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(dto): Json<BlockSenderDto>,
+) -> Result<Json<serde_json::Value>, MailError> {
+    // Either a full address or a whole domain ("@example.com").
+    let email = dto.email.trim().to_lowercase();
+    let is_domain = email.starts_with('@') && email.len() > 1 && email[1..].contains('.');
+    if email.is_empty() || (!is_domain && !email.contains('@')) {
+        return Err(MailError::Validation("Adresse ou domaine invalide".into()));
+    }
+    sqlx::query(
+        "INSERT INTO mail.image_allowed_senders (user_id, email) VALUES ($1, $2)
+         ON CONFLICT (user_id, email) DO NOTHING",
+    )
+    .bind(user.id)
+    .bind(&email)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(serde_json::json!({ "message": "Images autorisées", "email": email })))
+}
+
+pub async fn forget_image_sender(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, MailError> {
+    let res = sqlx::query("DELETE FROM mail.image_allowed_senders WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user.id)
+        .execute(&state.db)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(MailError::NotFound(format!("Entrée {id}")));
+    }
+    Ok(Json(serde_json::json!({ "message": "Retiré" })))
+}
+
 pub async fn delete_filter(
     State(state): State<AppState>,
     user: AuthUser,

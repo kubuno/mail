@@ -11,6 +11,20 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Remote images from an unknown sender are held back, Gmail-style.** A message
+  whose images would be fetched from outside the instance now shows a notice —
+  "External images are not displayed" — with *Display images* (this message) and
+  *Always display images from <sender>* (remembered). Nothing leaves the browser
+  until you ask: fetching a remote image tells its host the message was opened.
+  Inline (`cid:`), embedded (`data:`) and same-origin images are never touched,
+  and CSS backgrounds are neutralised too, not just `<img>`.
+- **Administrators define an instance-wide image allowlist** (Mail → Filtering)
+  applying to every account on top of each user's own list, the way a Workspace
+  allowlist set at the top level applies to all organisations. It ships stocked
+  with major legitimate senders, accepts `# comments` for grouping, and an entry
+  only takes effect on a DMARC-authenticated message — nobody opted into it
+  individually, so a spoofed From must not be able to ride it.
+
 - **Notifications for calendar invitations.** Receiving an invitation, a reply
   to an invitation you sent (accepted / declined / maybe) or a cancellation now
   raises its own notification, on top of the plain "new mail" one. Each is a
@@ -92,6 +106,11 @@ number at release time, and CI publishes that section as the GitHub Release note
   `OR`, negation, parentheses), and is suggested in the search bar.
 
 ### Fixed
+
+- **The Mail module's settings never reached the admin console.** One
+  `[[setting_groups]]` entry declared `title` where the manifest requires
+  `label`, so the whole `module.toml` failed to load and NOT ONE of the module's
+  68 instance settings was registered.
 
 - **The condition builder's "Condition" and "Group" text buttons are now icon
   buttons with tooltips** — a lighter group header, same actions.
