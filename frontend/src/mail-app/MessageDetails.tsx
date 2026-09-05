@@ -34,6 +34,15 @@ export default function MessageDetails({ message, lang, important = false, onClo
     </>
   )
 
+  // "Sent by", "signed by" and "security" are read from headers the MESSAGE
+  // carries. Our own SMTP server verifies SPF/DKIM/DMARC on delivery and records
+  // the verdict; a message synced from an external mailbox arrives with none of
+  // that, so its `d=` tag is a claim anyone can write. Say so, rather than let
+  // an unchecked "signed by paypal.com" read as a guarantee.
+  const unverified = message.auth_dmarc === 'pass'
+    ? ''
+    : ` ${t('mail_detail_unverified', { defaultValue: '(non vérifié)' })}`
+
   const detailRows: [React.ReactNode, React.ReactNode][] = [
     [t('mail_detail_from', { defaultValue: 'De :' }),
      message.from_name
@@ -51,10 +60,10 @@ export default function MessageDetails({ message, lang, important = false, onClo
     [t('mail_detail_date', { defaultValue: 'Date :' }), formatFullDate(message.sent_at ?? message.received_at, lang)],
     [t('mail_detail_subject', { defaultValue: 'Objet :' }), message.subject],
     ...(message.mailed_by
-      ? [[t('mail_detail_mailed_by', { defaultValue: 'Envoyé par :' }), message.mailed_by] as [string, string]]
+      ? [[t('mail_detail_mailed_by', { defaultValue: 'Envoyé par :' }), message.mailed_by + unverified] as [string, string]]
       : []),
     ...(message.signed_by
-      ? [[t('mail_detail_signed_by', { defaultValue: 'signé par :' }), message.signed_by] as [string, string]]
+      ? [[t('mail_detail_signed_by', { defaultValue: 'signé par :' }), message.signed_by + unverified] as [string, string]]
       : []),
     ...(message.security
       ? [[t('mail_detail_security', { defaultValue: 'sécurité :' }),
@@ -66,6 +75,7 @@ export default function MessageDetails({ message, lang, important = false, onClo
             : <span className="inline-flex items-center gap-1.5">
                 <Lock size={14} className="text-[#188038]" />
                 {t('mail_detail_tls', { defaultValue: 'Chiffrement standard (TLS)' })}
+                {unverified && <span className="text-[#5f6368]">{unverified}</span>}
               </span>] as [React.ReactNode, React.ReactNode]]
       : []),
     // Importance, shown the way Gmail does: the marker itself IS the label.

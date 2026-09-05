@@ -107,6 +107,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Trust indicators no longer read as guarantees when nothing was verified.**
+  "Sent by", "signed by" and "security" are read from headers the message
+  carries. Our own SMTP server checks SPF/DKIM/DMARC on delivery, but a message
+  synced from an external mailbox arrives with none of that — so a forged
+  `DKIM-Signature: d=paypal.com` displayed as "signed by paypal.com". Unless the
+  message actually passed DMARC, these values are now marked "(non vérifié)".
+
 - **An attachment can no longer be rendered as a document in Kubuno's origin.**
   Attachments were served `inline` with the `Content-Type` the SENDER wrote, so
   an HTML or SVG part opened as a page with the reader's session — and a second
