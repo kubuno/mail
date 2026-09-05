@@ -107,6 +107,17 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **Nothing in an e-mail can execute.** The body sanitiser was audited against
+  Gmail's policy and hardened: `data:` and `cid:` URLs are now accepted ONLY as
+  an image source, so a link can no longer carry an inline
+  `data:text/html;base64,<script>` document; and e-mail CSS — which the
+  sanitiser passed through untouched — is stripped of `@import` (which pulls a
+  remote stylesheet) and of the legacy script-in-CSS hooks `expression()`,
+  `behavior:` and `-moz-binding`, in `<style>` blocks as well as `style=`
+  attributes. Scripts, event handlers, iframes, objects, embeds, forms, `<meta
+  refresh>`, `<base>`, `<link>` and SVG were already removed; 21 attack shapes
+  are now pinned by tests.
+
 - **The Mail module's settings never reached the admin console.** One
   `[[setting_groups]]` entry declared `title` where the manifest requires
   `label`, so the whole `module.toml` failed to load and NOT ONE of the module's

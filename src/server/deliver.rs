@@ -580,38 +580,12 @@ pub async fn deliver_local(
 /// HTML relies on presentational attributes no modern sanitiser allows by
 /// default, and dropping them turns legitimate mail into unreadable soup —
 /// while scripts, event handlers and unknown URL schemes stay out.
+/// The message body sanitiser — the SAME policy as every other ingestion path
+/// (`services::html_sanitize`). It used to be a second, hand-copied builder
+/// here, which is how a hardening applied on one side silently missed the
+/// other; local delivery now goes through the shared one.
 fn sanitize_html(html: &str) -> String {
-    ammonia::Builder::default()
-        // Keep <style> blocks and the structural tags mail relies on.
-        .rm_clean_content_tags(&["style"])
-        .add_tags(&["style", "head", "html", "body", "font", "center"])
-        // Generic attributes present on almost every element of an HTML mail.
-        .add_generic_attributes(&[
-            "style", "class", "id", "dir", "lang",
-            "align", "valign",
-            "bgcolor", "background", "color",
-            "width", "height",
-            "role", "aria-label", "aria-hidden",
-        ])
-        // <a>: target and name (anchors). NOT `rel`: ammonia 4.x panics when it
-        // is listed here while `link_rel` (default: noopener noreferrer) already
-        // adds it to every link.
-        .add_tag_attributes("a", &["target", "name"])
-        // <img>: legacy HTML mail attributes + lazy loading.
-        .add_tag_attributes("img", &["border", "hspace", "vspace", "loading"])
-        // <font>: colour, face, size (old mailers / Outlook).
-        .add_tag_attributes("font", &["color", "face", "size"])
-        // <table> and friends: the usual HTML mail attributes.
-        .add_tag_attributes("table", &["cellpadding", "cellspacing", "border", "bgcolor", "background", "summary"])
-        .add_tag_attributes("tr", &["bgcolor", "valign", "height"])
-        .add_tag_attributes("td", &["cellpadding", "cellspacing", "bgcolor", "background", "nowrap", "valign", "width", "height"])
-        .add_tag_attributes("th", &["cellpadding", "cellspacing", "bgcolor", "background", "nowrap", "valign", "width", "height"])
-        // <body>: legacy background colours.
-        .add_tag_attributes("body", &["bgcolor", "background", "text", "link", "alink", "vlink"])
-        // Allow data: (inline base64 images) and cid: (inline MIME parts).
-        .add_url_schemes(&["data", "cid"])
-        .clean(html)
-        .to_string()
+    crate::services::html_sanitize::sanitize_email_html(html)
 }
 
 /// Attaches the message to a conversation, inside the caller's transaction.
