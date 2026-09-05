@@ -91,7 +91,11 @@ export default function MailSearchBar() {
 
   // Reflect external query changes (filter panel, "filter similar" action…)
   // without clobbering what the user is currently typing.
-  useEffect(() => { if (!focusedRef.current) setQ(searchQuery) }, [searchQuery])
+  // Mirror the committed query into the box — but never over text the user is
+  // typing. A query CLEARED by the store is the one exception: that is a
+  // navigation (a sidebar click, back/forward out of a search), never a chip
+  // refinement, and the box must empty even while focused (Gmail parity).
+  useEffect(() => { if (!focusedRef.current || searchQuery === '') setQ(searchQuery) }, [searchQuery])
 
   // Debounced preview query.
   useEffect(() => {

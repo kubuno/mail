@@ -57,7 +57,7 @@ export default function MailApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const { pathname } = useLocation()
+  const { pathname, key: routerKey } = useLocation()
   const [pdfUrl,  setPdfUrl]  = useState<string | null>(null)
   const [pdfName, setPdfName] = useState('')
   const openPdf = (url: string, name: string) => { setPdfUrl(url); setPdfName(name) }
@@ -75,7 +75,12 @@ export default function MailApp() {
     if (labelMatch)       setCurrentFolder('label', labelMatch[1])
     else if (folderMatch) setCurrentFolder('custom', null, decodeURIComponent(folderMatch[1]))
     else                  setCurrentFolder(folderFromPath(pathname))
-  }, [pathname, setCurrentFolder])
+    // `routerKey` changes on EVERY router navigation — a sidebar hash link
+    // («/mail/#category/main», re-clicking the active folder) as much as a new
+    // path — but not on the raw `pushState` the search writer below performs.
+    // So every sidebar click re-enters its folder and thereby LEAVES the search
+    // (Gmail parity), while committing a search never bounces the folder.
+  }, [pathname, routerKey, setCurrentFolder])
 
   // The open conversation lives in the URL hash — «#inbox/<id>» — so a reload
   // or a shared link lands back on the same message. The older «?thread=<id>»
@@ -106,7 +111,10 @@ export default function MailApp() {
       const m = window.location.hash.match(/^#search\/(.*?)(\/[0-9a-f-]{36})?$/i)
       const q = m ? decodeURIComponent(m[1]) : ''
       if (m && q !== useMailStore.getState().searchQuery) useMailStore.getState().setSearchQuery(q)
-      else if (!m && useMailStore.getState().searchQuery && !window.location.hash) {
+      // Any non-search hash — «#inbox», «#category/<id>», back/forward out of a
+      // search — leaves the search (Gmail parity). Folder ROUTES («/mail/spam»)
+      // never fire `hashchange`; they leave it through `setCurrentFolder`.
+      else if (!m && useMailStore.getState().searchQuery) {
         useMailStore.getState().setSearchQuery('')
       }
     }
