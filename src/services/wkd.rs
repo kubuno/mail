@@ -17,7 +17,6 @@
 //! The z-base-32 alphabet and the hash rule are verified in tests against the
 //! canonical vectors from the spec / Sequoia (`joe.doe`, `test1`).
 
-use std::time::Duration;
 
 use sha1::{Digest, Sha1};
 
@@ -91,20 +90,28 @@ pub fn candidate_urls(addr: &str) -> Option<[String; 2]> {
 /// Network access is bounded (short timeout, capped body): a WKD lookup reaches
 /// a domain the recipient controls, so it must never hang a send or let a hostile
 /// server stream an unbounded response.
+/// Percent-encodes the query value of a WKD lookup. The local part is
+/// z-base-32 in the path, but the `l=` parameter carries it verbatim.
+fn urlencoding_lite(v: &str) -> String {
+    v.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 pub async fn discover(http: &reqwest::Client, addr: &str) -> Option<(String, String)> {
     let (local, _domain) = split_address(addr)?;
     let local = local.to_string();
     let urls = candidate_urls(addr)?;
 
     for url in urls {
-        let resp = match http
-            .get(&url)
-            .query(&[("l", local.as_str())])
-            .timeout(Duration::from_secs(8))
-            .send()
-            .await
-        {
-            Ok(r) if r.status().is_success() => r,
+        // The host is built from a correspondent's domain, so the lookup goes
+        // through the SSRF guard (public addresses only, no redirects).
+        let full = format!("{url}?l={}", urlencoding_lite(&local));
+        let resp = match crate::services::net_guard::guarded_get(http, &full).await {
+            Some(r) if r.status().is_success() => r,
             _ => continue,
         };
         // Cap the body: a valid certificate is a few KB; anything much larger is

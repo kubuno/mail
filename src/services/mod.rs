@@ -24,6 +24,7 @@ pub mod templates;
 pub mod smtp_service;
 pub mod spam_classifier;
 pub mod imip;
+pub mod net_guard;
 pub mod structured_data;
 pub mod sync_service;
 pub mod vacation;

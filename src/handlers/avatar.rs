@@ -60,7 +60,7 @@ pub async fn sender_avatar(
 
     let domain = q.email.rsplit('@').next().unwrap_or_default().to_string();
 
-    let http = reqwest::Client::new();
+    let http = crate::services::net_guard::guarded_client();
     let authenticated = q.dmarc.as_deref() == Some("pass");
     let found = avatars::for_domain(&state.db, &http, &domain, authenticated).await.map_err(|e| {
         tracing::error!(error = %e, domain, "Résolution de l'avatar d'expéditeur échouée");

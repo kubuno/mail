@@ -167,8 +167,11 @@ async fn resolve(http: &reqwest::Client, domain: &str) -> Result<Option<Avatar>>
 
     // An unreachable host or an unknown domain is a MISSING avatar, never an
     // error: the reader keeps their initial, and the request must not fail.
-    let response = match http.get(&url).timeout(std::time::Duration::from_secs(6)).send().await {
-        Ok(r) if r.status().is_success() => r,
+    // The host comes from a third party (the sender's domain, or a URL its DNS
+    // zone publishes), so the fetch goes through the SSRF guard: public
+    // addresses only, and no redirect to talk us out of that.
+    let response = match crate::services::net_guard::guarded_get(http, &url).await {
+        Some(r) if r.status().is_success() => r,
         _ => return Ok(None),
     };
 
