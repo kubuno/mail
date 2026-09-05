@@ -11,6 +11,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **RSVP to calendar invitations, Gmail-style.** An invitation card now offers
+  Yes / Maybe / No. Answering emails the organizer a proper iMIP reply
+  (`text/calendar; method=REPLY` with the attendee's PARTSTAT), mirrors the
+  event into the calendar for Yes/Maybe (confirmed/tentative), and remembers the
+  answer so the chosen button stays selected on reload.
+
 - **Gmail-style rich cards for structured mail.** Emails carrying schema.org
   annotations (JSON-LD) or a calendar invitation (ICS) now show a card above the
   body: calendar events/invitations, flight, hotel, train/bus, restaurant, car
@@ -93,23 +99,6 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
-
-
-
-- **The RPM package now names the same maintainer as the Debian one.** Its
-  changelog entry read `Kubuno Contributors <contact@kubuno.io>`, an address on
-  a domain the project does not use; it now reads
-  `Martinien OLINGA <kubuno@martinienolinga.com>`, matching the `.deb`. Nothing
-  about what the package installs changes.
-
-- **The package maintainer address moved to the project's own domain.** The
-  Debian package's `Maintainer` field now reads
-  `Martinien OLINGA <kubuno@martinienolinga.com>`. Nothing about what the
-  package installs changes.
-
-- **Security reports now go to `security@martinienolinga.com`.** The address
-  published in `SECURITY.md` moved to the project's own domain; the previous
-  one is retired. Reporting through GitHub Security Advisories is unaffected.
 
 - **The README now opens with the module's logo.** The public README on
   GitHub now shows the module's designer logo (the same PNG shown as the

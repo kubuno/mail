@@ -124,6 +124,11 @@ pub struct EmailMessage {
     #[sqlx(default)]
     #[serde(default)]
     pub structured_data: Option<Value>,
+    /// RSVP to a calendar invitation (accepted|tentative|declined), remembered
+    /// so the card shows the chosen answer on reload.
+    #[sqlx(default)]
+    #[serde(default)]
+    pub invite_response: Option<String>,
     /// Provenance shown in the message details panel.
     pub mailed_by: Option<String>,
     pub signed_by: Option<String>,

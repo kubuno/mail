@@ -117,6 +117,7 @@ pub fn build(state: AppState) -> Router {
         .route("/messages/:id/attachments/:index", get(messages::download_attachment))
         .route("/messages/:id/star",     post(messages::star_message))
         .route("/messages/:id/read",     patch(messages::mark_read))
+        .route("/messages/:id/invite-reply", post(messages::invite_reply))
         .route("/send",                  post(messages::send_message))
         // Sender avatar (BIMI, resolved and cached server-side).
         .route("/avatar",                get(avatar::sender_avatar))

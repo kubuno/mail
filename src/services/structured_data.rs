@@ -156,18 +156,21 @@ fn ics_datetime(value: &str, params: &str) -> Option<String> {
     Some(format!("{date}T{time}{zulu}"))
 }
 
-/// Organizer display name: `CN` param if present, else the mailto address.
-fn organizer_name(params: &str, value: &str) -> Option<String> {
-    for p in params.split(';') {
-        if let Some(cn) = p.strip_prefix("CN=").or_else(|| p.strip_prefix("cn=")) {
-            return Some(cn.trim_matches('"').to_string());
-        }
-    }
+/// Organizer display name (`CN` param) and email (the `mailto:` address). Either
+/// may be absent; the name falls back to the address when there is no `CN`.
+fn organizer_parts(params: &str, value: &str) -> (Option<String>, Option<String>) {
+    let cn = params.split(';').find_map(|p| {
+        p.strip_prefix("CN=")
+            .or_else(|| p.strip_prefix("cn="))
+            .map(|c| c.trim_matches('"').to_string())
+    });
     let v = value.trim();
-    v.strip_prefix("mailto:")
+    let email = v
+        .strip_prefix("mailto:")
         .or_else(|| v.strip_prefix("MAILTO:"))
-        .map(str::to_string)
-        .or_else(|| (!v.is_empty()).then(|| v.to_string()))
+        .map(str::to_string);
+    let name = cn.or_else(|| email.clone());
+    (name, email)
 }
 
 /// First VEVENT of an ICS document → an `Event`-shaped JSON-LD node, tagged with
@@ -179,8 +182,10 @@ fn event_from_ics(ics: &str) -> Option<Value> {
         .find_map(|l| split_prop(l).filter(|(n, ..)| n == "METHOD").map(|(_, _, v)| v.to_ascii_uppercase()));
 
     let mut in_event = false;
-    let (mut summary, mut start, mut end, mut location, mut description, mut organizer, mut url) =
-        (None, None, None, None, None, None, None);
+    let (mut summary, mut start, mut end, mut location, mut description, mut url) =
+        (None, None, None, None, None, None);
+    let (mut organizer, mut organizer_email, mut uid, mut sequence) =
+        (None, None, None, None);
 
     for line in &lines {
         let up = line.to_ascii_uppercase();
@@ -202,7 +207,13 @@ fn event_from_ics(ics: &str) -> Option<Value> {
             "LOCATION" => location = Some(unescape_text(&value)),
             "DESCRIPTION" => description = Some(unescape_text(&value)),
             "URL" => url = Some(value),
-            "ORGANIZER" => organizer = organizer_name(&params, &value),
+            "UID" => uid = Some(value),
+            "SEQUENCE" => sequence = value.trim().parse::<i64>().ok(),
+            "ORGANIZER" => {
+                let (n, e) = organizer_parts(&params, &value);
+                organizer = n;
+                organizer_email = e;
+            }
             _ => {}
         }
     }
@@ -225,6 +236,12 @@ fn event_from_ics(ics: &str) -> Option<Value> {
     if let Some(d) = description { obj.insert("description".into(), json!(d)); }
     if let Some(u) = url { obj.insert("url".into(), json!(u)); }
     if let Some(o) = organizer { obj.insert("organizer".into(), json!({ "name": o })); }
+    // Fields an iMIP REPLY needs: organizer address, event UID/SEQUENCE, and the
+    // raw ICS so the reply can echo the request's timing exactly.
+    if let Some(e) = organizer_email { obj.insert("organizerEmail".into(), json!(e)); }
+    if let Some(u) = uid { obj.insert("uid".into(), json!(u)); }
+    if let Some(sq) = sequence { obj.insert("sequence".into(), json!(sq)); }
+    obj.insert("_ics".into(), json!(ics));
     Some(node)
 }
 

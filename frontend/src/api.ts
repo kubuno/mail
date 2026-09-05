@@ -136,6 +136,8 @@ export interface EmailMessage {
   /** schema.org rich-card nodes (JSON-LD + ICS invites) extracted at sync,
    *  rendered as Gmail-style cards above the body. Absent for ordinary mail. */
   structured_data?: SchemaNode[] | null
+  /** RSVP to a calendar invitation, remembered across reloads. */
+  invite_response?: 'accepted' | 'tentative' | 'declined' | null
   /** Provenance headers, shown in the details panel. */
   reply_to?:  string | null
   mailed_by?: string | null
@@ -528,6 +530,11 @@ export const mailApi = {
     api.delete(`/mail/mailbox-credentials/${id}`).then(r => r.data),
 
   // Autocomplétion des destinataires (index d'adresses côté mail).
+  /** Reply to a calendar invitation (iMIP): emails the organizer our PARTSTAT
+   *  and records the choice on the message. */
+  inviteReply: (messageId: string, response: 'accepted' | 'tentative' | 'declined') =>
+    api.post<{ invite_response: string; sent: boolean }>(`/mail/messages/${messageId}/invite-reply`, { response }).then(r => r.data),
+
   suggestAddresses: (q: string) =>
     api.get<{ email: string; name: string | null }[]>('/mail/addresses', { params: { q } }).then(r => r.data),
 

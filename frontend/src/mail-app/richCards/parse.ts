@@ -24,6 +24,8 @@ export interface EventCard extends Base {
   url?: string
   isInvite?: boolean
   organizer?: string
+  organizerEmail?: string
+  uid?: string
 }
 export interface FlightCard extends Base {
   kind: 'flight'
@@ -106,6 +108,7 @@ function nodeToCard(node: SchemaNode): RichCard | null {
     return { kind: 'event', title: str(o.name) ?? 'Événement', start: str(o.startDate), end: str(o.endDate),
       location: nameOf(o.location), address: addr(asObj(o.location).address ?? o.location),
       description: str(o.description), url: str(o.url), organizer: nameOf(o.organizer),
+      organizerEmail: str(o.organizerEmail), uid: str(o.uid),
       isInvite: o._invite === true, ...base }
   }
   if (t === 'EventReservation') {

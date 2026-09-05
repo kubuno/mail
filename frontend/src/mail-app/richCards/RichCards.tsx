@@ -4,9 +4,14 @@ import {
   CalendarDays, Plane, BedDouble, TrainFront, Bus, UtensilsCrossed, Car,
   Package, MapPin, Clock, Check, CalendarPlus, Download, ExternalLink, Ticket,
 } from 'lucide-react'
-import type { EmailMessage } from '../../api'
+import { mailApi, type EmailMessage } from '../../api'
 import { cardsFromNodes, type RichCard, type EventCard, type FlightCard, type LodgingCard, type TransitCard, type ReservationCard, type OrderCard } from './parse'
 import { addEventToCalendar, downloadEventIcs, calendarService } from './actions'
+
+type Rsvp = 'accepted' | 'tentative' | 'declined'
+/** Context an event card needs to answer an invitation: which message it came
+ *  from (for the iMIP reply endpoint) and the answer already given, if any. */
+interface CardCtx { messageId?: string; inviteResponse?: Rsvp | null }
 
 // ── date/time formatting (locale-aware, no extra dep) ────────────────────────
 function useFmt() {
@@ -54,21 +59,50 @@ function LinkBtn({ href, icon, children }: { href: string; icon: React.ReactNode
   )
 }
 
-// ── event card (+ Add to calendar / .ics) ────────────────────────────────────
-function EventCardView({ c }: { c: EventCard }) {
+// ── event card (invitation RSVP, or plain event + Add to calendar / .ics) ─────
+function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
   const { t } = useTranslation('mail')
   const f = useFmt()
   const [added, setAdded] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<Rsvp | 'add' | null>(null)
+  const [rsvp, setRsvp] = useState<Rsvp | null>(ctx?.inviteResponse ?? null)
   const hasCalendar = !!calendarService()
+  const isInvite = !!c.isInvite && !!ctx?.messageId
   const when = c.end && c.start && sameDay(c.start, c.end)
     ? `${f.dateTime(c.start)} – ${f.time(c.end)}`
     : [f.dateTime(c.start), c.end && f.dateTime(c.end)].filter(Boolean).join(' → ')
 
   const add = async () => {
-    setBusy(true)
-    try { await addEventToCalendar(c); setAdded(true) } catch { /* calendar absent/failed */ } finally { setBusy(false) }
+    setBusy('add')
+    try { await addEventToCalendar(c); setAdded(true) } catch { /* calendar absent/failed */ } finally { setBusy(null) }
   }
+
+  // RSVP to an invitation: email the organizer our answer (iMIP reply, backend)
+  // and — for Yes/Maybe — mirror it into the calendar. Optimistic: the chosen
+  // button lights up immediately; a failure reverts it.
+  const respond = async (answer: Rsvp) => {
+    if (!ctx?.messageId || busy) return
+    const previous = rsvp
+    setRsvp(answer)
+    setBusy(answer)
+    try {
+      await mailApi.inviteReply(ctx.messageId, answer)
+      if (answer !== 'declined' && hasCalendar) {
+        await addEventToCalendar(c, answer === 'accepted' ? 'confirmed' : 'tentative').catch(() => {})
+      }
+    } catch {
+      setRsvp(previous) // revert on failure
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const RSVP_OPTIONS: { key: Rsvp; label: string }[] = [
+    { key: 'accepted',  label: t('rc_yes',   { defaultValue: 'Oui' }) },
+    { key: 'tentative', label: t('rc_maybe', { defaultValue: 'Peut-être' }) },
+    { key: 'declined',  label: t('rc_no',    { defaultValue: 'Non' }) },
+  ]
+
   return (
     <Shell icon={<CalendarDays size={18} />} accent="#1a73e8">
       <div className="flex items-center gap-2">
@@ -82,20 +116,53 @@ function EventCardView({ c }: { c: EventCard }) {
       {when && <Line icon={<Clock size={13} className="flex-shrink-0" />}>{when}</Line>}
       {(c.location || c.address) && <Line icon={<MapPin size={13} className="flex-shrink-0" />}>{[...new Set([c.location, c.address].filter(Boolean))].join(' · ')}</Line>}
       {c.organizer && <Line>{t('rc_organizer', { defaultValue: 'Organisé par' })} {c.organizer}</Line>}
-      <div className="flex items-center gap-1 mt-2 -ml-1 flex-wrap">
-        {hasCalendar && (
-          <button type="button" onClick={add} disabled={busy || added}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-primary hover:bg-primary/10 disabled:opacity-60 transition-colors">
-            {added ? <><Check size={15} />{t('rc_added', { defaultValue: 'Ajouté à l\'agenda' })}</>
-                   : <><CalendarPlus size={15} />{t('rc_add', { defaultValue: 'Ajouter à l\'agenda' })}</>}
+
+      {isInvite ? (
+        <div className="mt-2.5">
+          <div className="text-xs text-text-secondary mb-1.5">{t('rc_going', { defaultValue: 'Participez-vous ?' })}</div>
+          <div className="inline-flex rounded-lg border border-border overflow-hidden">
+            {RSVP_OPTIONS.map((o, i) => {
+              const selected = rsvp === o.key
+              return (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => respond(o.key)}
+                  disabled={!!busy}
+                  className={`h-8 px-4 text-sm transition-colors disabled:opacity-60 ${i > 0 ? 'border-l border-border' : ''} ${
+                    selected ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-2'
+                  }`}
+                >
+                  {busy === o.key ? '…' : o.label}
+                </button>
+              )
+            })}
+          </div>
+          {rsvp && (
+            <div className="flex items-center gap-1.5 text-xs text-text-tertiary mt-1.5">
+              <Check size={13} className="text-success" />
+              {rsvp === 'accepted'  && t('rc_replied_yes',   { defaultValue: 'Vous avez accepté — l\'organisateur a été prévenu.' })}
+              {rsvp === 'tentative' && t('rc_replied_maybe', { defaultValue: 'Réponse « peut-être » envoyée à l\'organisateur.' })}
+              {rsvp === 'declined'  && t('rc_replied_no',    { defaultValue: 'Vous avez refusé — l\'organisateur a été prévenu.' })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 mt-2 -ml-1 flex-wrap">
+          {hasCalendar && (
+            <button type="button" onClick={add} disabled={busy === 'add' || added}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-primary hover:bg-primary/10 disabled:opacity-60 transition-colors">
+              {added ? <><Check size={15} />{t('rc_added', { defaultValue: 'Ajouté à l\'agenda' })}</>
+                     : <><CalendarPlus size={15} />{t('rc_add', { defaultValue: 'Ajouter à l\'agenda' })}</>}
+            </button>
+          )}
+          <button type="button" onClick={() => downloadEventIcs(c)}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors">
+            <Download size={15} />{t('rc_ics', { defaultValue: '.ics' })}
           </button>
-        )}
-        <button type="button" onClick={() => downloadEventIcs(c)}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors">
-          <Download size={15} />{t('rc_ics', { defaultValue: '.ics' })}
-        </button>
-        {c.url && <LinkBtn href={c.url} icon={<ExternalLink size={15} />}>{t('rc_details', { defaultValue: 'Détails' })}</LinkBtn>}
-      </div>
+          {c.url && <LinkBtn href={c.url} icon={<ExternalLink size={15} />}>{t('rc_details', { defaultValue: 'Détails' })}</LinkBtn>}
+        </div>
+      )}
     </Shell>
   )
 }
@@ -216,9 +283,9 @@ function OrderCardView({ c }: { c: OrderCard }) {
   )
 }
 
-function CardView({ c }: { c: RichCard }) {
+function CardView({ c, ctx }: { c: RichCard; ctx?: CardCtx }) {
   switch (c.kind) {
-    case 'event':       return <EventCardView c={c} />
+    case 'event':       return <EventCardView c={c} ctx={ctx} />
     case 'flight':      return <FlightCardView c={c} />
     case 'lodging':     return <LodgingCardView c={c} />
     case 'transit':     return <TransitCardView c={c} />
@@ -234,9 +301,10 @@ function CardView({ c }: { c: RichCard }) {
 export default function RichCards({ message }: { message: EmailMessage }) {
   const cards = useMemo(() => cardsFromNodes(message.structured_data), [message.structured_data])
   if (!cards.length) return null
+  const ctx: CardCtx = { messageId: message.id, inviteResponse: message.invite_response ?? null }
   return (
     <div className="mb-2">
-      {cards.map((c, i) => <CardView key={i} c={c} />)}
+      {cards.map((c, i) => <CardView key={i} c={c} ctx={ctx} />)}
     </div>
   )
 }

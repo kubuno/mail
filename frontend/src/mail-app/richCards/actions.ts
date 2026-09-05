@@ -3,18 +3,16 @@ import type { EventCard } from './parse'
 
 /** The calendar module is optional (polyrepo rule): expose its "createEvent"
  *  service only when it's actually loaded, so the button can hide itself. */
-export function calendarService():
-  | ((input: { title: string; startsAt: string; endsAt?: string; description?: string; location?: string; url?: string; allDay?: boolean }) => Promise<unknown>)
-  | undefined {
-  return ModuleServiceRegistry.get('calendar', 'createEvent') as
-    | ((input: { title: string; startsAt: string; endsAt?: string; description?: string; location?: string; url?: string; allDay?: boolean }) => Promise<unknown>)
-    | undefined
+type CreateEventInput = { title: string; startsAt: string; endsAt?: string; description?: string; location?: string; url?: string; allDay?: boolean; status?: string }
+export function calendarService(): ((input: CreateEventInput) => Promise<unknown>) | undefined {
+  return ModuleServiceRegistry.get('calendar', 'createEvent') as ((input: CreateEventInput) => Promise<unknown>) | undefined
 }
 
 const allDayOf = (c: EventCard) => !!c.start && !/[T\s]\d{2}:\d{2}/.test(c.start)
 
-/** Push an event card into the user's calendar via the calendar module. */
-export async function addEventToCalendar(c: EventCard): Promise<void> {
+/** Push an event card into the user's calendar via the calendar module. A
+ *  `status` (confirmed/tentative) reflects the RSVP for an invitation. */
+export async function addEventToCalendar(c: EventCard, status?: string): Promise<void> {
   const create = calendarService()
   if (!create || !c.start) throw new Error('calendar unavailable')
   await create({
@@ -25,6 +23,7 @@ export async function addEventToCalendar(c: EventCard): Promise<void> {
     location:    c.location ?? c.address,
     url:         c.url,
     allDay:      allDayOf(c),
+    status,
   })
 }
 

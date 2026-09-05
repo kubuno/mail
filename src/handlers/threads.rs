@@ -598,7 +598,7 @@ pub async fn get_thread(
                   subject, body_text, body_html, attachments,
                   is_read, is_starred, is_deleted, folder, label_ids,
                   sent_at, received_at, created_at, spam_score, list_unsubscribe,
-                  mailed_by, signed_by, security, auth_dmarc, structured_data
+                  mailed_by, signed_by, security, auth_dmarc, structured_data, invite_response
            FROM mail.messages
            WHERE thread_id = $1 AND is_deleted = FALSE
            ORDER BY received_at ASC"#,
