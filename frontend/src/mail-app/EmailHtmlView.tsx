@@ -14,16 +14,80 @@ import { longDateTimeFromFrench } from './helpers'
 //  4. DOMPurify neutralises scripts, event handlers and dangerous protocols,
 //     while PRESERVING <style> and the `style` attributes (the CSS).
 
+// CSS hazards the server also strips, repeated here on purpose: messages stored
+// before the server policy was hardened were cleaned by the OLD rules, and this
+// is the last pass before the markup reaches a live document. `@import` fetches
+// a remote stylesheet (it leaks the read and injects unreviewed rules);
+// `expression()`, `behavior:` and `-moz-binding` are the legacy script-in-CSS
+// hooks. The whole declaration goes, not just the keyword.
+const CSS_HAZARDS = ['@import', 'expression(', 'behavior:', '-moz-binding']
+function cleanCss(css: string): string {
+  let out = ''
+  let cursor = 0
+  const lower = css.toLowerCase()
+  for (;;) {
+    const hits = CSS_HAZARDS.map(h => lower.indexOf(h, cursor)).filter(i => i >= 0)
+    if (!hits.length) return out + css.slice(cursor)
+    const pos = Math.min(...hits)
+    // Back up to the start of the declaration / at-rule holding it…
+    const before = Math.max(css.lastIndexOf(';', pos), css.lastIndexOf('{', pos), css.lastIndexOf('}', pos))
+    out += css.slice(cursor, before >= cursor ? before + 1 : cursor)
+    // …and resume past its end.
+    const semi = css.indexOf(';', pos)
+    const brace = css.indexOf('}', pos)
+    const ends = [semi, brace].filter(i => i >= 0)
+    cursor = ends.length ? Math.min(...ends) + 1 : css.length
+  }
+}
+
 // Sanitising: keep all the CSS, strip only what is dangerous.
+//
+// This runs on markup the SERVER already sanitised. It is not redundant: a
+// message stored months ago carries whatever the policy of the day allowed, and
+// only this pass stands between it and a live DOM. Kept deliberately in step
+// with services::html_sanitize on the Rust side.
 function sanitizeEmailHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  const clean = DOMPurify.sanitize(html, {
     WHOLE_DOCUMENT: true,                 // keeps <html>/<head>/<body> + the head <style>
     ADD_TAGS: ['style'],
-    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'base', 'meta', 'link', 'form'],
-    FORBID_ATTR: ['ping'],
+    // Anything that executes, navigates, submits or pulls a remote document.
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'base', 'meta', 'link', 'form',
+                  'input', 'button', 'select', 'textarea', 'applet', 'frame', 'frameset',
+                  'svg', 'math', 'template', 'noscript', 'portal'],
+    FORBID_ATTR: ['ping', 'srcdoc', 'formaction', 'http-equiv'],
     ALLOW_UNKNOWN_PROTOCOLS: false,
+    // `data:` stays legitimate for inline images only; the hook below drops it
+    // everywhere else, so a link cannot carry an inline HTML document.
+    ADD_DATA_URI_TAGS: ['img'],
+  })
+  return clean
+}
+
+// One hook, installed once: it is what enforces the two rules DOMPurify's
+// options cannot express — inline schemes are image sources only, and e-mail
+// CSS is scrubbed wherever it hides.
+let hookInstalled = false
+function installSanitizeHook() {
+  if (hookInstalled) return
+  hookInstalled = true
+  DOMPurify.addHook('afterSanitizeAttributes', node => {
+    const el = node as Element
+    for (const attr of ['href', 'src', 'xlink:href', 'action', 'background']) {
+      const value = el.getAttribute?.(attr)
+      if (!value) continue
+      const v = value.trim().toLowerCase()
+      if (v.startsWith('data:') || v.startsWith('cid:')) {
+        const inlineImage = el.tagName === 'IMG' && attr === 'src'
+          && (v.startsWith('cid:') || v.startsWith('data:image/'))
+        if (!inlineImage) el.removeAttribute(attr)
+      }
+    }
+    const style = el.getAttribute?.('style')
+    if (style) el.setAttribute('style', cleanCss(style))
+    if (el.tagName === 'STYLE' && el.textContent) el.textContent = cleanCss(el.textContent)
   })
 }
+installSanitizeHook()
 
 // ── Remote images ────────────────────────────────────────────────────────────
 // Loading a remote image tells its host the message was opened (and leaks the

@@ -107,6 +107,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **The reader enforces the same policy as the server.** A message stored before
+  the server rules were tightened still carries whatever was allowed the day it
+  arrived, so the last pass before the markup reaches a live document now blocks
+  the same things: inline `data:`/`cid:` accepted only as an image source, e-mail
+  CSS scrubbed of `@import` and the script-in-CSS hooks, and `svg`/`math`/
+  `template`/form controls refused outright.
+
 - **Nothing in an e-mail can execute.** The body sanitiser was audited against
   Gmail's policy and hardened: `data:` and `cid:` URLs are now accepted ONLY as
   an image source, so a link can no longer carry an inline
