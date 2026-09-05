@@ -445,6 +445,42 @@ pub async fn mark_read(
     Ok(Json(serde_json::json!({ "is_read": is_read })))
 }
 
+/// Sandboxed, script-free, frame-free: what an attachment response is allowed to
+/// be even if a browser decides to render it.
+const ATTACHMENT_CSP: &str =
+    "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox; frame-ancestors 'none'";
+
+/// The MIME types an attachment may keep — everything a viewer needs to preview
+/// a file, and nothing that can execute or carry markup.
+///
+/// The sender chooses the `Content-Type` of a MIME part, so honouring it turns
+/// an attachment into a document served from Kubuno's own origin: `text/html`
+/// renders, and a companion part declared `application/javascript` then loads
+/// same-origin — which is precisely how `script-src 'self'` gets defeated. Only
+/// this list is echoed back; the rest becomes `application/octet-stream`.
+fn safe_inline_mime(claimed: &str) -> Option<&'static str> {
+    // Compare on the essence only: parameters (charset, name…) are the sender's too.
+    let essence = claimed.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    Some(match essence.as_str() {
+        "image/jpeg" | "image/jpg" => "image/jpeg",
+        "image/png"                => "image/png",
+        "image/gif"                => "image/gif",
+        "image/webp"               => "image/webp",
+        "image/bmp"                => "image/bmp",
+        "image/x-icon" | "image/vnd.microsoft.icon" => "image/x-icon",
+        "application/pdf"          => "application/pdf",
+        "audio/mpeg"               => "audio/mpeg",
+        "audio/ogg"                => "audio/ogg",
+        "audio/wav" | "audio/x-wav" => "audio/wav",
+        "video/mp4"                => "video/mp4",
+        "video/webm"               => "video/webm",
+        // Deliberately absent: image/svg+xml (carries script), text/html,
+        // text/xml, application/xhtml+xml, application/javascript, and every
+        // text/* — a text preview is fetched and rendered by the app itself.
+        _ => return None,
+    })
+}
+
 pub async fn download_attachment(
     State(state): State<AppState>,
     user: AuthUser,
@@ -470,11 +506,15 @@ pub async fn download_attachment(
         .and_then(|v| v.as_str())
         .ok_or_else(|| MailError::NotFound("storage_path manquant".into()))?;
 
-    let mime_type = att
-        .get("mime")
-        .and_then(|v| v.as_str())
-        .unwrap_or("application/octet-stream")
-        .to_string();
+    // The stored MIME is the one the SENDER wrote in the message: never trust it
+    // to decide how the browser treats the bytes. Only the few types that can be
+    // shown safely keep their own Content-Type — everything else is handed over
+    // as an opaque download. See `safe_inline_mime`.
+    let claimed_mime = att.get("mime").and_then(|v| v.as_str()).unwrap_or("");
+    let (mime_type, inline_ok) = match safe_inline_mime(claimed_mime) {
+        Some(m) => (m.to_string(), true),
+        None => ("application/octet-stream".to_string(), false),
+    };
 
     let name = att
         .get("name")
@@ -493,7 +533,19 @@ pub async fn download_attachment(
         .map_err(|e| MailError::Internal(anyhow::anyhow!("Taille fichier: {e}")))?
         .len();
 
-    let disposition = format!("inline; filename=\"{}\"", name.replace('"', "\\\""));
+    // `inline` only for the handful of types the viewer previews; anything else
+    // is `attachment`, so an HTML/SVG/XML part can never be rendered AS A
+    // DOCUMENT in Kubuno's own origin (which would run with the reader's
+    // session). Control characters — bidi overrides above all — are stripped
+    // from the filename so `facture\u{202e}exe.pdf` cannot masquerade.
+    let safe_name: String = name
+        .chars()
+        .map(|c| if c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '"' | '\\') { '_' } else { c })
+        .collect();
+    let disposition = format!(
+        "{}; filename=\"{safe_name}\"",
+        if inline_ok { "inline" } else { "attachment" }
+    );
 
     // A byte-range request lets the mobile client resume an interrupted download
     // and stream large files. An absent or unparseable Range is served whole.
@@ -502,6 +554,10 @@ pub async fn download_attachment(
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, mime_type)
             .header(header::CONTENT_DISPOSITION, disposition)
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            // Belt and braces: even served as a document, this response gets an
+            // opaque origin and no scripting — it cannot reach the session.
+            .header(header::CONTENT_SECURITY_POLICY, ATTACHMENT_CSP)
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::CONTENT_LENGTH, total)
             .body(Body::from_stream(ReaderStream::new(file)))
@@ -518,6 +574,8 @@ pub async fn download_attachment(
                 .status(StatusCode::PARTIAL_CONTENT)
                 .header(header::CONTENT_TYPE, mime_type)
                 .header(header::CONTENT_DISPOSITION, disposition)
+                .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+                .header(header::CONTENT_SECURITY_POLICY, ATTACHMENT_CSP)
                 .header(header::ACCEPT_RANGES, "bytes")
                 .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"))
                 .header(header::CONTENT_LENGTH, len)
@@ -1090,6 +1148,44 @@ pub async fn invite_reply(
 /// Minimal HTML escape for the one-line reply body.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+#[cfg(test)]
+mod attachment_mime_tests {
+    use super::safe_inline_mime;
+
+    /// Anything that can execute or carry markup loses its Content-Type, so the
+    /// browser downloads opaque bytes instead of rendering a document in our
+    /// origin. The two-part trick — an HTML part plus a JS part passing nosniff
+    /// — is what defeats `script-src 'self'`, so `application/javascript` must
+    /// never be echoed back either.
+    #[test]
+    fn active_types_are_never_echoed() {
+        for claimed in [
+            "text/html",
+            "TEXT/HTML; charset=utf-8",
+            "image/svg+xml",
+            "application/xhtml+xml",
+            "application/javascript",
+            "text/javascript",
+            "application/x-javascript",
+            "text/xml",
+            "application/xml",
+            "text/plain",
+            "application/octet-stream",
+            "",
+        ] {
+            assert!(safe_inline_mime(claimed).is_none(), "« {claimed} » ne doit pas être renvoyé tel quel");
+        }
+    }
+
+    /// …while what a viewer legitimately previews keeps its type.
+    #[test]
+    fn previewable_types_survive() {
+        assert_eq!(safe_inline_mime("image/png"), Some("image/png"));
+        assert_eq!(safe_inline_mime("IMAGE/JPEG; name=\"x.jpg\""), Some("image/jpeg"));
+        assert_eq!(safe_inline_mime("application/pdf"), Some("application/pdf"));
+    }
 }
 
 #[cfg(test)]

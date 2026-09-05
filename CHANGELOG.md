@@ -107,6 +107,16 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Fixed
 
+- **An attachment can no longer be rendered as a document in Kubuno's origin.**
+  Attachments were served `inline` with the `Content-Type` the SENDER wrote, so
+  an HTML or SVG part opened as a page with the reader's session — and a second
+  part declared `application/javascript` loaded from that page same-origin,
+  defeating `script-src 'self'`. Only a short list of previewable types (images,
+  PDF, audio, video) keeps its type and stays `inline`; everything else is
+  served as `application/octet-stream` with `Content-Disposition: attachment`.
+  Both cases now carry `nosniff` and a sandbox CSP, and control characters —
+  bidi overrides included — are stripped from the filename.
+
 - **The reader enforces the same policy as the server.** A message stored before
   the server rules were tightened still carries whatever was allowed the day it
   arrived, so the last pass before the markup reaches a live document now blocks
