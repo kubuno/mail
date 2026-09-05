@@ -154,7 +154,10 @@ pub async fn notify_calendar_message(
                 "ACCEPTED" => ("mail.invite_accepted", "a accepté"),
                 "DECLINED" => ("mail.invite_declined", "a refusé"),
                 "TENTATIVE" => ("mail.invite_tentative", "participera peut-être à"),
-                _ => ("mail.invite_reply", "a répondu à"),
+                // NB: this is the PUSH-notification channel. It must NOT reuse
+                // `mail.invite_reply`, which is the data channel Calendar reads
+                // to update RSVP status (see `notify_invite_reply`).
+                _ => ("mail.invite_replied", "a répondu à"),
             };
             let who = who.as_deref().unwrap_or("Un invité");
             (
@@ -173,6 +176,55 @@ pub async fn notify_calendar_message(
     });
     if let Err(e) = publish_custom(core_url, internal_secret, event_type, payload).await {
         tracing::warn!(error = %e, %recipient, event_type, "Publication de l'event « invitation » échouée (push ignoré)");
+    }
+}
+
+/// Forwards an attendee's RSVP to Calendar so it can update the event's
+/// participation status. This is a pure module→module DATA event: it carries NO
+/// `recipient_user_ids`, so the core distributes it to subscribers without
+/// firing any push notification (the push is `notify_calendar_message`'s job).
+///
+/// Best-effort, like every publish here: a failure is logged, never propagated —
+/// the reply itself is already stored.
+#[allow(clippy::too_many_arguments)]
+pub async fn notify_invite_reply(
+    core_url: &str,
+    internal_secret: &str,
+    organizer_user_id: Uuid,
+    event_uid: &str,
+    attendee_email: &str,
+    partstat: &str,
+    sequence: i64,
+    comment: Option<&str>,
+) {
+    let attendee_email = attendee_email.trim();
+    let event_uid = event_uid.trim();
+    if core_url.trim().is_empty()
+        || internal_secret.trim().is_empty()
+        || attendee_email.is_empty()
+        || event_uid.is_empty()
+    {
+        return;
+    }
+    // Only the four iCalendar PARTSTAT values Calendar expects; anything else
+    // (a malformed REPLY) is reported as still needing an answer.
+    let partstat = match partstat.to_ascii_uppercase().as_str() {
+        "ACCEPTED" => "ACCEPTED",
+        "DECLINED" => "DECLINED",
+        "TENTATIVE" => "TENTATIVE",
+        _ => "NEEDS-ACTION",
+    };
+    let comment = comment.map(str::trim).filter(|s| !s.is_empty());
+    let payload = serde_json::json!({
+        "event_uid":         event_uid,
+        "attendee_email":    attendee_email,
+        "partstat":          partstat,
+        "sequence":          sequence,
+        "organizer_user_id": organizer_user_id.to_string(),
+        "comment":           comment,
+    });
+    if let Err(e) = publish_custom(core_url, internal_secret, "mail.invite_reply", payload).await {
+        tracing::warn!(error = %e, uid = %event_uid, "Publication de l'event « réponse d'invitation » échouée (ignorée)");
     }
 }
 

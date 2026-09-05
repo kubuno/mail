@@ -5,6 +5,7 @@ pub mod delegation;
 pub mod diagnostics;
 pub mod dkim;
 pub mod drafts;
+pub mod events;
 pub mod filters;
 pub mod folders;
 pub mod forwarding;

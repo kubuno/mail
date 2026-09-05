@@ -262,6 +262,8 @@ async fn copy_chunk(
                 raw.seen,
                 raw.flagged,
                 &mail_cfg.attachments_dir,
+                // Historical import: never re-fire an RSVP for old mail.
+                None,
             )
             .await
             {

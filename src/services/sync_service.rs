@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    config::settings::MailSettings,
+    config::settings::{CoreSettings, MailSettings},
     models::{EmailAccount, EmailFilter},
     services::{
         crypto::MailCrypto,
@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCrypto, mail_cfg: &MailSettings) -> Result<()> {
+pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCrypto, mail_cfg: &MailSettings, core_cfg: &CoreSettings) -> Result<()> {
     // A local account has no external server to poll: the instance itself
     // delivers into it. Attempting an IMAP connection to its empty host would
     // only log errors in a loop. The worker's selection already excludes these;
@@ -85,7 +85,7 @@ pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCryp
             tracing::info!(account_id = %account.id, "Budget de synchronisation atteint — la suite au prochain passage");
             break;
         }
-        if let Err(e) = sync_folder(db, account, &mut session, mb, mail_cfg, started, deadline).await {
+        if let Err(e) = sync_folder(db, account, &mut session, mb, mail_cfg, core_cfg, started, deadline).await {
             tracing::warn!(
                 account_id = %account.id,
                 folder = %mb.name,
@@ -140,12 +140,14 @@ fn fallback_mailboxes() -> Vec<imap_service::MailboxInfo> {
 /// time budget loses nothing and the next one picks up exactly where it
 /// stopped. Repeated runs converge on the whole mailbox being stored, without
 /// any single run holding more than one batch in memory.
+#[allow(clippy::too_many_arguments)]
 async fn sync_folder(
     db: &PgPool,
     account: &EmailAccount,
     session: &mut imap_service::ImapSession,
     mailbox: &imap_service::MailboxInfo,
     mail_cfg: &MailSettings,
+    core_cfg: &CoreSettings,
     started: std::time::Instant,
     deadline: std::time::Duration,
 ) -> Result<()> {
@@ -211,7 +213,7 @@ async fn sync_folder(
     fresh.retain(|u| uid_high.is_none_or(|h| *u as i64 > h));
 
     for chunk in fresh.rchunks(batch) {
-        stored += store_batch(db, account, session, chunk, imap_folder, folder_name, mail_cfg).await;
+        stored += store_batch(db, account, session, chunk, imap_folder, folder_name, mail_cfg, core_cfg).await;
         uid_high = Some(uid_high.unwrap_or(0).max(chunk.iter().copied().max().unwrap_or(0) as i64));
         if uid_low.is_none() {
             uid_low = chunk.iter().copied().min().map(|u| u as i64);
@@ -234,7 +236,7 @@ async fn sync_folder(
             } else {
                 let mut exhausted = true;
                 for chunk in older.rchunks(batch) {
-                    stored += store_batch(db, account, session, chunk, imap_folder, folder_name, mail_cfg).await;
+                    stored += store_batch(db, account, session, chunk, imap_folder, folder_name, mail_cfg, core_cfg).await;
                     uid_low = chunk.iter().copied().min().map(|u| u as i64).min(uid_low);
                     save_folder_state(db, account.id, imap_folder, folder_name, uid_low, uid_high, false, stored).await;
                     if started.elapsed() >= deadline {
@@ -266,6 +268,7 @@ async fn sync_folder(
 /// groups small enough to hold in memory at once. Skipping is deliberate and
 /// final — the folder cursor moves past those UIDs — because retrying a message
 /// we will never accept would stall the mailbox forever.
+#[allow(clippy::too_many_arguments)]
 async fn store_batch(
     db: &PgPool,
     account: &EmailAccount,
@@ -274,6 +277,7 @@ async fn store_batch(
     imap_folder: &str,
     folder_name: &str,
     mail_cfg: &MailSettings,
+    core_cfg: &CoreSettings,
 ) -> usize {
     let sizes = match imap_service::uid_sizes(session, uids).await {
         Ok(s) => s,
@@ -305,7 +309,7 @@ async fn store_batch(
         for raw in raws {
             match store_message(
                 db, account, &raw.body, raw.uid, imap_folder, folder_name,
-                raw.seen, raw.flagged, &mail_cfg.attachments_dir,
+                raw.seen, raw.flagged, &mail_cfg.attachments_dir, Some(core_cfg),
             )
             .await
             {
@@ -396,6 +400,10 @@ pub(crate) async fn store_message(
     seen: bool,
     flagged: bool,
     attachments_dir: &str,
+    // When set (live IMAP sync), an iMIP REPLY found in this message is
+    // forwarded to Calendar. `None` for historical ingestion (import/migration),
+    // which must never re-fire an RSVP for mail received long ago.
+    core_cfg: Option<&CoreSettings>,
 ) -> Result<()> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM mail.messages WHERE account_id = $1 AND imap_folder = $2 AND imap_uid = $3)"
@@ -554,6 +562,11 @@ pub(crate) async fn store_message(
         .collect();
     let structured_data =
         crate::services::structured_data::extract(body_html_raw.as_deref(), &ics_parts);
+    // Capture an iMIP REPLY's fields before `structured_data` is moved into the
+    // INSERT; forwarded to Calendar after the row lands (live sync only).
+    let invite_reply = core_cfg
+        .and(structured_data.as_ref())
+        .and_then(crate::services::structured_data::invite_reply_details);
 
     // Incoming attachments: collect metadata + bytes now, but only write the files
     // to disk AFTER the INSERT succeeds (ON CONFLICT DO NOTHING → no orphan files
@@ -820,6 +833,26 @@ pub(crate) async fn store_message(
     .bind(category)
     .execute(db)
     .await?;
+
+    // An RSVP that just synced into the organizer's (external) account is
+    // forwarded to Calendar. Only for a genuinely new message, and only in live
+    // sync (`core_cfg` is `None` for import/migration). `account.user_id` owns
+    // the mailbox that received the reply, i.e. the organizer.
+    if inserted.rows_affected() > 0 {
+        if let (Some(core), Some(reply)) = (core_cfg, &invite_reply) {
+            crate::events::notify_invite_reply(
+                &core.url,
+                &core.internal_secret,
+                account.user_id,
+                &reply.uid,
+                &reply.from,
+                &reply.partstat,
+                reply.sequence,
+                None,
+            )
+            .await;
+        }
+    }
 
     Ok(())
 }

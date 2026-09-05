@@ -267,6 +267,11 @@ pub async fn deliver_local(
     let invite_notice = structured_data
         .as_ref()
         .and_then(crate::services::structured_data::invite_notice);
+    // An iMIP REPLY carries an RSVP we forward to Calendar after commit. Capture
+    // its raw fields here, before `structured_data` is consumed by the INSERT.
+    let invite_reply = structured_data
+        .as_ref()
+        .and_then(crate::services::structured_data::invite_reply_details);
 
     // Attachments: metadata now, files on disk only after the transaction
     // commits, so a rolled back delivery leaves no orphan files behind.
@@ -518,6 +523,23 @@ pub async fn deliver_local(
                 target.user_id,
                 thread_id,
                 notice,
+            )
+            .await;
+        }
+
+        // An RSVP (METHOD:REPLY) addressed to a local organizer is forwarded to
+        // Calendar as a data event so it can update the attendee's status. The
+        // recipient of the reply IS the organizer, hence `target.user_id`.
+        if let Some(reply) = &invite_reply {
+            crate::events::notify_invite_reply(
+                &cfg.core_url,
+                &cfg.internal_secret,
+                target.user_id,
+                &reply.uid,
+                &reply.from,
+                &reply.partstat,
+                reply.sequence,
+                None,
             )
             .await;
         }

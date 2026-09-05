@@ -11,6 +11,21 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Added
 
+- **Meeting invitation e-mails, Google-style.** When Calendar publishes an
+  invitation, Mail now sends the invitation e-mail on behalf of the organizer's
+  default account: a sober HTML body (event title, when, where, organizer, guest
+  list, description) plus a standards-compliant `invite.ics` attachment
+  (`text/calendar; method=REQUEST`). A cancellation goes out the same way
+  (`method=CANCEL`), and a rescheduled event is flagged "Invitation mise à jour".
+  Recipients using any calendar client can accept, decline or answer "maybe"
+  straight from the message.
+- **RSVPs update the organizer's calendar automatically.** When a guest replies
+  to an invitation (`METHOD:REPLY`) and the reply lands in the organizer's local
+  mailbox, Mail forwards the response to Calendar so the attendee's status
+  (accepted / declined / tentative) is reflected on the event without anyone
+  re-entering it. The same happens for a reply that syncs into an organizer's
+  external IMAP account (e.g. Gmail).
+
 - **Remote images from an unknown sender are held back, Gmail-style.** A message
   whose images would be fetched from outside the instance now shows a notice —
   "External images are not displayed" — with *Display images* (this message) and
@@ -106,6 +121,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   `OR`, negation, parentheses), and is suggested in the search bar.
 
 ### Fixed
+- An iMIP reply (RSVP) that omits `DTSTART` — allowed by RFC 5546 — is now recognised and forwarded to the organizer's calendar instead of being silently ignored.
 
 - **A sender can no longer impersonate someone in the interface.** A display
   name carrying somebody else's address ("Support <admin@banque.fr>" sent from

@@ -10,7 +10,7 @@ use crate::{
         accounts, avatar,
         addresses::{aliases, directory, domains, lists, mailboxes},
         delegation,
-        diagnostics, dkim, drafts, filters, folders, forwarding, labels, mailbox, messages,
+        diagnostics, dkim, drafts, events, filters, folders, forwarding, labels, mailbox, messages,
         migration, oauth, pgp,
         pop_imap, recipient_groups, relay,
         send_as, spam, templates, threads, vacation, wkd,
@@ -32,6 +32,12 @@ pub fn build(state: AppState) -> Router {
     let internal = Router::new()
         .route("/internal/migration/probe", post(migration::probe))
         .route("/internal/migration/run",   post(migration::run))
+        // Core → module event delivery. The core tries /ipc/events first and
+        // /events second, posting X-Internal-Secret on BOTH; both live behind
+        // the shared-secret guard set as a `.layer` below. This is how Mail
+        // receives `calendar.invite` and turns it into an invitation e-mail.
+        .route("/ipc/events", post(events::handle_event))
+        .route("/events",     post(events::handle_event))
         .layer(middleware::from_fn_with_state(state.clone(), require_internal_secret))
         .with_state(state.clone());
 

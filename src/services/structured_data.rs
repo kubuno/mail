@@ -299,19 +299,27 @@ fn event_from_ics(ics: &str) -> Option<Value> {
     if !in_event && start.is_none() {
         return None;
     }
-    let start = start?;
+    // RFC 5546: DTSTART is required in a REQUEST/PUBLISH but optional in a
+    // REPLY or CANCEL, which only need to identify the event (UID/SEQUENCE).
+    // A reply without timing must still surface its partstat and UID so the
+    // RSVP reaches the organizer's calendar; an invitation without timing is
+    // meaningless and is dropped.
+    let timing_optional = matches!(method.as_deref(), Some("REPLY") | Some("CANCEL"));
+    if start.is_none() && !timing_optional {
+        return None;
+    }
 
     let mut node = json!({
         "@type": "Event",
         "name": summary.unwrap_or_else(|| "Événement".to_string()),
-        "startDate": start,
         "_source": "ics",
         "_invite": method.as_deref() == Some("REQUEST"),
         // The iTIP method drives what this message MEANS: a request to attend,
         // someone's answer to ours, or a cancellation.
         "_method": method.as_deref().unwrap_or("PUBLISH").to_ascii_lowercase(),
     });
-    let obj = node.as_object_mut().unwrap();
+    let Some(obj) = node.as_object_mut() else { return None };
+    if let Some(s) = start { obj.insert("startDate".into(), json!(s)); }
     if let Some(e) = end { obj.insert("endDate".into(), json!(e)); }
     if let Some(l) = location { obj.insert("location".into(), json!(l)); }
     if let Some(d) = description { obj.insert("description".into(), json!(d)); }
@@ -406,6 +414,55 @@ pub fn invite_notice(nodes: &Value) -> Option<InviteNotice> {
     None
 }
 
+/// The raw fields an iMIP REPLY carries, kept for republishing the RSVP to
+/// Calendar (which `InviteNotice::Reply` deliberately drops, since it only
+/// exists to word a push notification).
+#[derive(Debug, PartialEq)]
+pub struct InviteReplyDetails {
+    /// The event's iCalendar UID — matches the invitation Calendar sent.
+    pub uid:       String,
+    /// The address that answered (the REPLY's single ATTENDEE).
+    pub from:      String,
+    /// ACCEPTED | DECLINED | TENTATIVE | NEEDS-ACTION.
+    pub partstat:  String,
+    /// The event SEQUENCE the reply answers (0 when absent).
+    pub sequence:  i64,
+    /// The organizer address the reply is addressed to, when present.
+    pub organizer: Option<String>,
+}
+
+/// Reads the extracted nodes and, for the first iMIP REPLY, returns the fields
+/// needed to forward the RSVP to Calendar. `None` for anything but a REPLY, or
+/// when the REPLY lacks the UID / answering address that make it actionable.
+pub fn invite_reply_details(nodes: &Value) -> Option<InviteReplyDetails> {
+    let arr = nodes.as_array()?;
+    for n in arr {
+        if n.get("_source").and_then(Value::as_str) != Some("ics") {
+            continue;
+        }
+        if n.get("_method").and_then(Value::as_str) != Some("reply") {
+            continue;
+        }
+        let uid = n.get("uid").and_then(Value::as_str)?.to_string();
+        let from = n.get("_replyFrom").and_then(Value::as_str)?.to_string();
+        return Some(InviteReplyDetails {
+            uid,
+            from,
+            partstat: n
+                .get("_replyPartstat")
+                .and_then(Value::as_str)
+                .unwrap_or("NEEDS-ACTION")
+                .to_string(),
+            sequence: n.get("sequence").and_then(Value::as_i64).unwrap_or(0),
+            organizer: n
+                .get("organizerEmail")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        });
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,6 +530,50 @@ mod tests {
                 partstat: "ACCEPTED".into()
             })
         );
+    }
+
+    #[test]
+    fn reply_details_carry_uid_and_answering_address() {
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nBEGIN:VEVENT\r\nUID:evt-42\r\nSEQUENCE:3\r\nSUMMARY:Comité\r\nDTSTART:20260915T080000Z\r\nORGANIZER;CN=Moi:mailto:moi@x\r\nATTENDEE;CN=Alice;PARTSTAT=DECLINED:mailto:alice@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ics.to_string()]).unwrap();
+        assert_eq!(
+            invite_reply_details(&out),
+            Some(InviteReplyDetails {
+                uid:       "evt-42".into(),
+                from:      "alice@example.com".into(),
+                partstat:  "DECLINED".into(),
+                sequence:  3,
+                organizer: Some("moi@x".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn reply_without_dtstart_still_yields_details() {
+        // RFC 5546 makes DTSTART optional in a REPLY: a minimal, compliant
+        // answer must still reach the organizer's calendar.
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nBEGIN:VEVENT\r\nUID:evt-7\r\nSEQUENCE:0\r\nDTSTAMP:20260905T120000Z\r\nORGANIZER:mailto:moi@x\r\nATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:bob@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ics.to_string()]).expect("a timing-less REPLY is still an event node");
+        assert_eq!(out[0]["_method"], "reply");
+        assert!(out[0].get("startDate").is_none());
+        let d = invite_reply_details(&out).expect("reply details");
+        assert_eq!(d.uid, "evt-7");
+        assert_eq!(d.from, "bob@example.org");
+        assert_eq!(d.partstat, "ACCEPTED");
+    }
+
+    #[test]
+    fn request_without_dtstart_is_dropped() {
+        // An invitation with no timing is meaningless and must not surface a card.
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:evt-8\r\nSUMMARY:Sans horaire\r\nORGANIZER:mailto:moi@x\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        assert!(extract(None, &[ics.to_string()]).is_none());
+    }
+
+    #[test]
+    fn request_ics_has_no_reply_details() {
+        let ics = "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:evt-1\r\nSUMMARY:Atelier\r\nDTSTART:20260918T120000Z\r\nORGANIZER;CN=Bob:mailto:bob@x\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let out = extract(None, &[ics.to_string()]).unwrap();
+        assert!(invite_reply_details(&out).is_none());
     }
 
     #[test]

@@ -206,7 +206,7 @@ pub async fn send_message(
 /// The actual send, factored out so the idempotency wrapper above can memorise
 /// its JSON response and replay it on a retried request. Returns the response
 /// body as a bare `Value`.
-async fn send_message_inner(
+pub(crate) async fn send_message_inner(
     state: &AppState,
     user_id: Uuid,
     dto: &SendMailDto,

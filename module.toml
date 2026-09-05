@@ -78,10 +78,16 @@ section  = "main"
 subscribed = [
     "UserDeleted",
     "ContactUpdated",
+    # Calendar publishes an invitation (METHOD:REQUEST/CANCEL) on the core bus;
+    # Mail sends the invitation e-mail with an `invite.ics` attachment on behalf
+    # of the organizer's default account.
+    "calendar.invite",
 ]
 # A message landing in a local recipient's inbox is announced to the core as a
 # Custom event, which the core's push mapper turns into a mobile notification.
-publishes = ["mail.received"]
+# `mail.invite_reply` carries an attendee's RSVP back to Calendar (data channel,
+# no push).
+publishes = ["mail.received", "mail.invite_reply"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════

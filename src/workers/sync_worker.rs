@@ -46,7 +46,7 @@ async fn sync_all_accounts(state: &AppState, crypto: &MailCrypto) {
         // itself cleanly at `sync_deadline_secs`, this only catches an IMAP
         // call wedged with no progress at all.
         let hard_limit = Duration::from_secs(state.settings.mail.sync_deadline_secs + 120);
-        let fut = crate::services::sync_service::sync_account(&state.db, &account, crypto, &state.settings.mail);
+        let fut = crate::services::sync_service::sync_account(&state.db, &account, crypto, &state.settings.mail, &state.settings.core);
         let outcome = tokio::time::timeout(hard_limit, fut).await;
         let err: Option<String> = match outcome {
             Ok(Ok(()))  => None,
