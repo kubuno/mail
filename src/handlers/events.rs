@@ -35,6 +35,21 @@ struct InviteAttendee {
     email: String,
     #[serde(default)]
     name:  Option<String>,
+    /// Answer links minted by Calendar for THIS guest (absent when the instance
+    /// has no public URL configured, or for a cancellation).
+    #[serde(default)]
+    rsvp:  Option<RsvpLinks>,
+}
+
+/// One public link per answer, each carrying the guest's own token.
+#[derive(Deserialize, Clone, Default)]
+struct RsvpLinks {
+    #[serde(default)]
+    yes:   Option<String>,
+    #[serde(default)]
+    no:    Option<String>,
+    #[serde(default)]
+    maybe: Option<String>,
 }
 
 /// The inner `calendar.invite` payload published by Calendar. Kept permissive:
@@ -142,7 +157,6 @@ async fn send_invitation(state: &AppState, invite: &CalendarInvite) -> Result<()
     let method_param = if is_cancel { "CANCEL" } else { "REQUEST" };
     let ics_b64 = base64::engine::general_purpose::STANDARD.encode(invite.ics.as_bytes());
     let subject = build_subject(invite, is_cancel);
-    let body_html = build_body_html(invite, is_cancel);
 
     // No attendee is not an error — a solo event still updates the organizer's
     // own calendar; there is simply no e-mail to send.
@@ -160,7 +174,7 @@ async fn send_invitation(state: &AppState, invite: &CalendarInvite) -> Result<()
             cc_addresses:  None,
             bcc_addresses: None,
             subject:       subject.clone(),
-            body_html:     body_html.clone(),
+            body_html:     build_body_html(invite, is_cancel, attendee.rsvp.as_ref()),
             reply_to_id:   None,
             draft_id:      None,
             scheduled_at:  None,
@@ -208,12 +222,33 @@ fn build_subject(invite: &CalendarInvite, is_cancel: bool) -> String {
     }
 }
 
-/// A sober, Google-style HTML body. Every sender-supplied value is HTML-escaped
-/// before it lands in the markup: this HTML is produced server-side and must not
-/// carry injected tags or script.
-fn build_body_html(invite: &CalendarInvite, is_cancel: bool) -> String {
+/// The invitation body, laid out the way a calendar invitation reads: the event
+/// name, then Date / Lieu / Invités as titled blocks separated by real vertical
+/// space, rather than a cramped label-value table. Every sender-supplied value
+/// is HTML-escaped before it lands in the markup: this HTML is produced
+/// server-side and must not carry injected tags or script.
+fn build_body_html(invite: &CalendarInvite, is_cancel: bool, rsvp: Option<&RsvpLinks>) -> String {
     let summary = esc(invite.summary.as_deref().unwrap_or("Événement"));
-    let when = build_when_line(invite);
+
+    let mut blocks = String::new();
+
+    // The organiser's own words come first, as they do in a calendar invite.
+    if let Some(desc) = invite.description.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        blocks.push_str(&format!(
+            "<div style=\"margin:0 0 28px;font-size:14px;color:#3c4043\">{}</div>",
+            esc(desc).replace('\n', "<br>")
+        ));
+    }
+
+    blocks.push_str(&info_block("Date", &build_when_line(invite)));
+
+    if let Some(loc) = invite.location.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        blocks.push_str(&info_block("Lieu", &esc(loc)));
+    }
+
+    // Guests: the organiser is named first and marked as such, then everyone
+    // invited — one per line, so a long list stays readable.
+    let mut guests = String::new();
     let organizer = match (
         invite.organizer_name.as_deref().filter(|s| !s.trim().is_empty()),
         invite.organizer_email.as_deref(),
@@ -221,56 +256,91 @@ fn build_body_html(invite: &CalendarInvite, is_cancel: bool) -> String {
         (Some(name), Some(email)) => format!("{} &lt;{}&gt;", esc(name), esc(email)),
         (Some(name), None) => esc(name),
         (None, Some(email)) => esc(email),
-        (None, None) => "—".to_string(),
+        (None, None) => String::new(),
     };
-
-    let mut rows = String::new();
-    rows.push_str(&info_row("Quand", &when));
-    if let Some(loc) = invite.location.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        rows.push_str(&info_row("Où", &esc(loc)));
+    if !organizer.is_empty() {
+        guests.push_str(&format!(
+            "<div style=\"margin:0 0 4px\">{organizer}<span style=\"color:#5f6368\"> — organisateur</span></div>"
+        ));
     }
-    rows.push_str(&info_row("Organisateur", &organizer));
-    if !invite.attendees.is_empty() {
-        let guests = invite
-            .attendees
-            .iter()
-            .map(|a| match a.name.as_deref().filter(|s| !s.trim().is_empty()) {
-                Some(n) => format!("{} &lt;{}&gt;", esc(n), esc(&a.email)),
-                None => esc(&a.email),
-            })
-            .collect::<Vec<_>>()
-            .join("<br>");
-        rows.push_str(&info_row("Invités", &guests));
+    for a in &invite.attendees {
+        let who = match a.name.as_deref().filter(|s| !s.trim().is_empty()) {
+            Some(n) => format!("{} &lt;{}&gt;", esc(n), esc(&a.email)),
+            None => esc(&a.email),
+        };
+        guests.push_str(&format!("<div style=\"margin:0 0 4px\">{who}</div>"));
     }
-    if let Some(desc) = invite.description.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        rows.push_str(&info_row("Description", &esc(desc).replace('\n', "<br>")));
+    if !guests.is_empty() {
+        blocks.push_str(&info_block("Invités", &guests));
     }
 
     let banner = if is_cancel {
         format!(
-            "<p style=\"margin:0 0 4px;font-size:13px;color:#b3261e;font-weight:600\">Événement annulé</p>\
-             <h2 style=\"margin:0 0 16px;font-size:20px;color:#202124;text-decoration:line-through\">{summary}</h2>"
+            "<div style=\"margin:0 0 8px;font-size:13px;color:#b3261e;font-weight:700\">Événement annulé</div>\
+             <div style=\"margin:0 0 28px;font-size:22px;line-height:1.3;color:#202124;text-decoration:line-through\">{summary}</div>"
         )
     } else {
-        format!("<h2 style=\"margin:0 0 16px;font-size:20px;color:#202124\">{summary}</h2>")
+        format!("<div style=\"margin:0 0 28px;font-size:22px;line-height:1.3;color:#202124\">{summary}</div>")
+    };
+
+    // Answering: one button per answer when the instance publishes a public URL,
+    // so a guest replies from any mail client without signing in. Without those
+    // links the guest answers from their own calendar, through the attached file.
+    let answer_block = if is_cancel {
+        String::new()
+    } else {
+        let buttons = rsvp
+            .map(|r| {
+                [("Oui", r.yes.as_deref()), ("Non", r.no.as_deref()), ("Peut-être", r.maybe.as_deref())]
+                    .iter()
+                    .filter_map(|(label, url)| url.map(|u| button_link(label, u)))
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default();
+        if buttons.is_empty() {
+            "<div style=\"margin:32px 0 0;padding:16px 0 0;border-top:1px solid #e0e0e0;font-size:13px;color:#5f6368;line-height:1.6\">\
+               Répondez à cette invitation depuis votre agenda : le fichier <strong>invite.ics</strong> joint à ce message \
+               permet de l'accepter, de la refuser ou de répondre « peut-être ».\
+             </div>".to_string()
+        } else {
+            format!(
+                "<div style=\"margin:32px 0 0;padding:20px 0 0;border-top:1px solid #e0e0e0\">\
+                   <div style=\"margin:0 0 12px;font-size:14px;font-weight:700;color:#202124\">Répondre</div>\
+                   <div>{buttons}</div>\
+                 </div>"
+            )
+        }
     };
 
     format!(
-        "<div style=\"font-family:'Outfit',Arial,sans-serif;max-width:520px;color:#3c4043;line-height:1.5\">\
-           {banner}\
-           <table style=\"border-collapse:collapse\">{rows}</table>\
+        "<div style=\"font-family:'Outfit',Arial,Helvetica,sans-serif;max-width:600px;color:#3c4043;line-height:1.6\">\
+           {banner}{blocks}{answer_block}\
          </div>"
     )
 }
 
-/// One "label: value" line of the invitation table. `value` is already escaped
-/// (or intentional markup such as `<br>`), never raw sender text.
-fn info_row(label: &str, value_html: &str) -> String {
+/// One answer button. A styled `<a>` is the only shape every mail client
+/// renders alike; the URL is minted by Calendar, never by sender-supplied text.
+fn button_link(label: &str, url: &str) -> String {
     format!(
-        "<tr>\
-           <td style=\"padding:2px 16px 2px 0;vertical-align:top;color:#5f6368;font-size:13px;white-space:nowrap\">{label}</td>\
-           <td style=\"padding:2px 0;vertical-align:top;font-size:14px;color:#202124\">{value_html}</td>\
-         </tr>"
+        "<a href=\"{}\" style=\"display:inline-block;margin:0 8px 8px 0;padding:10px 24px;\
+           border:1px solid #dadce0;border-radius:20px;font-size:14px;color:#1a73e8;\
+           text-decoration:none\">{}</a>",
+        esc(url),
+        esc(label)
+    )
+}
+
+/// One titled block of the invitation: a bold label, the value under it, and
+/// room to breathe before the next one. `value_html` is already escaped (or
+/// intentional markup such as `<br>`), never raw sender text.
+fn info_block(label: &str, value_html: &str) -> String {
+    format!(
+        "<div style=\"margin:0 0 24px\">\
+           <div style=\"margin:0 0 6px;font-size:14px;font-weight:700;color:#202124\">{label}</div>\
+           <div style=\"font-size:14px;color:#3c4043\">{value_html}</div>\
+         </div>"
     )
 }
 

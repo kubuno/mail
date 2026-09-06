@@ -318,7 +318,7 @@ fn event_from_ics(ics: &str) -> Option<Value> {
         // someone's answer to ours, or a cancellation.
         "_method": method.as_deref().unwrap_or("PUBLISH").to_ascii_lowercase(),
     });
-    let Some(obj) = node.as_object_mut() else { return None };
+    let obj = node.as_object_mut()?;
     if let Some(s) = start { obj.insert("startDate".into(), json!(s)); }
     if let Some(e) = end { obj.insert("endDate".into(), json!(e)); }
     if let Some(l) = location { obj.insert("location".into(), json!(l)); }

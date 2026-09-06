@@ -10,6 +10,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 ## [Unreleased]
 
 ### Added
+- **Guests can answer an invitation straight from the e-mail.** The invitation now ends with a **Répondre** block offering Yes / No / Maybe; each button carries that guest's own link, so anyone can answer from any mail client without signing in to Kubuno. The buttons appear once an administrator has set the instance's public address in Calendar; without it the message explains that the answer is given from the recipient's own calendar, through the attached file.
 
 - **Meeting invitation e-mails, Google-style.** When Calendar publishes an
   invitation, Mail now sends the invitation e-mail on behalf of the organizer's
@@ -121,6 +122,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   `OR`, negation, parentheses), and is suggested in the search bar.
 
 ### Fixed
+- **Sent messages keep their formatting.** Every outgoing message was cleaned with a policy that strips `style` outright, so bold colours, spacing and alignment were lost the moment a message left — invitations arrived at their guests as an unstyled table. Sending now applies the module's own vetted policy, the same one the reader uses.
 - **A conversation carrying an attachment now opens on a single click, wherever you click it.** The attachment strip stretches across the whole row, and it swallowed clicks: the entire lower half of such a row opened nothing, so it often took a second click higher up. Clicking an attachment chip still previews that file instead of opening the conversation.
 - **Sender, subject and date stay on the first line of a row.** When an attachment chip added a second line, they drifted to the vertical middle of the taller row; the chips now sit on the line below, with everything else aligned on the first.
 - **Clicking a folder or label in the sidebar now leaves the search**, the way it does in any mail client: the search box empties and the folder shows its own content. The committed query used to stay applied on top of every folder you clicked, so the list never changed — only the highlighted row did. Back/forward out of a search and the inbox categories behave the same way. The URL is now the single source of truth for being in a search (`#search/<query>`).
@@ -202,6 +204,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   dragleave storm made it flicker).
 
 ### Changed
+- **An invitation is presented like a calendar entry.** Above the message, the card now leads with the day said plainly ("Tomorrow · 07:30 – 08:30"), then the event name in full size, then where it is held and who is organising it side by side, and finally Yes / No / Maybe. The three answers carry equal weight until one is given, after which it stays marked and the other two step back. The invitation e-mail itself is laid out the same way: the organiser's own words first, then Date, Place and Guests as titled blocks with room to breathe, instead of a cramped label-value table.
 
 - **"Reply all" is hidden when there is no one else to reply to.** On a message
   whose only correspondent is the sender, it would send the exact same mail as

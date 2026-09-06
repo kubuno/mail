@@ -253,7 +253,10 @@ pub(crate) async fn send_message_inner(
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Compte {}", dto.account_id)))?;
 
-    let body_html = ammonia::clean(&dto.body_html);
+    // The module's own hardened policy, the one the reader applies too — not
+    // bare `ammonia::clean`, which strips every `style` attribute and so sent
+    // each message, invitations included, stripped of its formatting.
+    let body_html = crate::services::html_sanitize::sanitize_email_html(&dto.body_html);
 
     // OpenPGP: resolve the sender's secret key and recipients' public keys up front
     // (None unless the message asks to be signed/encrypted). Both send paths hand

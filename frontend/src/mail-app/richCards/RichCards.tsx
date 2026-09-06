@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   CalendarDays, Plane, BedDouble, TrainFront, Bus, UtensilsCrossed, Car,
-  Package, MapPin, Clock, Check, CalendarPlus, Download, ExternalLink, Ticket,
+  Package, MapPin, Clock, Check, CalendarPlus, Download, ExternalLink, Ticket, Users,
 } from 'lucide-react'
 import { mailApi, type EmailMessage } from '../../api'
 import { cardsFromNodes, type RichCard, type EventCard, type FlightCard, type LodgingCard, type TransitCard, type ReservationCard, type OrderCard } from './parse'
@@ -22,7 +22,23 @@ function useFmt() {
     dateTime: (iso?: string) => fmt(iso, loc, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
     date:     (iso?: string) => fmt(iso, loc, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
     time:     (iso?: string) => fmt(iso, loc, { hour: '2-digit', minute: '2-digit' }),
+    loc,
   }), [loc])
+}
+/** The day an event falls on, said the way a person would: «Aujourd'hui»,
+ *  «Demain», otherwise the full weekday and date. This is what a calendar
+ *  invitation leads with — the hour matters only once you know the day. */
+function relativeDay(iso: string | undefined, loc: string, today: string, tomorrow: string, yesterday: string): string | undefined {
+  if (!iso) return undefined
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso)
+  const d = new Date(dateOnly ? `${iso}T00:00:00` : iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const midnight = (x: Date) => { const c = new Date(x); c.setHours(0, 0, 0, 0); return c.getTime() }
+  const days = Math.round((midnight(d) - midnight(new Date())) / 86_400_000)
+  if (days === 0) return today
+  if (days === 1) return tomorrow
+  if (days === -1) return yesterday
+  try { return new Intl.DateTimeFormat(loc, { weekday: 'long', day: 'numeric', month: 'long' }).format(d) } catch { return iso }
 }
 function fmt(iso: string | undefined, loc: string, opts: Intl.DateTimeFormatOptions): string | undefined {
   if (!iso) return undefined
@@ -41,6 +57,16 @@ function Shell({ icon, accent, children }: { icon: React.ReactNode; accent: stri
         {icon}
       </div>
       <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  )
+}
+/** One fact of an event card: a fixed icon column and text that WRAPS — an
+ *  address or a guest list must stay readable rather than be cut short. */
+function Row({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 min-w-0">
+      <span className="text-text-tertiary flex-shrink-0 mt-px">{icon}</span>
+      <div className="text-sm text-text-primary min-w-0 break-words">{children}</div>
     </div>
   )
 }
@@ -80,9 +106,20 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
   const [altEnd, setAltEnd] = useState('')
   const hasCalendar = !!calendarService()
   const isInvite = !!c.isInvite && !!ctx?.messageId
-  const when = c.end && c.start && sameDay(c.start, c.end)
-    ? `${f.dateTime(c.start)} – ${f.time(c.end)}`
-    : [f.dateTime(c.start), c.end && f.dateTime(c.end)].filter(Boolean).join(' → ')
+  const allDay = !!c.start && /^\d{4}-\d{2}-\d{2}$/.test(c.start)
+  const day    = relativeDay(c.start, f.loc,
+    t('rc_today',     { defaultValue: "Aujourd'hui" }),
+    t('rc_tomorrow',  { defaultValue: 'Demain' }),
+    t('rc_yesterday', { defaultValue: 'Hier' }))
+  // Same-day meeting: «Demain • 07:30 – 08:30». Spanning several days, the end
+  // date has to be spelled out, and an all-day event has no hours at all.
+  const when = allDay
+    ? day
+    : c.start && c.end && sameDay(c.start, c.end)
+      ? [day, `${f.time(c.start)} – ${f.time(c.end)}`].filter(Boolean).join(' • ')
+      : [day && `${day}${c.start ? ` • ${f.time(c.start)}` : ''}`, c.end && f.dateTime(c.end)].filter(Boolean).join(' → ')
+  const place = [...new Set([c.location, c.address].filter(Boolean))].join(' · ')
+  const host  = c.organizer || c.organizerEmail
 
   const add = async () => {
     setBusy('add')
@@ -124,137 +161,161 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
 
   const RSVP_OPTIONS: { key: Rsvp; label: string }[] = [
     { key: 'accepted',  label: t('rc_yes',   { defaultValue: 'Oui' }) },
-    { key: 'tentative', label: t('rc_maybe', { defaultValue: 'Peut-être' }) },
     { key: 'declined',  label: t('rc_no',    { defaultValue: 'Non' }) },
+    { key: 'tentative', label: t('rc_maybe', { defaultValue: 'Peut-être' }) },
   ]
 
   return (
-    <Shell icon={<CalendarDays size={18} />} accent="#1a73e8">
-      <div className="flex items-center gap-2">
-        <div className="font-medium text-sm text-text-primary truncate">{c.title}</div>
-        {c.isInvite && (
-          <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary flex-shrink-0">
-            {t('rc_invite', { defaultValue: 'Invitation' })}
-          </span>
+    <>
+      {/* An invitation is read the way a calendar entry is: the day first, then
+          what it is, then where and with whom — and only then the answer.
+          Same shell for a plain event, whose actions differ. */}
+      <div className="my-2 rounded-xl bg-surface-2 px-6 py-5">
+        <div className="flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            {when && <div className="text-[13px] font-medium text-text-secondary">{when}</div>}
+            <div className="text-[22px] leading-8 text-text-primary mt-1.5 break-words">{c.title}</div>
+          </div>
+          <CalendarDays size={22} className="text-text-tertiary flex-shrink-0 mt-0.5" />
+        </div>
+
+        {/* Where and with whom sit side by side on one band, as they do on an
+            invitation, and stack under one another when the reader is narrow. */}
+        {(place || host) && (
+          <div className="mt-5 grid gap-x-10 gap-y-4 sm:grid-cols-2">
+            {place && <Row icon={<MapPin size={18} />}>{place}</Row>}
+            {host && (
+              <Row icon={<Users size={18} />}>
+                {host}
+                <span className="text-text-secondary"> – {t('rc_organizer_role', { defaultValue: 'Organisateur' })}</span>
+              </Row>
+            )}
+          </div>
+        )}
+
+        {isInvite ? (
+          <div className="mt-6">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {RSVP_OPTIONS.map(o => {
+                // Opening the decline panel IS choosing "No": light it up right
+                // away rather than only once the reply leaves.
+                const selected = declineOpen ? o.key === 'declined' : rsvp === o.key
+                const settled  = !!rsvp || declineOpen
+                // Until an answer is given all three carry equal weight, as they
+                // do in a calendar invitation; afterwards the answer stands out
+                // and the other two step back without disappearing.
+                const filled = selected || !settled
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    onClick={() => onPick(o.key)}
+                    disabled={!!busy}
+                    aria-pressed={selected}
+                    className={`h-10 px-6 rounded-full text-sm font-medium inline-flex items-center gap-1.5
+                      transition-colors disabled:opacity-60 ${filled
+                        ? 'bg-primary text-white hover:bg-primary-hover'
+                        : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
+                  >
+                    {selected && !!rsvp && !declineOpen && <Check size={16} />}
+                    {busy === o.key ? '…' : o.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Declining: say why, and/or suggest another time (iTIP counter).
+                Both are optional — sending with empty fields is a plain refusal. */}
+            {declineOpen && (
+              <div className="mt-3 p-3 rounded-lg border border-border bg-surface-1 max-w-lg space-y-2.5">
+                <textarea
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  rows={2}
+                  placeholder={t('rc_reason_ph', { defaultValue: 'Motif du refus (facultatif)' })}
+                  className="w-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-text-primary
+                             placeholder:text-text-tertiary focus:outline-none focus:border-primary resize-y"
+                  style={{ fontSize: 14 }}
+                />
+                <div>
+                  <div className="text-xs text-text-secondary mb-1">
+                    {t('rc_propose', { defaultValue: 'Proposer un autre horaire (facultatif)' })}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="datetime-local"
+                      value={altStart}
+                      onChange={e => setAltStart(e.target.value)}
+                      className="rounded-md border border-border bg-surface-0 px-2 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                      style={{ fontSize: 14 }}
+                    />
+                    <span className="text-text-tertiary text-sm">→</span>
+                    <input
+                      type="datetime-local"
+                      value={altEnd}
+                      onChange={e => setAltEnd(e.target.value)}
+                      className="rounded-md border border-border bg-surface-0 px-2 py-1.5 text-text-primary focus:outline-none focus:border-primary"
+                      style={{ fontSize: 14 }}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() => respond('declined', {
+                      comment:       reason.trim() || undefined,
+                      proposedStart: altStart || undefined,
+                      proposedEnd:   altEnd || undefined,
+                    })}
+                    className="h-8 px-3 rounded-md text-sm bg-primary text-white hover:bg-primary-hover disabled:opacity-60 transition-colors"
+                  >
+                    {altStart
+                      ? t('rc_send_counter', { defaultValue: 'Proposer ce créneau' })
+                      : t('rc_send_decline', { defaultValue: 'Envoyer le refus' })}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeclineOpen(false)}
+                    className="h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors"
+                  >
+                    {t('common_cancel', { defaultValue: 'Annuler' })}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {rsvp && !declineOpen && (
+              <div className="flex items-center gap-1.5 text-xs text-text-tertiary mt-2">
+                <Check size={13} className="text-success" />
+                {rsvp === 'accepted'  && t('rc_replied_yes',   { defaultValue: 'Vous avez accepté — l\'organisateur a été prévenu.' })}
+                {rsvp === 'tentative' && t('rc_replied_maybe', { defaultValue: 'Réponse « peut-être » envoyée à l\'organisateur.' })}
+                {rsvp === 'declined'  && t('rc_replied_no',    { defaultValue: 'Vous avez refusé — l\'organisateur a été prévenu.' })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 mt-5 -ml-1 flex-wrap">
+            {hasCalendar && (
+              <button type="button" onClick={add} disabled={busy === 'add' || added}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-primary hover:bg-primary/10 disabled:opacity-60 transition-colors">
+                {added ? <><Check size={15} />{t('rc_added', { defaultValue: 'Ajouté à l\'agenda' })}</>
+                       : <><CalendarPlus size={15} />{t('rc_add', { defaultValue: 'Ajouter à l\'agenda' })}</>}
+              </button>
+            )}
+            <button type="button" onClick={() => downloadEventIcs(c)}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors">
+              <Download size={15} />{t('rc_ics', { defaultValue: '.ics' })}
+            </button>
+            {c.url && <LinkBtn href={c.url} icon={<ExternalLink size={15} />}>{t('rc_details', { defaultValue: 'Détails' })}</LinkBtn>}
+          </div>
         )}
       </div>
-      {when && <Line icon={<Clock size={13} className="flex-shrink-0" />}>{when}</Line>}
-      {(c.location || c.address) && <Line icon={<MapPin size={13} className="flex-shrink-0" />}>{[...new Set([c.location, c.address].filter(Boolean))].join(' · ')}</Line>}
-      {c.organizer && <Line>{t('rc_organizer', { defaultValue: 'Organisé par' })} {c.organizer}</Line>}
-
-      {isInvite ? (
-        <div className="mt-2.5">
-          <div className="text-xs text-text-secondary mb-1.5">{t('rc_going', { defaultValue: 'Participez-vous ?' })}</div>
-          <div className="inline-flex rounded-lg border border-border overflow-hidden">
-            {RSVP_OPTIONS.map((o, i) => {
-              // Opening the decline panel IS choosing "No": light it up right
-              // away rather than only once the reply leaves. While the panel is
-              // open it is the only active choice, so a previous answer cannot
-              // stay lit next to it.
-              const selected = declineOpen ? o.key === 'declined' : rsvp === o.key
-              return (
-                <button
-                  key={o.key}
-                  type="button"
-                  onClick={() => onPick(o.key)}
-                  disabled={!!busy}
-                  className={`h-8 px-4 text-sm transition-colors disabled:opacity-60 ${i > 0 ? 'border-l border-border' : ''} ${
-                    selected ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-2'
-                  }`}
-                >
-                  {busy === o.key ? '…' : o.label}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Declining: say why, and/or suggest another time (iTIP counter).
-              Both are optional — sending with empty fields is a plain refusal. */}
-          {declineOpen && (
-            <div className="mt-2.5 p-3 rounded-lg border border-border bg-surface-1 max-w-lg space-y-2.5">
-              <textarea
-                value={reason}
-                onChange={e => setReason(e.target.value)}
-                rows={2}
-                placeholder={t('rc_reason_ph', { defaultValue: 'Motif du refus (facultatif)' })}
-                className="w-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-text-primary
-                           placeholder:text-text-tertiary focus:outline-none focus:border-primary resize-y"
-                style={{ fontSize: 14 }}
-              />
-              <div>
-                <div className="text-xs text-text-secondary mb-1">
-                  {t('rc_propose', { defaultValue: 'Proposer un autre horaire (facultatif)' })}
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <input
-                    type="datetime-local"
-                    value={altStart}
-                    onChange={e => setAltStart(e.target.value)}
-                    className="rounded-md border border-border bg-surface-0 px-2 py-1.5 text-text-primary focus:outline-none focus:border-primary"
-                    style={{ fontSize: 14 }}
-                  />
-                  <span className="text-text-tertiary text-sm">→</span>
-                  <input
-                    type="datetime-local"
-                    value={altEnd}
-                    onChange={e => setAltEnd(e.target.value)}
-                    className="rounded-md border border-border bg-surface-0 px-2 py-1.5 text-text-primary focus:outline-none focus:border-primary"
-                    style={{ fontSize: 14 }}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() => respond('declined', {
-                    comment:       reason.trim() || undefined,
-                    proposedStart: altStart || undefined,
-                    proposedEnd:   altEnd || undefined,
-                  })}
-                  className="h-8 px-3 rounded-md text-sm bg-primary text-white hover:bg-primary-hover disabled:opacity-60 transition-colors"
-                >
-                  {altStart
-                    ? t('rc_send_counter', { defaultValue: 'Proposer ce créneau' })
-                    : t('rc_send_decline', { defaultValue: 'Envoyer le refus' })}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeclineOpen(false)}
-                  className="h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors"
-                >
-                  {t('common_cancel', { defaultValue: 'Annuler' })}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {rsvp && !declineOpen && (
-            <div className="flex items-center gap-1.5 text-xs text-text-tertiary mt-1.5">
-              <Check size={13} className="text-success" />
-              {rsvp === 'accepted'  && t('rc_replied_yes',   { defaultValue: 'Vous avez accepté — l\'organisateur a été prévenu.' })}
-              {rsvp === 'tentative' && t('rc_replied_maybe', { defaultValue: 'Réponse « peut-être » envoyée à l\'organisateur.' })}
-              {rsvp === 'declined'  && t('rc_replied_no',    { defaultValue: 'Vous avez refusé — l\'organisateur a été prévenu.' })}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 mt-2 -ml-1 flex-wrap">
-          {hasCalendar && (
-            <button type="button" onClick={add} disabled={busy === 'add' || added}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-primary hover:bg-primary/10 disabled:opacity-60 transition-colors">
-              {added ? <><Check size={15} />{t('rc_added', { defaultValue: 'Ajouté à l\'agenda' })}</>
-                     : <><CalendarPlus size={15} />{t('rc_add', { defaultValue: 'Ajouter à l\'agenda' })}</>}
-            </button>
-          )}
-          <button type="button" onClick={() => downloadEventIcs(c)}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-text-secondary hover:bg-surface-2 transition-colors">
-            <Download size={15} />{t('rc_ics', { defaultValue: '.ics' })}
-          </button>
-          {c.url && <LinkBtn href={c.url} icon={<ExternalLink size={15} />}>{t('rc_details', { defaultValue: 'Détails' })}</LinkBtn>}
-        </div>
-      )}
-    </Shell>
+      {/* Where the card comes from: it is read off the message, not fetched. */}
+      <div className="text-xs text-text-tertiary px-1 mb-2">
+        {t('rc_from_email', { defaultValue: "D'après cet e-mail" })}
+      </div>
+    </>
   )
 }
 
