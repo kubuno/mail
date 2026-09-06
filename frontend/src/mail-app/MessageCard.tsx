@@ -15,7 +15,6 @@ import AttachmentRow from './AttachmentRow'
 import MessageActionsMenu from './MessageActionsMenu'
 import MessageDetails from './MessageDetails'
 import SenderAvatar from './SenderAvatar'
-import RichCards from './richCards/RichCards'
 import { useImagePolicy } from './useImagePolicy'
 import { analyzeSender } from './senderSafety'
 import SenderWarningBadges from './SenderWarningBadges'
@@ -385,12 +384,6 @@ ${message.body_html ?? message.body_text ?? ''}`}
           gutter (w-10 + gap-3 = 52px) and the content flows past it, the way
           Gmail lays out a message. Dropped on mobile, where 52px of every line
           is width the screen cannot spare. */}
-      {/* Gmail-style rich cards (events/invites, flights, hotels, transit,
-          orders…) parsed from the message's schema.org structured data. */}
-      <div className={isMobile ? '' : 'ps-[52px]'}>
-        <RichCards message={message} />
-      </div>
-
       <div className={`mt-1 ${isMobile ? '' : 'ps-[52px]'}`}>
         {/* Gmail-style notice: images held back, with a one-off reveal and a
             "trust this sender" that persists. Only shown when the message

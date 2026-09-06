@@ -13,6 +13,7 @@ import {
   type ThreadCacheSnapshot,
 } from './threadCache'
 import MessageCard from './MessageCard'
+import RichCards from './richCards/RichCards'
 import InlineCompose from './InlineCompose'
 import ThreadReaderToolbar from './ThreadReaderToolbar'
 
@@ -334,6 +335,17 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
               </button>
             </div>
           )}
+
+          {/* Rich cards (invitations, flights, hotels, orders…) read from the
+              message's structured data. They belong to the CONVERSATION, not to
+              one message: an invitation is shown above the whole exchange, ahead
+              of the sender's header, the way a calendar entry precedes the mail
+              that carries it. The latest message that yields one wins, so an
+              updated invitation replaces the original. */}
+          {(() => {
+            const carrier = [...messages].reverse().find(m => (m.structured_data?.length ?? 0) > 0)
+            return carrier ? <RichCards message={carrier} /> : null
+          })()}
 
           {/* ── Messages ──────────────────────────────────────────────────── */}
           {messages.map((msg, i) => (
