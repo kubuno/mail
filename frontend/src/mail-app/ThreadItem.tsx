@@ -170,7 +170,13 @@ export default function ThreadItem({
       // grows with attachment chips. The oversized hover pills (28px star and
       // importance, 40px row actions) carry negative margins so they never
       // inflate the row beyond text + padding (40px, Gmail parity).
-      className={`relative flex items-center ${density === 'compact' ? 'py-[6px]' : 'py-[10px]'}
+      // `items-start`, not `items-center`: when attachment chips add a second
+      // line to the subject column, sender, date and hover actions must stay on
+      // the FIRST line with the subject instead of re-centring against the
+      // taller row. Every item on that line is a 20px line box (or a taller
+      // hover pill with matching negative margins), so single-line rows are
+      // laid out exactly as before.
+      className={`relative flex items-start ${density === 'compact' ? 'py-[6px]' : 'py-[10px]'}
         pl-4 pr-4 gap-0 cursor-pointer select-none group ${hovered ? 'z-[2]' : ''}`}
       // Backgrounds and separator follow Gmail exactly: READ rows carry the
       // blue-grey tint and UNREAD ones stay white (not the other way round), the
@@ -210,7 +216,7 @@ export default function ThreadItem({
 
       {/* Gutter — glyph centres at 26/56/86 like Gmail, each in its own
           circular hover pill (28px) that never shifts the layout. */}
-      <div className="w-5 flex-shrink-0 flex items-center justify-center">
+      <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
         <SelectBox
           checked={checked}
           onClick={onCheck}
@@ -247,7 +253,7 @@ export default function ThreadItem({
 
       {/* Subject + snippet, preceded by the folder/label chips */}
       <div className={`flex-1 min-w-0 ${hasChips ? 'flex flex-col gap-1' : ''}`}>
-      <div className="flex items-center gap-1.5 overflow-hidden">
+      <div className="flex items-center gap-1.5 overflow-hidden min-h-5">
         <ThreadChips thread={thread} currentFolder={currentFolder} currentLabelId={currentLabelId} />
         <span className={`text-sm truncate flex-shrink-0 max-w-[60%]
           ${unread ? 'font-bold text-text-primary' : 'text-text-primary'}`}>
@@ -272,7 +278,7 @@ export default function ThreadItem({
 
       {/* Hover actions (Gmail style: Archive / Delete / Read-Unread / Snooze) */}
       {hovered && (
-        <div className="flex items-center flex-shrink-0 ml-2" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center h-5 flex-shrink-0 ml-2" onClick={e => e.stopPropagation()}>
           {unsubUrl && (
             <a
               href={unsubUrl}
@@ -297,7 +303,7 @@ export default function ThreadItem({
       )}
 
       {/* Date */}
-      <div className={`text-xs flex-shrink-0 text-right min-w-[64px] ml-2
+      <div className={`text-xs leading-5 flex-shrink-0 text-right min-w-[64px] ml-2
         ${unread ? 'font-bold text-text-primary' : 'text-[#5f6368]'}
         ${hovered ? 'hidden' : ''}`}>
         {formatDate(thread.last_message_at, t, i18n.language)}
