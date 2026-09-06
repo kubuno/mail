@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   CalendarDays, Plane, BedDouble, TrainFront, Bus, UtensilsCrossed, Car,
-  Package, MapPin, Clock, Check, CalendarPlus, Download, ExternalLink, Ticket, Users,
+  Package, MapPin, Clock, Check, CalendarPlus, Download, ExternalLink, Ticket, Users, Navigation,
 } from 'lucide-react'
 import { mailApi, type EmailMessage } from '../../api'
 import { cardsFromNodes, type RichCard, type EventCard, type FlightCard, type LodgingCard, type TransitCard, type ReservationCard, type OrderCard } from './parse'
-import { addEventToCalendar, downloadEventIcs, calendarService } from './actions'
+import { addEventToCalendar, downloadEventIcs, calendarService, mapsDirectionsUrl } from './actions'
 import { safeUrl } from './safeUrl'
 
 type Rsvp = 'accepted' | 'tentative' | 'declined'
@@ -60,6 +60,23 @@ function Shell({ icon, accent, children }: { icon: React.ReactNode; accent: stri
     </div>
   )
 }
+/** "Itinéraire": opens the Maps module in a NEW TAB, already carrying the
+ *  destination, so the reader keeps the invitation in front of them. Same pill
+ *  shape as the answers, quieter fill — it is not an answer. */
+function DirectionsButton({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="h-10 px-6 rounded-full text-sm font-medium inline-flex items-center gap-1.5
+                 bg-primary/10 text-primary hover:bg-primary/20 transition-colors no-underline"
+    >
+      <Navigation size={16} />{label}
+    </a>
+  )
+}
+
 /** One fact of an event card: a fixed icon column and text that WRAPS — an
  *  address or a guest list must stay readable rather than be cut short. */
 function Row({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
@@ -120,6 +137,9 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
       : [day && `${day}${c.start ? ` • ${f.time(c.start)}` : ''}`, c.end && f.dateTime(c.end)].filter(Boolean).join(' → ')
   const place = [...new Set([c.location, c.address].filter(Boolean))].join(' · ')
   const host  = c.organizer || c.organizerEmail
+  // Getting there: the fullest form of the place is the better search term, and
+  // the link only exists when the Maps module does.
+  const directions = mapsDirectionsUrl(c.address || c.location || '')
 
   const add = async () => {
     setBusy('add')
@@ -222,6 +242,7 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
                   </button>
                 )
               })}
+              {directions && <DirectionsButton href={directions} label={t('rc_directions', { defaultValue: 'Itinéraire' })} />}
             </div>
 
             {/* Declining: say why, and/or suggest another time (iTIP counter).
@@ -308,6 +329,12 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
               <Download size={15} />{t('rc_ics', { defaultValue: '.ics' })}
             </button>
             {c.url && <LinkBtn href={c.url} icon={<ExternalLink size={15} />}>{t('rc_details', { defaultValue: 'Détails' })}</LinkBtn>}
+            {directions && (
+              <a href={directions} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-sm text-primary hover:bg-primary/10 transition-colors">
+                <Navigation size={15} />{t('rc_directions', { defaultValue: 'Itinéraire' })}
+              </a>
+            )}
           </div>
         )}
       </div>

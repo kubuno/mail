@@ -4,6 +4,21 @@ import type { EventCard } from './parse'
 /** The calendar module is optional (polyrepo rule): expose its "createEvent"
  *  service only when it's actually loaded, so the button can hide itself. */
 type CreateEventInput = { title: string; startsAt: string; endsAt?: string; description?: string; location?: string; url?: string; allDay?: boolean; status?: string }
+/** The Maps module's "way to this place" link, when Maps is installed. Mail
+ *  never hard-codes a route into another module: it asks the registry, and the
+ *  caller simply shows nothing when the service is absent. */
+export function mapsDirectionsUrl(destination: string): string | undefined {
+  const build = ModuleServiceRegistry.get('maps', 'directionsUrl') as
+    ((d: string) => string) | undefined
+  const dest = destination.trim()
+  if (!build || !dest) return undefined
+  try {
+    return build(dest)
+  } catch {
+    return undefined
+  }
+}
+
 export function calendarService(): ((input: CreateEventInput) => Promise<unknown>) | undefined {
   return ModuleServiceRegistry.get('calendar', 'createEvent') as ((input: CreateEventInput) => Promise<unknown>) | undefined
 }

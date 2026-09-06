@@ -10,6 +10,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 ## [Unreleased]
 
 ### Added
+- **"Directions" on an invitation.** When the event carries a place and the Maps module is installed, the invitation card offers Directions beside the answers. It opens Maps in a new tab with the destination already filled in, so the invitation stays open behind it.
 - **Guests can answer an invitation straight from the e-mail.** The invitation now ends with a **Répondre** block offering Yes / No / Maybe; each button carries that guest's own link, so anyone can answer from any mail client without signing in to Kubuno. The buttons appear once an administrator has set the instance's public address in Calendar; without it the message explains that the answer is given from the recipient's own calendar, through the attached file.
 
 - **Meeting invitation e-mails, Google-style.** When Calendar publishes an
