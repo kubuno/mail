@@ -69,10 +69,10 @@ function DirectionsButton({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="h-10 px-6 rounded-full text-sm font-medium inline-flex items-center gap-1.5
+      className="h-10 px-6 rounded-full text-sm font-medium inline-flex items-center
                  bg-primary/10 text-primary hover:bg-primary/20 transition-colors no-underline"
     >
-      <Navigation size={16} />{label}
+      {label}
     </a>
   )
 }
