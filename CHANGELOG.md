@@ -205,6 +205,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   dragleave storm made it flicker).
 
 ### Changed
+- Internal refactor: `handlers/messages.rs` (≈1230 lines, a grab-bag of unrelated concerns) was split into a `messages/` module — one file per responsibility (reading, sending, attachments, flags, address suggestions, OpenPGP, calendar-invitation RSVP). No visible or behavioural change; every import path is unchanged.
 - **An invitation is presented like a calendar entry.** Its card is now shown above the whole conversation, ahead of the sender's header, rather than inside the message under it — an invitation precedes the mail that carries it. The card leads with the day said plainly ("Tomorrow · 07:30 – 08:30"), then the event name in full size, then where it is held and who is organising it side by side, and finally Yes / No / Maybe. The three answers carry equal weight until one is given, after which it stays marked and the other two step back. The invitation e-mail itself is laid out the same way: the organiser's own words first, then Date, Place and Guests as titled blocks with room to breathe, instead of a cramped label-value table.
 
 - **"Reply all" is hidden when there is no one else to reply to.** On a message
