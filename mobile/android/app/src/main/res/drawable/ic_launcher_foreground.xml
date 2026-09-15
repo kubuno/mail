@@ -1,39 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    Adaptive-icon foreground: the Mail envelope.
-
-    Same mark the web wears in the app launcher (WaffleMenu renders each app by
-    the logo it registers; mail registers MailLogo via /mail-logo.svg). MailLogo
-    is a white envelope on a blue rounded-square tile — the tile is the ADAPTIVE
-    BACKGROUND (ic_launcher_background = #2563EB) because the launcher applies its
-    own mask, so only the envelope lives here.
-
-    Geometry: MailLogo's viewBox is 512x512; we scale it into the 108x108
-    adaptive canvas at 108/512 = 0.2109375 with no offset (the envelope is
-    centred at 256,256 in the source, so it lands centred and well inside the
-    safe zone). Rect + flap copied verbatim from MailLogo.tsx.
--->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-
-    <group
-        android:scaleX="0.2109375"
-        android:scaleY="0.2109375">
-
-        <!-- White envelope body (rect x116 y160 w280 h190 rx28). -->
-        <path
-            android:fillColor="@color/mail_white"
-            android:pathData="M144,160 H368 A28,28 0 0 1 396,188 V322 A28,28 0 0 1 368,350 H144 A28,28 0 0 1 116,322 V188 A28,28 0 0 1 144,160 Z" />
-        <!-- Envelope flap. -->
-        <path
-            android:pathData="M132,178 L256,268 L380,178"
-            android:fillColor="#00000000"
-            android:strokeColor="@color/mail_blue"
-            android:strokeWidth="14"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
-    </group>
-</vector>
+<!-- The launcher icon is the module's published web mark, verbatim:
+     core/frontend/public/mail-logo.png, the exact file the web WaffleMenu shows
+     for this app. It is the coloured hexagon glyph on a transparent ground,
+     inset into the adaptive-icon safe zone over a white background — the same
+     treatment the photos app uses. Copying the published PNG keeps the Android
+     icon identical to the web instead of a hand-traced approximation that lost
+     the hexagon. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/mail_logo"
+    android:inset="18%" />

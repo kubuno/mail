@@ -2,6 +2,6 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <!-- Themed icons (Android 13+): the system tints the glyph itself. -->
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <!-- No <monochrome>: the mark is a full-colour PNG hexagon, which a single-tint
+         themed icon would flatten into an unreadable blob. -->
 </adaptive-icon>

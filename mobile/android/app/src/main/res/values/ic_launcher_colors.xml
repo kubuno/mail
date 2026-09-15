@@ -1,11 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The launcher icon mirrors the web mark (mail/frontend/src/MailLogo.tsx):
-         a white envelope on the brand-blue tile. The adaptive background carries
-         the blue (#2563EB, the logo's rounded-square fill) since the launcher
-         supplies the rounded/circular mask itself; the foreground is the
-         envelope. -->
-    <color name="ic_launcher_background">#2563EB</color>
-    <color name="mail_blue">#2563EB</color>
-    <color name="mail_white">#FFFFFF</color>
+    <!-- The full mail-logo.png (brand-blue hexagon + white envelope) is the
+         adaptive foreground, so the background is plain white behind its
+         transparent corners — the launcher's mask does the rest. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
 </resources>
