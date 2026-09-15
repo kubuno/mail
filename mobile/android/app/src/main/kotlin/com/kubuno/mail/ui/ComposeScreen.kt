@@ -23,10 +23,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.kubuno.android.ui.components.KubunoButton
+import com.kubuno.android.ui.components.KubunoButtonSize
+import com.kubuno.android.ui.components.KubunoButtonVariant
+import com.kubuno.android.ui.components.KubunoTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -142,7 +144,7 @@ fun ComposeScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             RecipientField("À", to, { to = it }, trailing = {
-                TextButton(onClick = { showCc = !showCc }) { Text("Cc/Cci") }
+                KubunoButton("Cc/Cci", onClick = { showCc = !showCc }, variant = KubunoButtonVariant.TEXT, size = KubunoButtonSize.SM)
             })
             if (showCc) {
                 HorizontalDivider()
@@ -151,11 +153,10 @@ fun ComposeScreen(
                 RecipientField("Cci", bcc, { bcc = it })
             }
             HorizontalDivider()
-            OutlinedTextField(
+            KubunoTextField(
                 value = subject,
                 onValueChange = { subject = it },
-                placeholder = { Text("Objet") },
-                singleLine = true,
+                placeholder = "Objet",
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
             )
             attachments.forEachIndexed { index, att ->
@@ -185,14 +186,15 @@ fun ComposeScreen(
                     }
                 }
             }
-            OutlinedTextField(
+            KubunoTextField(
                 value = body,
                 onValueChange = { body = it },
-                placeholder = { Text("Rédigez votre message…") },
+                placeholder = "Rédigez votre message…",
+                singleLine = false,
+                minLines = 8,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp),
-                minLines = 8,
             )
             if (status is ComposeStatus.Failed) {
                 Text(
@@ -257,11 +259,10 @@ private fun RecipientField(
     onValueChange: (String) -> Unit,
     trailing: @Composable (() -> Unit)? = null,
 ) {
-    OutlinedTextField(
+    KubunoTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
+        label = label,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
         trailingIcon = trailing,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
