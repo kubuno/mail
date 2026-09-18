@@ -38,6 +38,12 @@ nohup.out
 *.key
 *.p12
 *.keystore
+# Test fixtures are not secrets. This one is a self-signed certificate for
+# mail.example.com carrying no private key, and the TLS diagnostics test
+# embeds it at compile time. The blanket *.pem rule kept it out of the
+# repository, so the test target built only on the machine that generated it
+# and failed everywhere else — CI included.
+!src/services/diagnostics/testdata/*.pem
 
 # État local de l'agent / éditeurs
 /.claude/
