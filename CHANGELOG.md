@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-18
+
 ### Changed
 
 - **Typing `@` in a recipient field reaches for a person.** One letter after it
@@ -385,5 +387,6 @@ number at release time, and CI publishes that section as the GitHub Release note
 - Search bar background now comes from the `--color-search-bg` token (unified at `#e9eef6`)
   rather than a hard-coded colour.
 
-[Unreleased]: https://github.com/kubuno/mail/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/kubuno/mail/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/kubuno/mail/releases/tag/v0.1.7
 [0.1.6]: https://github.com/kubuno/mail/releases/tag/v0.1.6
