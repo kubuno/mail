@@ -9,6 +9,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-18
+
 ### Security
 
 - **HTML sanitiser updated to a patched release.** `ammonia` moves from 4.1.2
@@ -402,6 +404,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - Search bar background now comes from the `--color-search-bg` token (unified at `#e9eef6`)
   rather than a hard-coded colour.
 
-[Unreleased]: https://github.com/kubuno/mail/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/kubuno/mail/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/kubuno/mail/releases/tag/v0.1.8
 [0.1.7]: https://github.com/kubuno/mail/releases/tag/v0.1.7
 [0.1.6]: https://github.com/kubuno/mail/releases/tag/v0.1.6
