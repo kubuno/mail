@@ -1,7 +1,7 @@
 /** Bundle MODULE mail — chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
 import { Inbox, Star, Send, FileText } from 'lucide-react'
-import { ExtensionRegistry, RouteRegistry, WaffleAppRegistry, ModuleSettingsRegistry, NotificationRegistry, FaviconRegistry, SlotRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
+import { ExtensionRegistry, ModuleServiceRegistry, RouteRegistry, WaffleAppRegistry, ModuleSettingsRegistry, NotificationRegistry, FaviconRegistry, SlotRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
 import './index.css'
 import './i18n'
 import { useMailStore } from './store'
@@ -23,6 +23,35 @@ export function register() {
   // pour flotter au-dessus de n'importe quel module.
   SlotRegistry.register('files-share-actions', 'mail', MailSendFileAction)
   SlotRegistry.register('app-dialogs', 'mail', MailComposeGlobal)
+
+  // Writing to someone, offered to the whole instance.
+  //
+  // Anywhere a person is shown — a guest on a calendar event, a contact, an
+  // author — the obvious act is "write to them", and until now that meant a
+  // `mailto:` handed to whatever the operating system happens to open. On an
+  // instance that HAS a mailbox, sending the reader outside to write is the
+  // wrong answer: the composer already mounts above every module (see
+  // `MailComposeGlobal`), so it only had to be reachable.
+  //
+  // Discovered dynamically, like every other service: a module that finds
+  // nobody here falls back to `mailto:`, which is what an instance without a
+  // mail module should do.
+  ModuleServiceRegistry.publish('mail', {
+    compose: (draft: { to?: string[]; cc?: string[]; subject?: string; bodyHtml?: string } = {}) => {
+      const addr = (list?: string[]) => (list ?? [])
+        .map(a => a.trim())
+        .filter(Boolean)
+        .map(email => ({ name: '', email }))
+      useMailStore.getState().setComposeInitial({
+        to:       addr(draft.to),
+        cc:       addr(draft.cc),
+        subject:  draft.subject ?? '',
+        bodyHtml: draft.bodyHtml ?? '',
+      })
+      useMailStore.getState().setComposeOpen(true)
+    },
+  })
+
 
   // Mail's own admin sections (deliverability diagnostic + DKIM keys), each
   // declaring which page of `/admin/modules/mail` it belongs to — in the

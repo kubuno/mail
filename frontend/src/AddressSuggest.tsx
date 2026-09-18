@@ -37,6 +37,25 @@ function useRecipientGroups() {
 type ContactField = { value: string; label?: string | null }
 type Contact = { display_name?: string | null; emails?: ContactField[] }
 
+/** `Toto <toto@toto.com>` → `{ email, name }`; anything else comes back whole. */
+/**
+ * Does this read as an address at all? `@m` holds an `@` and is not one — it is
+ * someone half-way through naming a person.
+ */
+export function looksLikeAddress(raw: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim())
+}
+
+export function parseAddress(raw: string): { email: string; name?: string } {
+  const t = raw.trim()
+  const open = t.lastIndexOf('<')
+  if (open < 0 || !t.endsWith('>')) return { email: t }
+  const email = t.slice(open + 1, -1).trim()
+  if (!email.includes('@')) return { email: t }
+  const name = t.slice(0, open).trim().replace(/^"|"$/g, '').trim()
+  return { email, name: name || undefined }
+}
+
 async function fromContacts(q: string): Promise<AddressSuggestion[]> {
   try {
     const { data } = await api.get<{ contacts: Contact[] }>('/contacts/contacts', {
@@ -49,13 +68,23 @@ async function fromContacts(q: string): Promise<AddressSuggestion[]> {
   }
 }
 
-/** Suggestions débouncées pour un préfixe de saisie. Contacts d'abord, puis index mail, dédupliqué. */
+/**
+ * Debounced suggestions for a typed prefix. Contacts first, then the mail
+ * index, deduplicated.
+ *
+ * Two letters are needed before asking anyone — one matches half the address
+ * book. An input that OPENS with `@` is the exception: it has already said it
+ * is reaching for someone rather than typing an address, so the first letter
+ * after it is enough. The `@` itself is not part of what is searched.
+ */
 export function useAddressSuggestions(query: string): AddressSuggestion[] {
   const [items, setItems] = useState<AddressSuggestion[]>([])
   const seq = useRef(0)
   useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) { setItems([]); return }
+    const raw = query.trim()
+    const mention = raw.startsWith('@')
+    const q = mention ? raw.slice(1).trim() : raw
+    if (q.length < (mention ? 1 : 2)) { setItems([]); return }
     const mySeq = ++seq.current
     const h = setTimeout(async () => {
       const [contacts, indexed] = await Promise.all([
@@ -112,7 +141,12 @@ export function RecipientField({ chips, onChange, placeholder }: {
       setInput(''); setActive(-1)
       return
     }
-    const v = s ?? (input.trim().includes('@') ? { email: input.trim() } : undefined)
+    // `Toto <toto@toto.com>` — the form every mail client copies. Stored whole
+    // it becomes an address nobody can write to and a name nobody can read.
+    const typed = parseAddress(input)
+    // An address, not merely something holding an `@`: committing the `@mar`
+    // of a name being reached for would make a recipient out of `@mar`.
+    const v = s ?? (looksLikeAddress(typed.email) ? { email: typed.email, name: typed.name } : undefined)
     if (!v) return
     if (!chips.some(c => c.email.toLowerCase() === v.email.toLowerCase())) {
       onChange([...chips, { email: v.email, name: v.name ?? undefined }])

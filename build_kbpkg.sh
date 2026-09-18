@@ -34,18 +34,34 @@
 #
 # Usage :
 #   bash build_kbpkg.sh                                   # cette machine
+#   bash build_kbpkg.sh --install                         # + installe le .kbpkg dans le core local (dev)
 #   bash build_kbpkg.sh --skip-build                      # réempaqueter sans recompiler
-#   OS=windows ARCH=x86_64 TARGET=x86_64-pc-windows-msvc bash build_kbpkg.sh --skip-build
+#   OS=windows ARCH=x86_64 TARGET=x86_64-pc-windows-msvc bash build_kbpkg.sh   # build croisé
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 export SQLX_OFFLINE=true
 
-PKG_NAME=$(grep -m1 '^name' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')   # kubuno-<id>
-MODULE="${PKG_NAME#kubuno-}"
-VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+# Id et version viennent du MANIFESTE du module (module.toml) — la source
+# autoritaire, présente aussi quand Cargo.toml est un workspace sans [package]
+# (ex. p2pnas). Repli sur Cargo.toml pour un module mono-crate sans les champs.
+MODULE=$(grep -m1 '^id'      module.toml | sed -E 's/.*"([^"]+)".*/\1/')
+VERSION=$(grep -m1 '^version' module.toml | sed -E 's/.*"([^"]+)".*/\1/')
+if [[ -z "$MODULE" ]]; then
+  PKG_NAME=$(grep -m1 '^name' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')   # kubuno-<id>
+  MODULE="${PKG_NAME#kubuno-}"
+fi
+[[ -n "$VERSION" ]] || VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+[[ -n "$MODULE" ]]  || { echo "id du module introuvable (module.toml / Cargo.toml)" >&2; exit 1; }
 DIST="dist"
 SKIP_BUILD=0
-[[ "${1:-}" == "--skip-build" ]] && SKIP_BUILD=1
+INSTALL=0
+for a in "$@"; do
+  case "$a" in
+    --skip-build) SKIP_BUILD=1 ;;
+    --install)    INSTALL=1 ;;
+    *) echo "Option inconnue : $a" >&2; exit 1 ;;
+  esac
+done
 
 # Noms de cible identiques à ceux du catalogue et du core (ceux de Rust).
 OS="${OS:-$(uname -s | tr '[:upper:]' '[:lower:]')}"
@@ -68,7 +84,8 @@ echo "==> ${MODULE} ${VERSION} — ${OS}/${ARCH}"
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "==> Compilation"
-  cargo build --release --bin "kubuno-${MODULE}"
+  # `TARGET` (facultatif) compile pour un autre triplet — build croisé Windows/macOS.
+  cargo build --release ${TARGET:+--target "$TARGET"} --bin "kubuno-${MODULE}"
   [[ -f frontend/package.json ]] && ( cd frontend && npm ci --silent && npm run build --silent )
 fi
 
@@ -77,16 +94,22 @@ BIN="target/release/${EXE}"
 [[ -n "${TARGET:-}" && -f "target/${TARGET}/release/${EXE}" ]] && BIN="target/${TARGET}/release/${EXE}"
 [[ -f "$BIN" ]] || { echo "Exécutable introuvable : $BIN" >&2; exit 1; }
 [[ -f module.toml ]] || { echo "module.toml introuvable" >&2; exit 1; }
-[[ -d frontend/dist ]] || { echo "frontend/dist introuvable — construisez le frontend" >&2; exit 1; }
+# Le frontend est FACULTATIF : un module d'infrastructure (ex. stt) n'a pas d'UI.
+# S'il en a un (frontend/package.json), son build doit avoir produit frontend/dist.
+HAS_FRONTEND=0
+if [[ -f frontend/package.json ]]; then
+  HAS_FRONTEND=1
+  [[ -d frontend/dist ]] || { echo "frontend/dist introuvable — construisez le frontend" >&2; exit 1; }
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 ROOT="${WORK}/${MODULE}"
-mkdir -p "$ROOT/frontend"
+mkdir -p "$ROOT"
 
 install -m 755 "$BIN"       "${ROOT}/${EXE}"
 install -m 644 module.toml  "${ROOT}/module.toml"
-cp -r frontend/dist/.       "${ROOT}/frontend/"
+[[ "$HAS_FRONTEND" -eq 1 ]] && { mkdir -p "${ROOT}/frontend"; cp -r frontend/dist/. "${ROOT}/frontend/"; }
 [[ -d migrations ]] && { mkdir -p "${ROOT}/migrations"; cp migrations/*.sql "${ROOT}/migrations/" 2>/dev/null || true; }
 [[ -f config.toml.example ]] && install -m 644 config.toml.example "${ROOT}/config.toml.example"
 [[ -f LICENSE ]]      && install -m 644 LICENSE      "${ROOT}/LICENSE"
@@ -123,3 +146,13 @@ archive "$ROOT" "$PWD/$OUT"
 SIZE=$(stat -c%s "$OUT" 2>/dev/null || stat -f%z "$OUT")
 echo "==> $OUT"
 printf '    %s Mo · %d fichiers\n' "$(( (SIZE + 524288) / 1048576 ))" "$(unzip -Z1 "$OUT" | wc -l)"
+
+# Boucle de dev locale : installe le paquet dans le core de cette machine par le
+# MÊME chemin que la production (kubuno modules:install → store), puis redémarre.
+# Un module s'installe uniquement au format .kbpkg — il n'y a plus de .deb.
+if [[ "$INSTALL" -eq 1 ]]; then
+  echo "==> Installation locale (kubuno modules:install)"
+  sudo kubuno modules:install "$OUT"
+  sudo systemctl restart kubuno
+  echo "==> ${MODULE} installé + kubuno redémarré"
+fi

@@ -9,11 +9,34 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- **Typing `@` in a recipient field reaches for a person.** One letter after it
+  is now enough to be offered a list, instead of the usual two: the `@` has
+  already said you are naming somebody rather than typing an address. What
+  follows the `@` is what gets searched, and a half-typed `@mar` is no longer
+  turned into a recipient of its own when you leave the field.
+
+### Added
+
+- **A recipient pasted as a `Name <address>` string is read as a name and an
+  address.** It used to become a single unusable recipient carrying the whole
+  string.
+
+- **Writing to someone opens the composer, from anywhere in the instance.** The
+  "write to them" action other modules offer beside a person — a guest on a
+  calendar event today — used to be a `mailto:` handed to whatever the operating
+  system opens, which on an instance that has a mailbox is the wrong answer: it
+  loses the signature, the drafts and the sent copy. The composer already
+  floated above every module; it is now reachable by them, pre-filled with the
+  recipient, without leaving the page you were on. An instance without this
+  module keeps the `mailto:`.
+
 ### Added
 - **"Directions" on an invitation.** When the event carries a place and the Maps module is installed, the invitation card offers Directions beside the answers. It opens Maps in a new tab with the destination already filled in, so the invitation stays open behind it.
 - **Guests can answer an invitation straight from the e-mail.** The invitation now ends with a **Répondre** block offering Yes / No / Maybe; each button carries that guest's own link, so anyone can answer from any mail client without signing in to Kubuno. The buttons appear once an administrator has set the instance's public address in Calendar; without it the message explains that the answer is given from the recipient's own calendar, through the attached file.
 
-- **Meeting invitation e-mails, Google-style.** When Calendar publishes an
+- **Meeting invitation e-mails.** When Calendar publishes an
   invitation, Mail now sends the invitation e-mail on behalf of the organizer's
   default account: a sober HTML body (event title, when, where, organizer, guest
   list, description) plus a standards-compliant `invite.ics` attachment
@@ -131,7 +154,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - An iMIP reply (RSVP) that omits `DTSTART` — allowed by RFC 5546 — is now recognised and forwarded to the organizer's calendar instead of being silently ignored.
 
 - **A sender can no longer impersonate someone in the interface.** A display
-  name carrying somebody else's address ("Support <admin@banque.fr>" sent from
+  name carrying somebody else's address (a spoofed display name sent from
   elsewhere) now shows the real address next to it — on mobile too, where it
   used to be hidden — with a warning chip. Bidi and invisible characters are
   stripped from every attacker-authored text, so an attachment named
@@ -205,6 +228,11 @@ number at release time, and CI publishes that section as the GitHub Release note
   dragleave storm made it flicker).
 
 ### Changed
+- **This module now installs as a Kubuno package (`.kbpkg`) only.** Its system
+  packages (Debian/RPM and the Windows and macOS installers) are no longer
+  built: the module is distributed as one `.kbpkg` per platform (Linux, Windows,
+  macOS) that the Kubuno server installs itself — from the admin console, or
+  offline with `kubuno modules:install <file>.kbpkg`.
 - Internal refactor: `handlers/messages.rs` (≈1230 lines, a grab-bag of unrelated concerns) was split into a `messages/` module — one file per responsibility (reading, sending, attachments, flags, address suggestions, OpenPGP, calendar-invitation RSVP). No visible or behavioural change; every import path is unchanged.
 - **An invitation is presented like a calendar entry.** Its card is now shown above the whole conversation, ahead of the sender's header, rather than inside the message under it — an invitation precedes the mail that carries it. The card leads with the day said plainly ("Tomorrow · 07:30 – 08:30"), then the event name in full size, then where it is held and who is organising it side by side, and finally Yes / No / Maybe. The three answers carry equal weight until one is given, after which it stays marked and the other two step back. The invitation e-mail itself is laid out the same way: the organiser's own words first, then Date, Place and Guests as titled blocks with room to breathe, instead of a cramped label-value table.
 
@@ -336,7 +364,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   reason other than habit. Round icon-only buttons (zoom, print) and status
   badges keep their shape — a circle around a lone icon is not the same thing.
 
-- The monospace fallback for message bodies no longer names a Google font that
+- The monospace fallback for message bodies no longer names an external font that
   was never shipped; it uses DM Mono, which the instance actually serves.
 
 - Internal refactor: the message composer (`ComposeWindow`) was split into

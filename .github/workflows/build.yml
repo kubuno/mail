@@ -34,19 +34,17 @@ jobs:
           npm ci
           npm run build
 
-      # ── Paquet Debian ──
-      - name: build .deb
-        run: bash build_deb.sh
       # ── Paquet Kubuno (.kbpkg) ──
-      # Le format que le serveur installe lui-même, identique sur tous les
-      # systèmes. Construit à partir du binaire et du frontend produits
-      # ci-dessus : il livre donc exactement ce que livre le .deb.
+      # The one format a module ships and the server installs, identical on
+      # every system: built from the binary and frontend produced above, and
+      # unpacked by the server with no external tool — same install on Linux,
+      # Windows and macOS. No Debian package is produced any more.
       - name: build .kbpkg
         run: bash build_kbpkg.sh --skip-build
       - uses: actions/upload-artifact@v4
         with:
-          name: kubuno-mail-deb
-          path: dist/*.deb
+          name: kubuno-mail-kbpkg
+          path: dist/*.kbpkg
       # Release notes come from CHANGELOG.md (section stamped by _tools/release.sh),
       # not from a commit summary: they are written when the change is made.
       - name: extract release notes
@@ -76,6 +74,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.deb
             dist/*.kbpkg
           body_path: RELEASE_NOTES.md
