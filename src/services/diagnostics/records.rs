@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn the_a_record_is_emitted_once_under_its_owning_domain() {
-        let domains = ["kubuno.com".to_string(), "martinienolinga.com".to_string()];
+        let domains = ["kubuno.com".to_string(), "toiledev.com".to_string()];
         let records = build("mail.kubuno.com", &domains, &[], None, false, &[]);
         let a: Vec<_> = records.iter().filter(|r| r.key == "a").collect();
         assert_eq!(a.len(), 1);
