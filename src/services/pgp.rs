@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(alice.emails, vec!["alice@example.com".to_string()]);
 
         let plaintext = b"Bonjour, ceci est un secret.";
-        let ct = encrypt(&[alice.public_armored.clone()], plaintext).expect("encrypt");
+        let ct = encrypt(std::slice::from_ref(&alice.public_armored), plaintext).expect("encrypt");
         assert!(ct.contains("BEGIN PGP MESSAGE"));
 
         let pt = decrypt(&alice.secret_armored, &ct).expect("decrypt");

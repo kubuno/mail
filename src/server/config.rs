@@ -1307,7 +1307,7 @@ mod tests {
     fn the_core_payload_is_read_whole_and_normalised() {
         let parsed = parse_instance_domains(&json!({
             "domains": [
-                { "name": "Martinienolinga.COM", "kind": "primary",   "verified": true,  "verified_at": "2026-08-05T10:00:00Z", "parent": null },
+                { "name": "Toiledev.COM", "kind": "primary",   "verified": true,  "verified_at": "2026-08-05T10:00:00Z", "parent": null },
                 { "name": "alias.fr",     "kind": "alias",     "verified": true,  "verified_at": null, "parent": "toiledev.com" },
                 { "name": "attente.fr",   "kind": "secondary", "verified": false, "verified_at": null, "parent": null },
                 // A row with no usable name is dropped, never guessed at.

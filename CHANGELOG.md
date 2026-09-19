@@ -16,6 +16,13 @@ number at release time, and CI publishes that section as the GitHub Release note
   labels that decode to plain ASCII — a mismatch an attacker can use to make two
   different names look like one.
 
+### Fixed
+
+- **A leftover reference to the previous maintainer domain is gone.** The
+  domain migration replaced every occurrence but one, which survived because it
+  was spelled with different capitalisation.
+
+
 ## [0.1.8] - 2026-09-18
 
 ### Security

@@ -366,7 +366,7 @@ mod tests {
         let content = alternative_body("Secret", "<p>Secret</p>");
         let content_bytes = content.formatted();
 
-        let enc = encrypt(&content_bytes, &[k.public_armored.clone()]).expect("encrypt");
+        let enc = encrypt(&content_bytes, std::slice::from_ref(&k.public_armored)).expect("encrypt");
         let out = ascii(&enc.formatted());
 
         assert!(out.contains("multipart/encrypted"));
@@ -395,10 +395,10 @@ mod tests {
     fn incoming_encrypted_roundtrips_to_body() {
         let k = pgp::generate("Dave <dave@example.com>").expect("gen");
         let content = alternative_body("Bonjour Dave", "<p>Bonjour Dave</p>");
-        let enc = encrypt(&content.formatted(), &[k.public_armored.clone()]).expect("encrypt");
+        let enc = encrypt(&content.formatted(), std::slice::from_ref(&k.public_armored)).expect("encrypt");
         let raw = enc.formatted();
 
-        let out = parse_incoming(&raw, &[k.secret_armored.clone()], None).expect("parse");
+        let out = parse_incoming(&raw, std::slice::from_ref(&k.secret_armored), None).expect("parse");
         assert!(out.encrypted, "message reconnu comme chiffré");
         assert!(out.signed.is_none(), "pas de signature");
         assert!(out.body_html.as_deref().unwrap_or("").contains("Bonjour Dave"), "html: {:?}", out.body_html);
@@ -409,7 +409,7 @@ mod tests {
     fn incoming_encrypted_without_key_reports_encrypted_no_body() {
         let k = pgp::generate("Eve <eve@example.com>").expect("gen");
         let content = alternative_body("secret", "<p>secret</p>");
-        let enc = encrypt(&content.formatted(), &[k.public_armored.clone()]).expect("encrypt");
+        let enc = encrypt(&content.formatted(), std::slice::from_ref(&k.public_armored)).expect("encrypt");
         let raw = enc.formatted();
 
         // No secret key on file → we know it is encrypted but cannot read it.
@@ -452,10 +452,10 @@ mod tests {
     fn incoming_signed_then_encrypted_surfaces_both() {
         let k = pgp::generate("Heidi <heidi@example.com>").expect("gen");
         let content = alternative_body("Confidentiel", "<p>Confidentiel</p>");
-        let sae = sign_and_encrypt(content, &k.secret_armored, &[k.public_armored.clone()]).expect("sae");
+        let sae = sign_and_encrypt(content, &k.secret_armored, std::slice::from_ref(&k.public_armored)).expect("sae");
         let raw = sae.formatted();
 
-        let out = parse_incoming(&raw, &[k.secret_armored.clone()], Some(&k.public_armored)).expect("parse");
+        let out = parse_incoming(&raw, std::slice::from_ref(&k.secret_armored), Some(&k.public_armored)).expect("parse");
         assert!(out.encrypted, "chiffré");
         let verdict = out.signed.expect("signé sous le chiffrement");
         assert!(verdict.valid, "signature interne valide");
