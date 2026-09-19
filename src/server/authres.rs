@@ -55,10 +55,13 @@ pub async fn verify(
     raw: &[u8],
     hostname: &str,
 ) -> AuthVerdict {
-    // Build the authenticator over the host's resolv.conf. A transient failure
-    // here means we simply cannot authenticate this message — return an empty
-    // verdict rather than panicking.
-    let authenticator = match MessageAuthenticator::new_system_conf() {
+    // Build the authenticator over the host's resolv.conf — through `dns_opts`,
+    // so a truncated answer is retried over TCP (an SPF record often does not
+    // fit in UDP). A transient failure here means we simply cannot authenticate
+    // this message — return an empty verdict rather than panicking.
+    let authenticator = match crate::services::dns_opts::system_conf()
+        .and_then(|(config, opts)| MessageAuthenticator::new(config, opts))
+    {
         Ok(a) => a,
         Err(err) => {
             tracing::warn!(

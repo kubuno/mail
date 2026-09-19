@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
+use hickory_resolver::proto::rr::RData;
 use hickory_resolver::TokioResolver;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -129,8 +130,8 @@ pub async fn deliver(
     };
 
     // 1. Build the DNS resolver from the system configuration.
-    let resolver = match TokioResolver::builder_tokio() {
-        Ok(builder) => builder.build(),
+    let resolver = match crate::services::dns_opts::system_resolver() {
+        Ok(resolver) => resolver,
         Err(e) => {
             tracing::error!("résolveur DNS indisponible: {e}");
             return DeliveryOutcome::Deferred {
@@ -237,17 +238,22 @@ async fn resolve(resolver: &TokioResolver, domain: &str) -> Resolved {
         Ok(mx) => {
             let mut records: Vec<(u16, String)> = Vec::new();
             let mut null_mx = false;
-            for rec in mx.iter() {
-                if rec.exchange().is_root() {
+            // Since hickory 0.26 a lookup hands back raw records: keep the MX
+            // rdata only, ignoring whatever else the answer section carries.
+            for rec in mx.answers().iter().filter_map(|record| match &record.data {
+                RData::MX(rdata) => Some(rdata),
+                _ => None,
+            }) {
+                if rec.exchange.is_root() {
                     // "." exchange = NULL MX (RFC 7505).
                     null_mx = true;
                     continue;
                 }
                 // `to_utf8()` yields the FQDN with a trailing dot; trim it so the
                 // name is usable as a TLS server name and A/AAAA query.
-                let host = rec.exchange().to_utf8().trim_end_matches('.').to_string();
+                let host = rec.exchange.to_utf8().trim_end_matches('.').to_string();
                 if !host.is_empty() {
-                    records.push((rec.preference(), host));
+                    records.push((rec.preference, host));
                 }
             }
             if null_mx && records.is_empty() {

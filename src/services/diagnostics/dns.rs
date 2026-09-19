@@ -6,8 +6,9 @@
 //! answer, and never a failure). Collapsing the two is how a monitoring page
 //! ends up waking someone for a two-second SERVFAIL.
 
-use hickory_resolver::config::{NameServerConfigGroup, ResolveHosts, ResolverConfig};
-use hickory_resolver::name_server::TokioConnectionProvider;
+use hickory_resolver::config::{ResolveHosts, ResolverConfig, ServerGroup};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
+use hickory_resolver::proto::rr::{Name, RData};
 use hickory_resolver::{Resolver, TokioResolver};
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
@@ -17,8 +18,8 @@ use super::{Check, DkimTarget, Verdict};
 /// Builds a resolver from the system configuration. `None` when even that
 /// fails — reported once, as `Unknown`, rather than per check.
 pub fn resolver() -> Option<TokioResolver> {
-    match TokioResolver::builder_tokio() {
-        Ok(builder) => Some(builder.build()),
+    match crate::services::dns_opts::system_resolver() {
+        Ok(resolver) => Some(resolver),
         Err(e) => {
             tracing::error!(error = %e, "diagnostic : résolveur DNS indisponible");
             None
@@ -63,17 +64,22 @@ const PUBLIC_RESOLVERS: [IpAddr; 5] = [
 /// an `Unknown`, never a hard `Fail`.
 pub fn fresh_resolver() -> Option<TokioResolver> {
     // Both UDP and TCP per IP, so a truncated large record (a DKIM key) retries
-    // over TCP. `true`: trust these recursive resolvers' negative answers.
-    let group = NameServerConfigGroup::from_ips_clear(&PUBLIC_RESOLVERS, 53, true);
-    let config = ResolverConfig::from_parts(None, Vec::new(), group);
-    let mut builder = Resolver::builder_with_config(config, TokioConnectionProvider::default());
+    // over TCP — and `udp_and_tcp()` marks the group as trusted for negative
+    // answers, which is what we want from a recursive resolver. `server_name`
+    // and `path` are only read by the TLS/HTTPS transports, which we do not use.
+    let group = ServerGroup { ips: &PUBLIC_RESOLVERS, server_name: "", path: "" };
+    let config = ResolverConfig::from_parts(None, Vec::new(), group.udp_and_tcp().collect());
+    let mut builder = Resolver::builder_with_config(config, TokioRuntimeProvider::default());
     {
         let opts = builder.options_mut();
         opts.cache_size = 0; // no positive cache — always the live record
         opts.timeout = FRESH_TIMEOUT;
         opts.use_hosts_file = ResolveHosts::Never; // /etc/hosts must not shadow a zone
+        // One server at a time, so a truncated answer really is retried over
+        // TCP — see `services::dns_opts`.
+        crate::services::dns_opts::harden(opts);
     }
-    Some(builder.build())
+    builder.build().ok()
 }
 
 /// Picks the fresh resolver when one could be built, otherwise the system one.
@@ -113,7 +119,7 @@ pub trait IsNoRecords {
     fn is_no_records(&self) -> bool;
 }
 
-impl IsNoRecords for hickory_resolver::ResolveError {
+impl IsNoRecords for hickory_resolver::net::NetError {
     /// True only for a genuine *absence* — NXDOMAIN (the name does not exist) or
     /// NODATA (it exists with no record of this type).
     ///
@@ -125,17 +131,14 @@ impl IsNoRecords for hickory_resolver::ResolveError {
     /// Only NXDOMAIN and NODATA are absence; every other response code means the
     /// query was not usefully answered → `Answer::Unavailable` → `Verdict::Unknown`.
     fn is_no_records(&self) -> bool {
+        use hickory_resolver::net::{DnsError, NetError};
         use hickory_resolver::proto::op::ResponseCode;
-        use hickory_resolver::proto::ProtoErrorKind;
-        use hickory_resolver::ResolveErrorKind;
 
-        match self.kind() {
-            ResolveErrorKind::Proto(proto) => match proto.kind() {
-                ProtoErrorKind::NoRecordsFound { response_code, .. } => {
-                    matches!(response_code, ResponseCode::NXDomain | ResponseCode::NoError)
-                }
-                _ => false,
-            },
+        match self {
+            NetError::Dns(DnsError::NoRecordsFound(no_records)) => matches!(
+                no_records.response_code,
+                ResponseCode::NXDomain | ResponseCode::NoError
+            ),
             _ => false,
         }
     }
@@ -146,10 +149,18 @@ impl IsNoRecords for hickory_resolver::ResolveError {
 /// anything joined back together.
 pub async fn txt(resolver: &TokioResolver, name: &str) -> Answer<String> {
     Answer::from_result(resolver.txt_lookup(name).await, |lookup| {
+        // Since hickory 0.26 a lookup hands back raw records: keep only the TXT
+        // rdata, ignoring anything else the answer section carries (a CNAME on
+        // the way to the name, for instance).
         lookup
+            .answers()
             .iter()
-            .map(|rec| {
-                rec.txt_data()
+            .filter_map(|rec| match &rec.data {
+                RData::TXT(txt) => Some(txt),
+                _ => None,
+            })
+            .map(|txt| {
+                txt.txt_data
                     .iter()
                     .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
                     .collect::<String>()
@@ -188,10 +199,15 @@ pub async fn check_mx(resolver: &TokioResolver, domain: &str, hostname: &str) ->
     let mx = match resolver.mx_lookup(domain).await {
         Ok(lookup) => {
             let mut records: Vec<(u16, String)> = lookup
+                .answers()
                 .iter()
-                .filter(|rec| !rec.exchange().is_root()) // "." = null MX (RFC 7505)
-                .map(|rec| {
-                    (rec.preference(), rec.exchange().to_utf8().trim_end_matches('.').to_string())
+                .filter_map(|rec| match &rec.data {
+                    RData::MX(mx) => Some(mx),
+                    _ => None,
+                })
+                .filter(|mx| !mx.exchange.is_root()) // "." = null MX (RFC 7505)
+                .map(|mx| {
+                    (mx.preference, mx.exchange.to_utf8().trim_end_matches('.').to_string())
                 })
                 .collect();
             records.sort_by_key(|(pref, _)| *pref);
@@ -389,10 +405,17 @@ pub async fn check_ptr(resolver: &TokioResolver, hostname: &str) -> Check {
     let mut unavailable = false;
 
     for ip in &ips {
-        let names = match Answer::from_result(resolver.reverse_lookup(*ip).await, |lookup| {
+        // Since hickory 0.26 `reverse_lookup` takes a name, not an address:
+        // `Name::from(ip)` is the reversed `in-addr.arpa` / `ip6.arpa` form.
+        let reverse = Name::from(*ip).to_string();
+        let names = match Answer::from_result(resolver.reverse_lookup(reverse).await, |lookup| {
             lookup
+                .answers()
                 .iter()
-                .map(|ptr| ptr.to_utf8().trim_end_matches('.').to_string())
+                .filter_map(|rec| match &rec.data {
+                    RData::PTR(ptr) => Some(ptr.0.to_utf8().trim_end_matches('.').to_string()),
+                    _ => None,
+                })
                 .collect::<Vec<_>>()
         }) {
             Answer::Records(names) => names,
@@ -475,6 +498,51 @@ mod tests {
         let system = 1u8;
         assert_eq!(*resolver_for(&None, &system), 1);
         assert_eq!(*resolver_for(&Some(2u8), &system), 2);
+    }
+
+    #[tokio::test]
+    async fn a_truncated_answer_falls_back_to_tcp() {
+        // The regression guard for `services::dns_opts`: a TXT record set too
+        // large for UDP must come back over TCP, not as an error. `cloudflare.com`
+        // publishes dozens of verification records, well past any UDP payload.
+        //
+        // Asserting on the ERROR rather than on success keeps this off the flaky
+        // list: no network (timeout, refused) is tolerated, a truncation that was
+        // never retried is not.
+        let Some(resolver) = fresh_resolver() else {
+            panic!("fresh resolver should always build");
+        };
+        if let Err(e) = resolver.txt_lookup("cloudflare.com.").await {
+            assert!(
+                !matches!(e, hickory_resolver::net::NetError::Truncated),
+                "a truncated answer was not retried over TCP: {e:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn record_extraction_reads_the_answer_section() {
+        // hickory 0.26 hands back raw records instead of typed lookups, so the
+        // rdata filtering is ours now — check it against a name whose MX set is
+        // stable. Network-dependent: asserts only when an answer came.
+        let Some(resolver) = fresh_resolver() else {
+            panic!("fresh resolver should always build");
+        };
+        if let Answer::Records(mx) = Answer::from_result(
+            resolver.mx_lookup("gmail.com.").await,
+            |lookup| {
+                lookup
+                    .answers()
+                    .iter()
+                    .filter_map(|rec| match &rec.data {
+                        RData::MX(mx) => Some(mx.exchange.to_utf8()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            },
+        ) {
+            assert!(mx.iter().any(|h| h.contains("gmail-smtp-in")), "unexpected MX: {mx:?}");
+        }
     }
 
     #[tokio::test]

@@ -15,6 +15,7 @@
 //! is decoration, and the reader keeps the coloured initial when it is missing.
 
 use anyhow::Result;
+use hickory_resolver::proto::rr::RData;
 use hickory_resolver::TokioResolver;
 use sqlx::PgPool;
 
@@ -199,8 +200,10 @@ async fn resolve(http: &reqwest::Client, domain: &str) -> Result<Option<Avatar>>
 async fn bimi_logo_url(resolver: &TokioResolver, domain: &str) -> Option<String> {
     let name = format!("default._bimi.{domain}");
     let answer = resolver.txt_lookup(name).await.ok()?;
-    for record in answer.iter() {
-        let joined: String = record.txt_data().iter().map(|d| String::from_utf8_lossy(d)).collect();
+    // Since hickory 0.26 a lookup hands back raw records: keep the TXT rdata only.
+    for record in answer.answers().iter() {
+        let RData::TXT(txt) = &record.data else { continue };
+        let joined: String = txt.txt_data.iter().map(|d| String::from_utf8_lossy(d)).collect();
         if !joined.to_ascii_lowercase().contains("v=bimi1") {
             continue;
         }

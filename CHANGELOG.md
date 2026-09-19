@@ -16,11 +16,31 @@ number at release time, and CI publishes that section as the GitHub Release note
   refuses any SQL string built at run time unless it has been audited: every
   such query here was traced back to its source, and the values a request
   carries are all bound rather than spliced.
-- **Still outstanding: the RSA implementation used for DKIM and OpenPGP.**
-  RUSTSEC-2023-0071 describes a timing side-channel for which no fix exists.
-  Unlike elsewhere in Kubuno, this module genuinely uses that code — for DKIM
-  signature handling and for encrypted mail — so the advisory stays open here
-  until the libraries that depend on it move on.
+- **DNS libraries updated: two vulnerabilities closed.** Everything this module
+  does with DNS — finding where to deliver an outgoing message, checking SPF,
+  DKIM and DMARC on an incoming one, and the administrator's DNS diagnostic —
+  now runs on a release that fixes CPU exhaustion while encoding a DNS message
+  (RUSTSEC-2026-0119) and a loop that never ends while validating a DNSSEC
+  proof of non-existence (RUSTSEC-2026-0118). A remote name server could reach
+  both by answering a query the module had to make.
+  That update also changed how DNS queries are sent, so the module now asks one
+  name server at a time: the new version drops the retry over TCP when two
+  servers answer in parallel that their reply was too big to fit, and a DNS
+  reply too big to fit is exactly what a long SPF record or a DKIM public key
+  produces. Without this, a perfectly valid record would have read as missing —
+  SPF failing on ordinary mail, and the administrator's DNS report calling a
+  published record absent.
+- **Still outstanding, and narrower than previously stated: the RSA advisory.**
+  RUSTSEC-2023-0071 is a timing side-channel in RSA *decryption*, and no fix
+  exists for it. The earlier note here overstated its reach: DKIM signing and
+  verification never touch the affected code — they use a separate
+  implementation that is hardened against this class of attack, and the
+  vulnerable one is only ever asked to *create* a DKIM key pair, which the
+  advisory does not concern. The one place it does apply is opening an OpenPGP
+  message encrypted to an RSA key. The keys this module creates are
+  Ed25519/Curve25519 and are never affected; only a secret key an account chose
+  to import can be, and even then the timing can only be measured by whoever
+  already sees that account's own responses.
 - **Input validation library updated.** The version in use carried
   RUSTSEC-2024-0421 through its domain-name parser, which accepted Punycode
   labels that decode to plain ASCII — a mismatch an attacker can use to make two

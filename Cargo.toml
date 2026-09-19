@@ -82,8 +82,15 @@ webpki-roots     = "1"
 # in RustCrypto code paths whose `Writer` impls are gated off — it does not
 # compile. `ring` + `generate` gives DKIM sign/verify, SPF, DMARC and key
 # generation over the ring backend, which the dkim/authres code targets.
-mail-auth         = { version = "0.7", default-features = false, features = ["ring", "generate"] }
-hickory-resolver  = "0.25"
+# Note on `generate`: it is the ONLY thing that pulls the `rsa` crate here, and
+# only to generate an RSA DKIM key pair (ring cannot generate RSA keys). DKIM
+# signing and verification go through ring, so RUSTSEC-2023-0071 — a timing
+# side-channel in RSA *decryption* — does not apply to the DKIM path.
+# Both crates must stay on a line that resolves hickory-proto >= 0.26.1:
+# 0.25.x and 0.26.0-alpha carry RUSTSEC-2026-0118 and RUSTSEC-2026-0119, and
+# mail-auth < 0.9 pins the alpha exactly, which would drag it back in.
+mail-auth         = { version = "0.9", default-features = false, features = ["ring", "generate"] }
+hickory-resolver  = "0.26"
 # Reading the TLS certificate the admin console reports on: expiry dates and the
 # names it covers. rustls loads a certificate but deliberately exposes neither,
 # and answering "is it expired / does it cover the announced hostname" needs

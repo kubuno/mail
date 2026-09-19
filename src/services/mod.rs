@@ -6,6 +6,7 @@ pub mod wkd;
 pub mod categorize;
 pub mod delegation;
 pub mod diagnostics;
+pub mod dns_opts;
 pub mod forwarding;
 pub mod search_query;
 pub mod sent_copy;

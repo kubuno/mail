@@ -1591,10 +1591,11 @@ async fn published_dmarc_policy(
 async fn lookup_dmarc_policy(domain: &str) -> Option<DmarcPolicy> {
     use mail_auth::{common::cache::NoCache, dmarc::Dmarc, MessageAuthenticator, Txt};
 
-    let resolver = MessageAuthenticator::new_system_conf()
+    let resolver = crate::services::dns_opts::system_conf()
+        .and_then(|(config, opts)| MessageAuthenticator::new(config, opts))
         .map_err(|e| tracing::warn!(error = %e, "Résolution DMARC : resolveur indisponible"))
         .ok()?;
-    let none = Option::<&NoCache<String, Txt>>::None;
+    let none = Option::<&NoCache<Box<str>, Txt>>::None;
 
     if let Ok(record) = resolver
         .txt_lookup::<Dmarc>(format!("_dmarc.{domain}."), none)
