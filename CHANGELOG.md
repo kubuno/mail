@@ -11,11 +11,16 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
-- **Database driver updated past an unfixable advisory.** The previous line
-  pulled in an RSA implementation vulnerable to a timing side-channel
-  (RUSTSEC-2023-0071) for which no fix will ever exist. The new line does not
-  depend on it at all, and it refuses any SQL string built at run time unless it
-  has been audited — the queries here were checked and marked.
+- **Database driver updated, and every query it runs is now fixed text.** The
+  driver no longer reaches for the MySQL support this module never used, and it
+  refuses any SQL string built at run time unless it has been audited: every
+  such query here was traced back to its source, and the values a request
+  carries are all bound rather than spliced.
+- **Still outstanding: the RSA implementation used for DKIM and OpenPGP.**
+  RUSTSEC-2023-0071 describes a timing side-channel for which no fix exists.
+  Unlike elsewhere in Kubuno, this module genuinely uses that code — for DKIM
+  signature handling and for encrypted mail — so the advisory stays open here
+  until the libraries that depend on it move on.
 - **Input validation library updated.** The version in use carried
   RUSTSEC-2024-0421 through its domain-name parser, which accepted Punycode
   labels that decode to plain ASCII — a mismatch an attacker can use to make two
