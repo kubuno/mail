@@ -130,7 +130,9 @@ async fn train_class(
          ORDER BY received_at DESC
          LIMIT $3",
     );
-    let msgs: Vec<(Uuid, String, Option<String>, String)> = sqlx::query_as(&sql)
+    // Audited: the only interpolation is `read_clause`, one of two literals
+    // picked by `is_spam`; the folder and the cap are bound parameters.
+    let msgs: Vec<(Uuid, String, Option<String>, String)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(user_id)
         .bind(folder)
         .bind(REBUILD_CAP)

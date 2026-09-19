@@ -155,7 +155,9 @@ pub async fn put_relay(
     }
     sql.push_str(" WHERE id = TRUE");
 
-    let mut query = sqlx::query(&sql)
+    // Audited: `sql` is assembled from the literals just above — the branch is
+    // chosen by `change`, never by caller text — and every value is bound.
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(dto.enabled)
         .bind(&host)
         .bind(port)

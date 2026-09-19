@@ -120,7 +120,11 @@ pub async fn list_mailing_lists(
                OR LOWER(COALESCE(comment, '')) LIKE $3 ESCAPE '\')
     "#;
 
-    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM mail.mailing_lists {filter}"))
+    // Audited: `filter` above is a literal; the domain, the active flag and
+    // the search pattern are bound parameters.
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM mail.mailing_lists {filter}"
+    )))
         .bind(&domain)
         .bind(q.active)
         .bind(&pattern)
@@ -128,9 +132,11 @@ pub async fn list_mailing_lists(
         .await
         .map_err(db_error("comptage des listes"))?;
 
-    let rows = sqlx::query_as::<_, ListRow>(&format!(
+    // Audited: the only interpolations are the `COLUMNS` constant and the
+    // `filter` literal above; every caller value is a bound parameter.
+    let rows = sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailing_lists {filter} ORDER BY address LIMIT $4 OFFSET $5"
-    ))
+    )))
     .bind(&domain)
     .bind(q.active)
     .bind(&pattern)
@@ -218,12 +224,13 @@ pub async fn create_mailing_list(
         .await
         .map_err(db_error("création d'une liste : ouverture de transaction"))?;
 
-    let row = sqlx::query_as::<_, ListRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO mail.mailing_lists
              (address, domain, name, post_policy, allowed_senders, is_active, comment)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(&parsed.address)
     .bind(&parsed.domain)
     .bind(&name)
@@ -300,7 +307,8 @@ pub async fn update_mailing_list(
         .await
         .map_err(db_error("mise à jour d'une liste : ouverture de transaction"))?;
 
-    let row = sqlx::query_as::<_, ListRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
         r#"UPDATE mail.mailing_lists SET
              address         = $2,
              domain          = $3,
@@ -312,7 +320,7 @@ pub async fn update_mailing_list(
                                     WHEN $8 = '' THEN NULL ELSE $8 END
            WHERE id = $1
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(id)
     .bind(&address)
     .bind(&domain)
@@ -484,7 +492,10 @@ async fn replace_members(
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async fn fetch_one(db: &PgPool, id: Uuid) -> Result<ListRow, MailError> {
-    sqlx::query_as::<_, ListRow>(&format!("SELECT {COLUMNS} FROM mail.mailing_lists WHERE id = $1"))
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLUMNS} FROM mail.mailing_lists WHERE id = $1"
+    )))
         .bind(id)
         .fetch_optional(db)
         .await

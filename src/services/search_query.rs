@@ -468,7 +468,7 @@ fn regex_escape(term: &str) -> String {
 
 /// Pushes the WHERE fragment for `node` onto `qb`. The caller is responsible
 /// for the surrounding `AND`. `user_id` feeds the `from:me` / `to:me` subquery.
-pub fn push_sql(qb: &mut QueryBuilder<'_, Postgres>, node: &Node, user_id: Uuid) {
+pub fn push_sql(qb: &mut QueryBuilder<Postgres>, node: &Node, user_id: Uuid) {
     match node {
         Node::And(items) => {
             qb.push("(");
@@ -499,7 +499,10 @@ pub fn push_sql(qb: &mut QueryBuilder<'_, Postgres>, node: &Node, user_id: Uuid)
 }
 
 /// `m.<col> ILIKE unaccent($term)` — accent- and case-insensitive contains.
-fn push_ilike(qb: &mut QueryBuilder<'_, Postgres>, col: &str, term: &str) {
+///
+/// `col` lands in the SQL text, so it is `&'static str`: only a literal written
+/// here can ever be a column expression, while the searched term is bound.
+fn push_ilike(qb: &mut QueryBuilder<Postgres>, col: &'static str, term: &str) {
     qb.push("unaccent(")
         .push(col)
         .push(") ILIKE unaccent(")
@@ -508,7 +511,10 @@ fn push_ilike(qb: &mut QueryBuilder<'_, Postgres>, col: &str, term: &str) {
 }
 
 /// Subquery matching any of the user's own account addresses (`from:me`).
-fn push_me_subquery(qb: &mut QueryBuilder<'_, Postgres>, col_expr: &str, user_id: Uuid) {
+///
+/// `col_expr` is spliced into the SQL text, hence `&'static str`: the compiler
+/// refuses anything but a literal written here.
+fn push_me_subquery(qb: &mut QueryBuilder<Postgres>, col_expr: &'static str, user_id: Uuid) {
     qb.push("EXISTS (SELECT 1 FROM mail.accounts acc WHERE acc.user_id = ")
         .push_bind(user_id)
         .push(" AND ")
@@ -516,7 +522,7 @@ fn push_me_subquery(qb: &mut QueryBuilder<'_, Postgres>, col_expr: &str, user_id
         .push(" ILIKE '%' || acc.email_address || '%')");
 }
 
-fn push_crit(qb: &mut QueryBuilder<'_, Postgres>, c: &Crit, user_id: Uuid) {
+fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
     match c {
         Crit::Noop => {
             qb.push("TRUE");
@@ -725,7 +731,7 @@ fn push_crit(qb: &mut QueryBuilder<'_, Postgres>, c: &Crit, user_id: Uuid) {
 }
 
 /// Approximate message size: body HTML + body text + declared attachment sizes.
-fn push_size_expr(qb: &mut QueryBuilder<'_, Postgres>) {
+fn push_size_expr(qb: &mut QueryBuilder<Postgres>) {
     qb.push(
         "(octet_length(COALESCE(m.body_html,'')) + octet_length(COALESCE(m.body_text,'')) \
          + COALESCE((SELECT SUM(COALESCE((a->>'size')::BIGINT, 0)) \
@@ -740,7 +746,7 @@ const CAT_NOTIF: &str = r"notification|alert|update|security|account|billing";
 const CAT_PROMO: &str =
     r"no.?reply|newsletter|noreply|promo|marketing|info@|hello@|contact@|deals?@|offers?@";
 
-fn push_category(qb: &mut QueryBuilder<'_, Postgres>, cat: &str) {
+fn push_category(qb: &mut QueryBuilder<Postgres>, cat: &str) {
     // Classification order mirrors the frontend: social > notifications > promotions.
     match cat {
         "social" | "reseaux" | "réseaux" => {

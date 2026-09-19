@@ -104,7 +104,11 @@ pub async fn list_aliases(
                OR EXISTS (SELECT 1 FROM unnest(destinations) d WHERE LOWER(d) LIKE $3 ESCAPE '\'))
     "#;
 
-    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM mail.aliases {filter}"))
+    // Audited: `filter` above is a literal; the domain, the active flag and
+    // the search pattern are bound parameters.
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM mail.aliases {filter}"
+    )))
         .bind(&domain)
         .bind(q.active)
         .bind(&pattern)
@@ -114,10 +118,12 @@ pub async fn list_aliases(
 
     // Catch-alls first within a domain: they are the rule that applies last at
     // delivery, and the one an operator most often means to check.
-    let rows = sqlx::query_as::<_, AliasRow>(&format!(
+    // Audited: the only interpolations are the `COLUMNS` constant and the
+    // `filter` literal above; every caller value is a bound parameter.
+    let rows = sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.aliases {filter} \
          ORDER BY domain, is_catch_all DESC, address LIMIT $4 OFFSET $5"
-    ))
+    )))
     .bind(&domain)
     .bind(q.active)
     .bind(&pattern)
@@ -174,12 +180,13 @@ pub async fn create_alias(
 
     require_address_free(&state.db, &parsed.address, None).await?;
 
-    let row = sqlx::query_as::<_, AliasRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO mail.aliases
              (address, domain, destinations, is_catch_all, is_active, comment)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(&parsed.address)
     .bind(&parsed.domain)
     .bind(&destinations)
@@ -226,7 +233,8 @@ pub async fn update_alias(
     };
     reject_catch_all_self_loop(&address, is_catch_all, &destinations)?;
 
-    let row = sqlx::query_as::<_, AliasRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
         r#"UPDATE mail.aliases SET
              address      = $2,
              domain       = $3,
@@ -237,7 +245,7 @@ pub async fn update_alias(
                                  WHEN $7 = '' THEN NULL ELSE $7 END
            WHERE id = $1
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(id)
     .bind(&address)
     .bind(&domain)
@@ -286,7 +294,10 @@ pub async fn delete_alias(
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async fn fetch_one(db: &PgPool, id: Uuid) -> Result<AliasRow, MailError> {
-    sqlx::query_as::<_, AliasRow>(&format!("SELECT {COLUMNS} FROM mail.aliases WHERE id = $1"))
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLUMNS} FROM mail.aliases WHERE id = $1"
+    )))
         .bind(id)
         .fetch_optional(db)
         .await

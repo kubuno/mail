@@ -145,10 +145,12 @@ pub async fn list_keys(
     user: AuthUser,
 ) -> Result<Json<Vec<DkimKeyView>>, MailError> {
     require_admin(&user)?;
-    let rows = sqlx::query_as::<_, DkimKeyRow>(&format!(
+    // Audited: the only interpolation is the `SELECT_COLUMNS` constant above;
+    // no caller value reaches the SQL text.
+    let rows = sqlx::query_as::<_, DkimKeyRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLUMNS} FROM mail.dkim_keys_all \
          ORDER BY domain, is_active DESC, created_at DESC"
-    ))
+    )))
     .fetch_all(&state.db)
     .await
     .map_err(|e| {
@@ -224,7 +226,9 @@ pub async fn create_key(
             })?;
     }
 
-    let row = sqlx::query_as::<_, DkimKeyRow>(&format!(
+    // Audited: `SELECT_COLUMNS` is the sole interpolation; the domain, selector
+    // and key material are all bound parameters.
+    let row = sqlx::query_as::<_, DkimKeyRow>(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO mail.dkim_keys_all
              (domain, selector, algorithm, private_key_enc, private_key_nonce, public_key, is_active)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -236,7 +240,7 @@ pub async fn create_key(
                  is_active = EXCLUDED.is_active,
                  created_at = NOW()
            RETURNING {SELECT_COLUMNS}"#
-    ))
+    )))
     .bind(&domain)
     .bind(&selector)
     .bind(algorithm)
@@ -296,9 +300,10 @@ pub async fn activate_key(
             MailError::Database(e)
         })?;
 
-    let row = sqlx::query_as::<_, DkimKeyRow>(&format!(
+    // Audited: `SELECT_COLUMNS` is the sole interpolation; the id is bound.
+    let row = sqlx::query_as::<_, DkimKeyRow>(sqlx::AssertSqlSafe(format!(
         "UPDATE mail.dkim_keys_all SET is_active = TRUE WHERE id = $1 RETURNING {SELECT_COLUMNS}"
-    ))
+    )))
     .bind(id)
     .fetch_one(&mut *tx)
     .await

@@ -153,7 +153,9 @@ pub async fn list_threads(
         .fetch_all(&state.db)
         .await?
     } else {
-        sqlx::query_as::<_, Thread>(&format!(
+        // Audited: `CATEGORY_SQL` is a constant; the folder, the account, the
+        // cursor, the limit, the category and the IMAP folder are all bound.
+        sqlx::query_as::<_, Thread>(sqlx::AssertSqlSafe(format!(
             r#"SELECT DISTINCT ON (t.id, t.last_message_at) t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
                       t.is_starred, t.is_important, t.snippet,
@@ -174,7 +176,7 @@ pub async fn list_threads(
                  AND ($7::text IS NULL OR m.imap_folder = $7)
                ORDER BY t.last_message_at DESC
                LIMIT $5"#,
-        ))
+        )))
         .bind(user.id)
         .bind(&folder)
         .bind(q.account_id)
@@ -215,11 +217,13 @@ pub async fn list_threads(
         } else {
             "t.snoozed_until > NOW()"
         };
-        sqlx::query_scalar(&format!(
+        // Audited: `predicate` is one of the three literals just above, chosen by
+        // the view asked for — no caller text reaches the SQL.
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT COUNT(*) FROM mail.threads t \
              WHERE t.user_id = $1 AND {predicate} \
                AND ($2::uuid IS NULL OR t.account_id = $2)",
-        ))
+        )))
         .bind(user.id)
         .bind(q.account_id)
         .fetch_one(&state.db)
@@ -238,7 +242,9 @@ pub async fn list_threads(
         && q.starred != Some(true)
         && q.label_id.is_none()
     {
-        sqlx::query_scalar(&format!(
+        // Audited: `CATEGORY_SQL` is a constant; the folder, the account, the
+        // category and the IMAP folder asked for are bound parameters.
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT COUNT(DISTINCT t.id)
                FROM mail.threads t
                JOIN mail.messages m ON m.thread_id = t.id
@@ -250,7 +256,7 @@ pub async fn list_threads(
                  AND ($3::uuid IS NULL OR t.account_id = $3)
                  AND ($4::text IS NULL OR ({CATEGORY_SQL}) = $4)
                  AND ($5::text IS NULL OR m.imap_folder = $5)"#,
-        ))
+        )))
         .bind(user.id)
         .bind(&folder)
         .bind(q.account_id)

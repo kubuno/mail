@@ -139,10 +139,12 @@ const SELECT_COLS: &str = "id, grantor_user_id, grantor_email, delegate_user_id,
 
 /// Delegations `grantor` has granted (any status), newest first.
 pub async fn list_granted(db: &PgPool, grantor: Uuid) -> Result<Vec<Delegation>> {
-    let rows: Vec<Row> = sqlx::query_as(&format!(
+    // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
+    // are bound parameters.
+    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLS} FROM mail.delegations \
          WHERE grantor_user_id = $1 ORDER BY created_at DESC"
-    ))
+    )))
     .bind(grantor)
     .fetch_all(db)
     .await
@@ -160,11 +162,13 @@ pub async fn list_granted(db: &PgPool, grantor: Uuid) -> Result<Vec<Delegation>>
 /// accept/decline controls for the pending ones; a future app-switcher filters
 /// this to `accepted`.
 pub async fn list_incoming(db: &PgPool, delegate: Uuid) -> Result<Vec<Delegation>> {
-    let rows: Vec<Row> = sqlx::query_as(&format!(
+    // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
+    // are bound parameters.
+    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLS} FROM mail.delegations \
          WHERE delegate_user_id = $1 AND status IN ('pending', 'accepted') \
          ORDER BY status DESC, accepted_at DESC NULLS LAST, created_at DESC"
-    ))
+    )))
     .bind(delegate)
     .fetch_all(db)
     .await
@@ -178,10 +182,12 @@ pub async fn list_incoming(db: &PgPool, delegate: Uuid) -> Result<Vec<Delegation
 
 /// The one row for a (grantor, delegate) pair, if any.
 pub async fn find_pair(db: &PgPool, grantor: Uuid, delegate: Uuid) -> Result<Option<Delegation>> {
-    let row: Option<Row> = sqlx::query_as(&format!(
+    // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
+    // are bound parameters.
+    let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLS} FROM mail.delegations \
          WHERE grantor_user_id = $1 AND delegate_user_id = $2"
-    ))
+    )))
     .bind(grantor)
     .bind(delegate)
     .fetch_optional(db)
@@ -231,12 +237,14 @@ pub async fn grant(
         }
         Some((id, _)) => {
             // Revoked → re-arm as a fresh pending invitation.
-            sqlx::query_as(&format!(
+            // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
+            // are bound parameters.
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
                 "UPDATE mail.delegations \
                  SET status = 'pending', can_send = TRUE, accepted_at = NULL, \
                      grantor_email = $2, delegate_email = $3 \
                  WHERE id = $1 RETURNING {SELECT_COLS}"
-            ))
+            )))
             .bind(id)
             .bind(grantor_email)
             .bind(delegate_email)
@@ -248,11 +256,13 @@ pub async fn grant(
             })
             .context("Réarmement d'une délégation révoquée")?
         }
-        None => sqlx::query_as(&format!(
+        // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
+        // are bound parameters.
+        None => sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "INSERT INTO mail.delegations \
                  (grantor_user_id, grantor_email, delegate_user_id, delegate_email, status) \
              VALUES ($1, $2, $3, $4, 'pending') RETURNING {SELECT_COLS}"
-        ))
+        )))
         .bind(grantor)
         .bind(grantor_email)
         .bind(delegate)

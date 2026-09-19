@@ -194,7 +194,11 @@ pub async fn list_mailboxes(
                OR LOWER(COALESCE(comment, '')) LIKE $3 ESCAPE '\')
     "#;
 
-    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM mail.mailboxes {filter}"))
+    // Audited: `filter` above is a literal; the domain, the active flag and
+    // the search pattern are bound parameters.
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT COUNT(*) FROM mail.mailboxes {filter}"
+    )))
         .bind(&domain)
         .bind(q.active)
         .bind(&pattern)
@@ -202,9 +206,11 @@ pub async fn list_mailboxes(
         .await
         .map_err(db_error("comptage des boîtes"))?;
 
-    let rows = sqlx::query_as::<_, MailboxRow>(&format!(
+    // Audited: the only interpolations are the `COLUMNS` constant and the
+    // `filter` literal above; every caller value is a bound parameter.
+    let rows = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailboxes {filter} ORDER BY address LIMIT $4 OFFSET $5"
-    ))
+    )))
     .bind(&domain)
     .bind(q.active)
     .bind(&pattern)
@@ -301,12 +307,13 @@ pub async fn create_mailbox(
         .await
         .map_err(db_error("ouverture de la transaction de création"))?;
 
-    let row = sqlx::query_as::<_, MailboxRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO mail.mailboxes
              (address, domain, user_id, display_name, quota_bytes, is_active, comment)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(&parsed.address)
     .bind(&parsed.domain)
     .bind(dto.user_id)
@@ -406,7 +413,8 @@ pub async fn update_mailbox(
         }
     }
 
-    let row = sqlx::query_as::<_, MailboxRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
         r#"UPDATE mail.mailboxes SET
              address      = $2,
              domain       = $3,
@@ -419,7 +427,7 @@ pub async fn update_mailbox(
                                  WHEN $8 = '' THEN NULL ELSE $8 END
            WHERE id = $1
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(id)
     .bind(&address)
     .bind(&domain)
@@ -622,12 +630,13 @@ pub(crate) async fn provision_mailbox(
         .await
         .map_err(db_error("provisioning : ouverture de transaction"))?;
 
-    let row = sqlx::query_as::<_, MailboxRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    let row = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
         r#"INSERT INTO mail.mailboxes
              (address, domain, user_id, display_name, quota_bytes, is_active, comment)
            VALUES ($1, $2, $3, $4, $5, TRUE, $6)
            RETURNING {COLUMNS}"#
-    ))
+    )))
     .bind(&address)
     .bind(domain)
     .bind(user_id)
@@ -751,11 +760,13 @@ pub(crate) async fn create_local_account(
 pub async fn ensure_local_accounts(state: &AppState) -> Result<(), MailError> {
     // NOT EXISTS keeps `mail.mailboxes` the only table in the FROM, so the
     // unqualified `COLUMNS` list stays unambiguous.
-    let rows = sqlx::query_as::<_, MailboxRow>(&format!(
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    // Audited: `COLUMNS` is a constant; the query takes no value at all.
+    let rows = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailboxes m \
          WHERE m.is_active \
            AND NOT EXISTS (SELECT 1 FROM mail.accounts a WHERE a.mailbox_id = m.id)"
-    ))
+    )))
     .fetch_all(&state.db)
     .await
     .map_err(db_error("boîtes actives sans compte local"))?;
@@ -796,7 +807,10 @@ pub async fn ensure_local_accounts(state: &AppState) -> Result<(), MailError> {
 }
 
 async fn fetch_one(db: &PgPool, id: Uuid) -> Result<MailboxRow, MailError> {
-    sqlx::query_as::<_, MailboxRow>(&format!("SELECT {COLUMNS} FROM mail.mailboxes WHERE id = $1"))
+    // Audited: `COLUMNS` is a constant; every caller value is bound.
+    sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {COLUMNS} FROM mail.mailboxes WHERE id = $1"
+    )))
         .bind(id)
         .fetch_optional(db)
         .await
