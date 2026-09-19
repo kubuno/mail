@@ -9,6 +9,13 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Security
+
+- **Input validation library updated.** The version in use carried
+  RUSTSEC-2024-0421 through its domain-name parser, which accepted Punycode
+  labels that decode to plain ASCII — a mismatch an attacker can use to make two
+  different names look like one.
+
 ## [0.1.8] - 2026-09-18
 
 ### Security

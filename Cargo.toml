@@ -131,7 +131,7 @@ config  = "0.14"
 dotenvy = "0.15"
 
 # Validation
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.21", features = ["derive"] }
 
 # Logging & Tracing
 tracing            = "0.1"
