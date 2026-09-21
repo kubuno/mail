@@ -9,6 +9,19 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ## [Unreleased]
 
+### Changed
+
+- **Foundation laid to run on PostgreSQL, MySQL/MariaDB or SQLite (work in
+  progress).** The module is being moved off its PostgreSQL-only stack onto the
+  runtime-dispatch `kubuno-db` foundation, so that a single binary will connect
+  to whichever engine the administrator chooses at run time. This release lays
+  the groundwork — the database dependency, the run-time connection and
+  migration entry points, the schema-owned namespace, and the portable
+  replacements for the mail store's PostgreSQL-only delta plumbing (the
+  CONDSTORE `modseq` and IMAP UID counters, the QRESYNC "vanished" tombstones,
+  and the IDLE change notification). Nothing yet changes for a running
+  PostgreSQL deployment; MySQL and SQLite support is not complete.
+
 ### Security
 
 - **Database driver updated, and every query it runs is now fixed text.** The

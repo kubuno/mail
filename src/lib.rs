@@ -1,3 +1,8 @@
+/// The database namespace this module owns: a PostgreSQL schema, a MySQL
+/// database, or the SQLite file ATTACHed under that name. Never write outside
+/// it.
+pub const SCHEMA: &str = "mail";
+
 pub mod config;
 pub mod errors;
 pub mod events;
@@ -9,4 +14,5 @@ pub mod router;
 pub mod server;
 pub mod services;
 pub mod state;
+pub mod sync;
 pub mod workers;

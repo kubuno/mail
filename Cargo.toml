@@ -27,6 +27,7 @@ validator      = { workspace = true }
 tracing        = { workspace = true }
 tracing-subscriber = { workspace = true }
 kubuno-seccomp     = { workspace = true }
+kubuno-db          = { workspace = true }
 thiserror      = { workspace = true }
 anyhow         = { workspace = true }
 uuid           = { workspace = true }
@@ -119,7 +120,10 @@ tower-http  = { version = "0.6",  features = ["cors", "compression-gzip", "trace
 async-trait = "0.1"
 
 # Database
-sqlx = { version = "0.9", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "migrate", "tls-rustls", "bigdecimal"] }
+# All three drivers are compiled in; the engine is a run-time choice made by
+# kubuno-db. The FromRow derive on the module's structs resolves against the
+# three row types, so the three drivers must be present here too.
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "uuid", "chrono", "json", "migrate", "tls-rustls", "bigdecimal", "derive", "macros", "postgres", "mysql", "sqlite"] }
 
 # Sérialisation
 serde      = { version = "1", features = ["derive"] }
@@ -145,6 +149,9 @@ tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tokio-util         = { version = "0.7", features = ["io"] }
 kubuno-seccomp     = { git = "https://github.com/kubuno/core", tag = "seccomp-v0.1.1", package = "kubuno-seccomp" }
+# Runtime-dispatch database foundation: one binary, three engines (PostgreSQL,
+# MySQL/MariaDB, SQLite), the engine chosen by the administrator at run time.
+kubuno-db          = { git = "https://github.com/kubuno/core", tag = "db-v0.6.0", package = "kubuno-db" }
 
 # Erreurs
 thiserror = "1"
