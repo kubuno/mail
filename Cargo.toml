@@ -151,7 +151,7 @@ tokio-util         = { version = "0.7", features = ["io"] }
 kubuno-seccomp     = { git = "https://github.com/kubuno/core", tag = "seccomp-v0.1.1", package = "kubuno-seccomp" }
 # Runtime-dispatch database foundation: one binary, three engines (PostgreSQL,
 # MySQL/MariaDB, SQLite), the engine chosen by the administrator at run time.
-kubuno-db          = { git = "https://github.com/kubuno/core", tag = "db-v0.6.0", package = "kubuno-db" }
+kubuno-db          = { git = "https://github.com/kubuno/core", tag = "db-v0.8.0", package = "kubuno-db" }
 
 # Erreurs
 thiserror = "1"
