@@ -1,8 +1,8 @@
 // ── OAuth2 account connection (Gmail / Microsoft) ────────────────────────────
 // Authorization-code flow: `start` returns the provider consent URL, the
-// provider redirects the browser back to `callback` (a top-level GET, so the
-// SameSite=Lax session cookie is sent and the core proxy authenticates it),
-// which exchanges the code, resolves the address, and creates or converts the
+// provider redirects the browser back to `callback` (a cross-site top-level GET
+// that carries no session: the single-use `state` recorded by `start` names the
+// user), which exchanges the code, resolves the address, and creates or converts the
 // account. Tokens are AES-256-GCM encrypted at rest; they never appear in
 // logs or JSON responses.
 
@@ -185,7 +185,7 @@ fn settings_redirect(provider: Provider, status: &str, reason: Option<&str>) -> 
 /// short machine reason, never provider details.
 pub async fn callback(
     State(state): State<AppState>,
-    user: AuthUser,
+    user: Option<AuthUser>,
     Path(provider): Path<String>,
     headers: HeaderMap,
     Query(q): Query<CallbackQuery>,
@@ -200,8 +200,13 @@ pub async fn callback(
     }
     let code = q.code.unwrap_or_default();
 
-    // CSRF state: must exist, be recent (purge above), belong to this session
-    // user and this provider. Single use: consumed by the DELETE.
+    // The `state` is what ties this callback to the person who started it. The
+    // provider's redirect back is a cross-site top-level navigation, so the
+    // browser presents no credential the core accepts (no Authorization header,
+    // SameSite=Strict cookies withheld, no ticket): a session is usually absent
+    // here. The state is random, single use (consumed by the DELETE), bound to
+    // the provider and at most 10 minutes old (purge above), and it records the
+    // user who called `start`. When a session IS present it must be that user.
     let Some(csrf) = q.state.filter(|s| !s.is_empty()) else {
         return Ok(settings_redirect(provider, "error", Some("state")));
     };
@@ -211,8 +216,12 @@ pub async fn callback(
     .bind(&csrf)
     .fetch_optional(&state.db)
     .await?;
-    let stored_redirect = match row {
-        Some((uid, prov, redirect)) if uid == user.id && prov == provider.as_str() => redirect,
+    let (owner, stored_redirect) = match row {
+        Some((uid, prov, redirect))
+            if prov == provider.as_str() && user.as_ref().is_none_or(|u| u.id == uid) =>
+        {
+            (uid, redirect)
+        }
         _ => return Ok(settings_redirect(provider, "error", Some("state"))),
     };
 
@@ -248,7 +257,7 @@ pub async fn callback(
         }
     };
 
-    if let Err(e) = upsert_oauth_account(&state, user.id, provider, &email, refresh_token, &tokens).await {
+    if let Err(e) = upsert_oauth_account(&state, owner, provider, &email, refresh_token, &tokens).await {
         tracing::error!(provider = provider.as_str(), error = %e, "Enregistrement du compte OAuth échoué");
         return Ok(settings_redirect(provider, "error", Some("save")));
     }

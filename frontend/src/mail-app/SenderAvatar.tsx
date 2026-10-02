@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '@kubuno/sdk'
+import { api, useSignedUrl } from '@kubuno/sdk'
 import { avatarColor } from './helpers'
 
 // ── Sender avatar ─────────────────────────────────────────────────────────────
@@ -92,12 +92,15 @@ export default function SenderAvatar({ email, name, size = 40, dmarc }: {
     return () => { alive = false }
   }, [email, dmarc])
 
+  // Contact pictures live behind the authenticated API and need a ticket;
+  // blob: URLs and public avatars pass through unchanged.
+  const signedSrc = useSignedUrl(src)
   const box = { width: size, height: size }
 
-  if (src) {
+  if (src && signedSrc) {
     return (
       <img
-        src={src}
+        src={signedSrc}
         alt=""
         aria-hidden="true"
         draggable={false}

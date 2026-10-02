@@ -24,6 +24,14 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **Attachments (open, preview, download) and contact avatars no longer rely on the access-token cookie the
+  web client used to keep readable by page scripts**; they use short-lived signed tickets. An image
+  inserted from Drive into a message is now embedded in the message itself, so neither an internal
+  address nor a credential ends up in an e-mail.
+- **Connecting a Gmail or Microsoft account no longer depends on a session cookie** on the provider's
+  redirect back (which the browser withholds on that cross-site navigation): the single-use, 10-minute
+  OAuth `state` recorded when you started identifies you; when a session is present it must be the same
+  account. Requires a Kubuno core that issues signed tickets (`POST /api/v1/auth/tickets`) and `@kubuno/sdk` with the signed-URL helpers.
 - **Database driver updated, and every query it runs is now fixed text.** The
   driver no longer reaches for the MySQL support this module never used, and it
   refuses any SQL string built at run time unless it has been audited: every

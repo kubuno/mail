@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, X, Loader2 } from 'lucide-react'
+import { downloadSignedUrl, signedUrl, useSignedUrl } from '@kubuno/sdk'
 import PdfViewerModal from '../PdfViewerModal'
 import { sanitizeDisplayText } from './senderSafety'
 
@@ -21,6 +22,7 @@ export default function AttachmentPreview({ preview, onClose }: {
   // overlay paints it over a full-screen surface where a reversed name is the
   // most convincing. Never trust the caller for attacker-controlled text.
   const name = sanitizeDisplayText(preview.name)
+  const imgSrc = useSignedUrl(preview.mime.startsWith('image/') ? preview.url : null)
 
   return (
     <>
@@ -33,7 +35,7 @@ export default function AttachmentPreview({ preview, onClose }: {
                onClick={e => e.stopPropagation()}>
             <span className="text-sm truncate">{name}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => window.open(preview.url, '_blank', 'noopener')}
+              <button onClick={() => void downloadSignedUrl(preview.url, name)}
                 title={t('download', { defaultValue: 'Télécharger' })}
                 className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10">
                 <Download size={20} />
@@ -45,9 +47,11 @@ export default function AttachmentPreview({ preview, onClose }: {
             </div>
           </div>
           <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-            <img src={preview.url} alt={name}
-                 onClick={e => e.stopPropagation()}
-                 className="max-w-full max-h-full object-contain" />
+            {imgSrc && (
+              <img src={imgSrc} alt={name}
+                   onClick={e => e.stopPropagation()}
+                   className="max-w-full max-h-full object-contain" />
+            )}
           </div>
         </div>
       )}
@@ -69,7 +73,8 @@ function TextPreview({ preview, onClose }: { preview: PreviewSource; onClose: ()
 
   useEffect(() => {
     let cancelled = false
-    fetch(preview.url)
+    signedUrl(preview.url)
+      .then(href => fetch(href))
       .then(r => r.text())
       .then(body => { if (!cancelled) setText(body) })
       .catch(() => { if (!cancelled) setError(true) })
@@ -84,6 +89,7 @@ function TextPreview({ preview, onClose }: { preview: PreviewSource; onClose: ()
           <span className="text-sm text-text-primary truncate">{name}</span>
           <div className="flex items-center gap-1">
             <a href={preview.url} download={name}
+               onClick={e => { e.preventDefault(); void downloadSignedUrl(preview.url, name) }}
                title={t('download', { defaultValue: 'Télécharger' })}
                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-2 text-text-tertiary">
               <Download size={18} />
