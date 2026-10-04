@@ -2421,6 +2421,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kubuno-db"
+version = "0.8.0"
+source = "git+https://github.com/kubuno/core?tag=db-v0.8.0#43d70c4741f49a618698ace8104d4ab40fb01239"
+dependencies = [
+ "chrono",
+ "rust-stemmers",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
 name = "kubuno-mail"
 version = "0.1.8"
 dependencies = [
@@ -2442,6 +2459,8 @@ dependencies = [
  "hickory-resolver",
  "hmac 0.12.1",
  "html2text",
+ "kubuno-db",
+ "kubuno-modauth",
  "kubuno-seccomp",
  "lettre",
  "mail-auth",
@@ -2476,9 +2495,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kubuno-modauth"
+version = "0.1.0"
+source = "git+https://github.com/kubuno/core?tag=modauth-v0.1.0#fb4952b3bcbf6edcd3ddd70fae93060cf38b7380"
+dependencies = [
+ "base64 0.22.1",
+ "hmac 0.12.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "uuid",
+]
+
+[[package]]
 name = "kubuno-seccomp"
 version = "0.1.1"
-source = "git+https://github.com/kubuno/core?tag=seccomp-v0.1.1#5a74e6d117d1c2c386af88902017341b88a0d7c7"
+source = "git+https://github.com/kubuno/core?tag=seccomp-v0.1.1#6c555459961c602b6bd44831e30d9ac81b4a5ce7"
 dependencies = [
  "libc",
  "tracing",
@@ -2550,6 +2583,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -3197,7 +3231,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitfields",
  "block-padding",
  "blowfish",
@@ -3722,6 +3756,16 @@ checksum = "3e0698206bcb8882bf2a9ecb4c1e7785db57ff052297085a6efd4fe42302068a"
 dependencies = [
  "cfg-if",
  "ordered-multimap",
+]
+
+[[package]]
+name = "rust-stemmers"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e46a2036019fdb888131db7a4c847a1063a7493f971ed94ea82c67eada63ca54"
+dependencies = [
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]

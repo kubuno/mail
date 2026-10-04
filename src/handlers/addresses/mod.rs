@@ -604,12 +604,26 @@ mod routing_tests {
 
     use crate::{config::Settings, router, state::AppState};
 
+    /// The module secret of the test router: identities are signed tokens.
+    const TEST_SECRET: &str = "mail-routing-test-secret";
+
+    /// A signed identity, as the core proxy mints it.
+    fn token(role: &str) -> String {
+        let user = kubuno_modauth::ModuleUser {
+            id: uuid::Uuid::from_u128(1),
+            role: role.to_string(),
+            email: "someone@example.com".to_string(),
+        };
+        kubuno_modauth::sign(TEST_SECRET.as_bytes(), &user, "mail")
+    }
+
     /// A router over a pool that is never connected.
     fn test_router() -> axum::Router {
         let db = PgPoolOptions::new()
             .max_connections(1)
             .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").database("unused"));
-        let settings = Settings::load().expect("réglages par défaut");
+        let mut settings = Settings::load().expect("default settings");
+        settings.core.internal_secret = TEST_SECRET.to_string();
         router::build(AppState {
             db,
             settings: Arc::new(settings),
@@ -619,10 +633,7 @@ mod routing_tests {
     fn request(method: &str, uri: &str, role: Option<&str>, body: &'static str) -> Request<Body> {
         let mut builder = Request::builder().method(method).uri(uri);
         if let Some(role) = role {
-            builder = builder
-                .header("X-Kubuno-User-Id", "00000000-0000-0000-0000-000000000001")
-                .header("X-Kubuno-User-Email", "someone@example.com")
-                .header("X-Kubuno-User-Role", role);
+            builder = builder.header(kubuno_modauth::TOKEN_HEADER, token(role));
         }
         builder
             .header("Content-Type", "application/json")
@@ -727,8 +738,7 @@ mod routing_tests {
             let req = Request::builder()
                 .method(method)
                 .uri(uri)
-                .header("X-Kubuno-User-Id", "00000000-0000-0000-0000-000000000001")
-                .header("X-Kubuno-User-Role", "admin")
+                .header(kubuno_modauth::TOKEN_HEADER, token("admin"))
                 .header("Content-Type", "application/json")
                 .body(Body::from(body))
                 .expect("requête");

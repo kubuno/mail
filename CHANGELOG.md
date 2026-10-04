@@ -29,6 +29,12 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Security
 
+- **The signed-in user is now taken from the core's signed identity token only.** The module used to trust the
+  plain `X-Kubuno-User-Id` / `-Role` / `-Email` headers, so any process able to reach its local port could
+  act as any user, administrators included. It now accepts a request only with a valid `X-Kubuno-Auth` token
+  signed by the core with this module's own secret, for this module, and not expired (`kubuno-modauth`); the
+  plain headers are ignored. With no internal secret configured, every user request is refused. The `/internal/*` guard already refused an empty secret and compared in constant time; it is unchanged in behaviour.
+
 - **Attachments (open, preview, download) and contact avatars no longer rely on the access-token cookie the
   web client used to keep readable by page scripts**; they use short-lived signed tickets. An image
   inserted from Drive into a message is now embedded in the message itself, so neither an internal
