@@ -113,6 +113,7 @@ pub struct EmailMessage {
     pub is_starred:     bool,
     pub is_deleted:     bool,
     pub folder:         String,
+    #[sqlx(json)]
     pub label_ids:      Vec<Uuid>,
     pub sent_at:        Option<DateTime<Utc>>,
     pub received_at:    DateTime<Utc>,

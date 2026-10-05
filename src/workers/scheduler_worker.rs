@@ -30,12 +30,13 @@ pub async fn run(state: Arc<AppState>) {
 
 #[allow(clippy::type_complexity)]
 async fn send_due(state: &AppState, crypto: &MailCrypto) {
-    let due: Vec<(Uuid, Uuid, Value, Value, Value, String, String, Option<Uuid>)> = match sqlx::query_as(
+    let due: Vec<(Uuid, Uuid, Value, Value, Value, String, String, Option<Uuid>)> = match crate::db::query_as(
         r#"SELECT id, account_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_id
            FROM mail.drafts
-           WHERE scheduled_at IS NOT NULL AND scheduled_at <= NOW()
+           WHERE scheduled_at IS NOT NULL AND scheduled_at <= $1
            LIMIT 20"#,
     )
+    .bind(chrono::Utc::now())
     .fetch_all(&state.db)
     .await
     {
@@ -46,14 +47,14 @@ async fn send_due(state: &AppState, crypto: &MailCrypto) {
     for (id, account_id, to_v, cc_v, bcc_v, subject, body_html, reply_to_id) in due {
         match send_one(state, crypto, account_id, &to_v, &cc_v, &bcc_v, &subject, &body_html, reply_to_id).await {
             Ok(()) => {
-                let _ = sqlx::query("DELETE FROM mail.drafts WHERE id = $1").bind(id).execute(&state.db).await;
+                let _ = crate::db::query("DELETE FROM mail.drafts WHERE id = $1").bind(id).execute(&state.db).await;
                 tracing::info!(draft_id = %id, "Envoi programmé effectué");
             }
             Err(e) => {
                 // Éviter une boucle d'échecs : reporter d'une heure.
                 tracing::warn!(draft_id = %id, error = %e, "Envoi programmé échoué — report d'1 h");
-                let _ = sqlx::query("UPDATE mail.drafts SET scheduled_at = NOW() + INTERVAL '1 hour' WHERE id = $1")
-                    .bind(id).execute(&state.db).await;
+                let _ = crate::db::query("UPDATE mail.drafts SET scheduled_at = $1 WHERE id = $2")
+                    .bind(chrono::Utc::now() + chrono::Duration::hours(1)).bind(id).execute(&state.db).await;
             }
         }
     }
@@ -65,7 +66,7 @@ async fn send_one(
     to_v: &Value, cc_v: &Value, bcc_v: &Value,
     subject: &str, body_html: &str, reply_to_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
-    let account = sqlx::query_as::<_, EmailAccount>(
+    let account = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id, incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
                   smtp_host, smtp_port, smtp_security, smtp_username, auth_kind,
@@ -120,7 +121,7 @@ async fn send_one(
             ).await?;
             (token, true)
         } else {
-            let (enc, nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+            let (enc, nonce): (Vec<u8>, Vec<u8>) = crate::db::query_as(
                 "SELECT smtp_password, smtp_password_nonce FROM mail.accounts WHERE id = $1",
             )
             .bind(account_id)

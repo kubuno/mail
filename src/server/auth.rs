@@ -9,7 +9,8 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 /// An authenticated mailbox: the Kubuno user behind it and the address used.
@@ -31,13 +32,13 @@ pub fn hash_password(plain: &str) -> Result<String> {
 /// Verifies a login. Returns `None` for both "no such mailbox" and "wrong
 /// password": the protocols must not let a caller tell those apart, or the
 /// login prompt becomes a way to enumerate addresses.
-pub async fn authenticate(db: &PgPool, username: &str, password: &str) -> Option<Mailbox> {
+pub async fn authenticate(db: &DbPool, username: &str, password: &str) -> Option<Mailbox> {
     let username = username.trim().to_ascii_lowercase();
     if username.is_empty() || password.is_empty() {
         return None;
     }
 
-    let (credential_id, user_id, hash) = sqlx::query_as::<_, (Uuid, Uuid, String)>(
+    let (credential_id, user_id, hash) = crate::db::query_as::<(Uuid, Uuid, String)>(
         "SELECT id, user_id, password_hash FROM mail.mailbox_credentials WHERE username = $1",
     )
     .bind(&username)
@@ -56,7 +57,8 @@ pub async fn authenticate(db: &PgPool, username: &str, password: &str) -> Option
 
     // Best effort: knowing when a credential was last used is what tells an
     // administrator which ones are dead weight.
-    if let Err(e) = sqlx::query("UPDATE mail.mailbox_credentials SET last_used_at = NOW() WHERE id = $1")
+    if let Err(e) = crate::db::query("UPDATE mail.mailbox_credentials SET last_used_at = $1 WHERE id = $2")
+        .bind(chrono::Utc::now())
         .bind(credential_id)
         .execute(db)
         .await
@@ -70,7 +72,7 @@ pub async fn authenticate(db: &PgPool, username: &str, password: &str) -> Option
 /// Creates (or replaces) the credential for one address. Returns its id; the
 /// plaintext is the caller's to show once and forget.
 pub async fn upsert_credential(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     username: &str,
     password: &str,
@@ -88,22 +90,30 @@ pub async fn upsert_credential(
     // Also derive the SCRAM-SHA-256 secret now, while the plaintext is in hand:
     // SCRAM auth (preferred by modern clients) never sees the password again.
     let scram = super::scram::derive(password);
-    let id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO mail.mailbox_credentials
-             (user_id, username, password_hash, label,
+    // The id is generated here and only used when the row is new; on a
+    // conflict the existing row keeps its id, which is re-read below (no
+    // RETURNING on MySQL).
+    let upsert = db.backend().upsert(
+        "mail.mailbox_credentials",
+        &["username"],
+        &[
+            Assign::Incoming("password_hash"),
+            Assign::Incoming("label"),
+            Assign::Incoming("user_id"),
+            Assign::Incoming("scram_salt"),
+            Assign::Incoming("scram_iterations"),
+            Assign::Incoming("scram_stored_key"),
+            Assign::Incoming("scram_server_key"),
+            Assign::Expr { col: "last_used_at", expr: "NULL" },
+        ],
+    );
+    crate::db::query(format!(
+        "INSERT INTO mail.mailbox_credentials
+             (id, user_id, username, password_hash, label,
               scram_salt, scram_iterations, scram_stored_key, scram_server_key)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (username) DO UPDATE
-             SET password_hash    = EXCLUDED.password_hash,
-                 label            = EXCLUDED.label,
-                 user_id          = EXCLUDED.user_id,
-                 scram_salt       = EXCLUDED.scram_salt,
-                 scram_iterations = EXCLUDED.scram_iterations,
-                 scram_stored_key = EXCLUDED.scram_stored_key,
-                 scram_server_key = EXCLUDED.scram_server_key,
-                 last_used_at     = NULL
-           RETURNING id"#,
-    )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9){upsert}"
+    ))
+    .bind(kubuno_db::new_id())
     .bind(user_id)
     .bind(&username)
     .bind(&hash)
@@ -112,9 +122,16 @@ pub async fn upsert_credential(
     .bind(scram.iterations as i32)
     .bind(&scram.stored_key)
     .bind(&scram.server_key)
-    .fetch_one(db)
+    .execute(db)
     .await
     .context("Enregistrement de l'identifiant de boîte")?;
+
+    let id: Uuid =
+        crate::db::query_scalar("SELECT id FROM mail.mailbox_credentials WHERE username = $1")
+            .bind(&username)
+            .fetch_one(db)
+            .await
+            .context("Relecture de l'identifiant de boîte")?;
 
     Ok(id)
 }
@@ -126,9 +143,9 @@ type ScramColumns = (Option<Vec<u8>>, Option<i32>, Option<Vec<u8>>, Option<Vec<u
 /// Returns `None` when the mailbox has no SCRAM secret (created before SCRAM
 /// existed, or unknown user) — the caller then uses a decoy so the failure is
 /// indistinguishable.
-pub async fn scram_secret(db: &PgPool, username: &str) -> Option<super::scram::Secret> {
+pub async fn scram_secret(db: &DbPool, username: &str) -> Option<super::scram::Secret> {
     let username = username.trim().to_ascii_lowercase();
-    let row: Option<ScramColumns> = sqlx::query_as(
+    let row: Option<ScramColumns> = crate::db::query_as(
         "SELECT scram_salt, scram_iterations, scram_stored_key, scram_server_key \
          FROM mail.mailbox_credentials WHERE username = $1",
     )
@@ -153,9 +170,9 @@ pub async fn scram_secret(db: &PgPool, username: &str) -> Option<super::scram::S
 /// The mailbox behind a username, once SCRAM has proven the client knows the
 /// password. A separate lookup because SCRAM verifies against the stored keys,
 /// not through `authenticate` (which needs the plaintext).
-pub async fn mailbox_of(db: &PgPool, username: &str) -> Option<Mailbox> {
+pub async fn mailbox_of(db: &DbPool, username: &str) -> Option<Mailbox> {
     let username = username.trim().to_ascii_lowercase();
-    let user_id: Option<Uuid> = sqlx::query_scalar(
+    let user_id: Option<Uuid> = crate::db::query_scalar(
         "SELECT user_id FROM mail.mailbox_credentials WHERE username = $1",
     )
     .bind(&username)

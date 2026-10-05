@@ -1,28 +1,38 @@
 // Recipient-autocomplete index maintenance. Called from the IMAP sync (weight 1)
 // and from outgoing sends (higher weight: people the user writes to should rank
 // first, like Gmail). Failures are logged but never block mail processing.
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 /// Upsert a batch of (email, name) pairs into `mail.address_index`.
-pub async fn upsert(db: &PgPool, user_id: Uuid, entries: &[(String, Option<String>)], weight: i32) {
+pub async fn upsert(db: &DbPool, user_id: Uuid, entries: &[(String, Option<String>)], weight: i32) {
     for (email, name) in entries {
         let email = email.trim();
         if !email.contains('@') || email.len() > 320 {
             continue;
         }
-        let res = sqlx::query(
-            r#"INSERT INTO mail.address_index (user_id, email, name, use_count, last_used_at)
-               VALUES ($1, LOWER($2), NULLIF($3, ''), $4, NOW())
-               ON CONFLICT (user_id, email) DO UPDATE SET
-                   use_count    = mail.address_index.use_count + $4,
-                   last_used_at = NOW(),
-                   name         = COALESCE(NULLIF($3, ''), mail.address_index.name)"#,
-        )
+        use kubuno_db::dialect::Assign;
+        let upsert = db.backend().upsert(
+            "mail.address_index",
+            &["user_id", "email"],
+            &[
+                Assign::Expr { col: "use_count", expr: "{cur} + {new}" },
+                Assign::Incoming("last_used_at"),
+                Assign::Expr { col: "name", expr: "COALESCE({new}, {cur})" },
+            ],
+        );
+        // Lowercasing and the empty-name-is-NULL rule are applied here, so the
+        // conflict branch can refer to the incoming row's values directly.
+        let name = name.as_deref().filter(|n| !n.is_empty());
+        let res = crate::db::query(format!(
+            "INSERT INTO mail.address_index (user_id, email, name, use_count, last_used_at)
+               VALUES ($1, $2, $3, $4, $5){upsert}"
+        ))
         .bind(user_id)
-        .bind(email)
-        .bind(name.as_deref().unwrap_or(""))
+        .bind(email.to_lowercase())
+        .bind(name)
         .bind(weight)
+        .bind(chrono::Utc::now())
         .execute(db)
         .await;
         if let Err(e) = res {

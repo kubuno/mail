@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use sqlx::{Postgres, QueryBuilder};
+use kubuno_db::{Backend, DbPool, DbQueryBuilder};
 use uuid::Uuid;
 
 use crate::{
@@ -12,15 +12,40 @@ use crate::{
     state::AppState,
 };
 
+/// Ids per `IN (…)` statement when applying a filter to existing mail: well
+/// under every engine's bind limit (SQLite 32766, MySQL/PostgreSQL 65535).
+const IN_CHUNK: usize = 500;
+
 fn like(term: &str) -> String {
     format!("%{}%", term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
+}
+
+/// Accent/case-insensitive "contains" of `col` against `term` (see
+/// `crate::db::ci_like`). `col` is a literal written in this file.
+fn push_contains(qb: &mut DbQueryBuilder, col: &str, term: &str) {
+    let backend = qb.backend();
+    let n = qb.bind_only(like(term));
+    qb.push(crate::db::ci_like(backend, col, n));
+    if backend == Backend::Sqlite {
+        // SQLite's LIKE has no default escape character.
+        qb.push(" ESCAPE '\\'");
+    }
+}
+
+/// A JSON address column as searchable text.
+fn json_text(backend: Backend, col: &'static str) -> String {
+    match backend {
+        Backend::Postgres => format!("{col}::text"),
+        Backend::MySql => format!("CAST({col} AS CHAR)"),
+        Backend::Sqlite => col.to_string(),
+    }
 }
 
 pub async fn list_filters(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let filters = sqlx::query_as::<_, EmailFilter>(
+    let filters = crate::db::query_as::<EmailFilter>(
         r#"SELECT id, user_id, account_id, from_contains, to_contains, subject_contains, query_contains,
                   act_archive, act_mark_read, act_star, act_important, act_trash, act_spam, act_label_id,
                   position, created_at
@@ -48,12 +73,15 @@ pub async fn create_filter(
     let norm = |s: Option<String>| s.filter(|v| !v.trim().is_empty());
     let dto_existing = dto.clone();
 
-    let id: Uuid = sqlx::query_scalar(
+    // The key is generated here: MySQL has no RETURNING to hand it back.
+    let id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.filters
-           (user_id, account_id, from_contains, to_contains, subject_contains, query_contains,
+           (id, user_id, account_id, from_contains, to_contains, subject_contains, query_contains,
             act_archive, act_mark_read, act_star, act_important, act_trash, act_spam, act_label_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id"#,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"#,
     )
+    .bind(id)
     .bind(user.id)
     .bind(dto.account_id)
     .bind(norm(dto.from_contains))
@@ -67,7 +95,7 @@ pub async fn create_filter(
     .bind(dto.act_trash.unwrap_or(false))
     .bind(dto.act_spam.unwrap_or(false))
     .bind(dto.act_label_id)
-    .fetch_one(&state.db)
+    .execute(&state.db)
     .await?;
 
     // Appliquer aussi aux messages DÉJÀ reçus (option « appliquer aux existants »).
@@ -78,28 +106,41 @@ pub async fn create_filter(
 }
 
 async fn apply_to_existing(state: &AppState, user_id: Uuid, dto: &CreateFilterDto) {
+    let backend = state.db.backend();
     // 1. Trouver les messages correspondants (insensible casse/accents).
-    let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+    let mut qb = DbQueryBuilder::new(
+        backend,
         "SELECT m.id, m.thread_id FROM mail.messages m JOIN mail.threads t ON t.id = m.thread_id WHERE t.user_id = ",
     );
     qb.push_bind(user_id).push(" AND m.is_deleted = FALSE");
     if let Some(c) = dto.from_contains.as_deref().filter(|s| !s.trim().is_empty()) {
-        qb.push(" AND (unaccent(m.from_email) ILIKE unaccent(").push_bind(like(c))
-          .push(") OR unaccent(COALESCE(m.from_name,'')) ILIKE unaccent(").push_bind(like(c)).push("))");
+        qb.push(" AND (");
+        push_contains(&mut qb, "m.from_email", c);
+        qb.push(" OR ");
+        push_contains(&mut qb, "COALESCE(m.from_name,'')", c);
+        qb.push(")");
     }
     if let Some(c) = dto.to_contains.as_deref().filter(|s| !s.trim().is_empty()) {
-        qb.push(" AND unaccent(m.to_addresses::text) ILIKE unaccent(").push_bind(like(c)).push(")");
+        qb.push(" AND ");
+        push_contains(&mut qb, &json_text(backend, "m.to_addresses"), c);
     }
     if let Some(c) = dto.subject_contains.as_deref().filter(|s| !s.trim().is_empty()) {
-        qb.push(" AND unaccent(m.subject) ILIKE unaccent(").push_bind(like(c)).push(")");
+        qb.push(" AND ");
+        push_contains(&mut qb, "m.subject", c);
     }
     if let Some(c) = dto.query_contains.as_deref().filter(|s| !s.trim().is_empty()) {
-        qb.push(" AND (unaccent(m.subject) ILIKE unaccent(").push_bind(like(c))
-          .push(") OR unaccent(COALESCE(m.body_text,'')) ILIKE unaccent(").push_bind(like(c)).push("))");
+        qb.push(" AND (");
+        push_contains(&mut qb, "m.subject", c);
+        qb.push(" OR ");
+        push_contains(&mut qb, "COALESCE(m.body_text,'')", c);
+        qb.push(")");
     }
-    let rows: Vec<(Uuid, Uuid)> = match qb.build_query_as().fetch_all(&state.db).await {
+    let rows: Vec<(Uuid, Uuid)> = match qb.fetch_all_as(&state.db).await {
         Ok(r) => r,
-        Err(_) => return,
+        Err(e) => {
+            tracing::error!(error = %e, "apply_to_existing: recherche des messages");
+            return;
+        }
     };
     if rows.is_empty() { return; }
     let msg_ids: Vec<Uuid> = rows.iter().map(|r| r.0).collect();
@@ -107,26 +148,64 @@ async fn apply_to_existing(state: &AppState, user_id: Uuid, dto: &CreateFilterDt
     thread_ids.sort(); thread_ids.dedup();
 
     if dto.act_star.unwrap_or(false) {
-        let _ = sqlx::query("UPDATE mail.threads SET is_starred = TRUE WHERE id = ANY($1)").bind(&thread_ids).execute(&state.db).await;
+        update_in(&state.db, "UPDATE mail.threads SET is_starred = TRUE WHERE id", &thread_ids).await;
     }
     if dto.act_important.unwrap_or(false) {
-        let _ = sqlx::query("UPDATE mail.threads SET is_important = TRUE WHERE id = ANY($1)").bind(&thread_ids).execute(&state.db).await;
+        update_in(&state.db, "UPDATE mail.threads SET is_important = TRUE WHERE id", &thread_ids).await;
     }
     if dto.act_mark_read.unwrap_or(false) {
-        let _ = sqlx::query("UPDATE mail.messages SET is_read = TRUE WHERE id = ANY($1)").bind(&msg_ids).execute(&state.db).await;
+        update_in(&state.db, "UPDATE mail.messages SET is_read = TRUE WHERE id", &msg_ids).await;
     }
     let fold = if dto.act_trash.unwrap_or(false) { Some("trash") } else if dto.act_spam.unwrap_or(false) { Some("spam") } else if dto.act_archive.unwrap_or(false) { Some("archive") } else { None };
     if let Some(f) = fold {
-        let _ = sqlx::query("UPDATE mail.messages SET folder = $1 WHERE id = ANY($2)").bind(f).bind(&msg_ids).execute(&state.db).await;
+        // The folder is one of the three literals just above, never caller text.
+        let head = match f {
+            "trash" => "UPDATE mail.messages SET folder = 'trash' WHERE id",
+            "spam" => "UPDATE mail.messages SET folder = 'spam' WHERE id",
+            _ => "UPDATE mail.messages SET folder = 'archive' WHERE id",
+        };
+        update_in(&state.db, head, &msg_ids).await;
     }
     if let Some(lid) = dto.act_label_id {
-        let _ = sqlx::query("INSERT INTO mail.thread_labels (thread_id, label_id) SELECT unnest($1::uuid[]), $2 ON CONFLICT DO NOTHING")
-            .bind(&thread_ids).bind(lid).execute(&state.db).await;
+        // One multi-row INSERT-ignore per chunk (replaces `SELECT unnest($1::uuid[])`).
+        for chunk in thread_ids.chunks(IN_CHUNK) {
+            let mut qb = DbQueryBuilder::new(backend, "INSERT ");
+            qb.push(backend.insert_ignore_prefix());
+            qb.push("INTO mail.thread_labels (thread_id, label_id) VALUES ");
+            for (i, tid) in chunk.iter().enumerate() {
+                if i > 0 {
+                    qb.push(", ");
+                }
+                qb.push("(").push_bind(*tid).push(", ").push_bind(lid).push(")");
+            }
+            qb.push(backend.on_conflict_do_nothing(&["thread_id", "label_id"]));
+            if let Err(e) = qb.execute(&state.db).await {
+                tracing::error!(error = %e, "apply_to_existing: libellé");
+            }
+        }
     }
     // Recalcul des non-lus des fils touchés.
-    let _ = sqlx::query(
-        "UPDATE mail.threads t SET unread_count = (SELECT COUNT(*) FROM mail.messages m WHERE m.thread_id = t.id AND m.is_read = FALSE AND m.is_deleted = FALSE) WHERE t.id = ANY($1)",
-    ).bind(&thread_ids).execute(&state.db).await;
+    update_in(
+        &state.db,
+        "UPDATE mail.threads SET unread_count = (SELECT COUNT(*) FROM mail.messages m \
+         WHERE m.thread_id = mail.threads.id AND m.is_read = FALSE AND m.is_deleted = FALSE) \
+         WHERE id",
+        &thread_ids,
+    )
+    .await;
+}
+
+/// Runs `<head> IN (…)` over `ids`, chunked. `head` is a literal of this file
+/// ending with the filtered column. Best-effort, like the rest of
+/// [`apply_to_existing`]: a failure is logged, not propagated.
+async fn update_in(db: &DbPool, head: &'static str, ids: &[Uuid]) {
+    for chunk in ids.chunks(IN_CHUNK) {
+        let mut qb = DbQueryBuilder::new(db.backend(), head);
+        qb.push_in(chunk.iter().copied());
+        if let Err(e) = qb.execute(db).await {
+            tracing::error!(error = %e, "apply_to_existing: mise à jour");
+        }
+    }
 }
 
 // ── Adresses bloquées ─────────────────────────────────────────────────────────
@@ -134,7 +213,7 @@ pub async fn list_blocked(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let blocked = sqlx::query_as::<_, BlockedSender>(
+    let blocked = crate::db::query_as::<BlockedSender>(
         "SELECT id, email, created_at FROM mail.blocked_senders WHERE user_id = $1 ORDER BY email",
     )
     .bind(user.id)
@@ -152,15 +231,30 @@ pub async fn block_sender(
     if email.is_empty() || !email.contains('@') {
         return Err(MailError::Validation("Adresse e-mail invalide".into()));
     }
-    sqlx::query("INSERT INTO mail.blocked_senders (user_id, email) VALUES ($1, $2) ON CONFLICT (user_id, email) DO NOTHING")
-        .bind(user.id).bind(&email)
-        .execute(&state.db)
-        .await?;
+    let backend = state.db.backend();
+    crate::db::query(format!(
+        "INSERT {}INTO mail.blocked_senders (id, user_id, email) VALUES ($1, $2, $3){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["user_id", "email"]),
+    ))
+    .bind(kubuno_db::new_id())
+    .bind(user.id)
+    .bind(&email)
+    .execute(&state.db)
+    .await?;
     // Déplacer les messages existants de cet expéditeur vers le spam.
-    let _ = sqlx::query(
-        "UPDATE mail.messages m SET folder = 'spam'
-         FROM mail.threads t WHERE m.thread_id = t.id AND t.user_id = $1 AND LOWER(m.from_email) = $2",
-    ).bind(user.id).bind(&email).execute(&state.db).await;
+    if let Err(e) = crate::db::query(
+        "UPDATE mail.messages SET folder = 'spam'
+         WHERE LOWER(from_email) = $2
+           AND thread_id IN (SELECT t.id FROM mail.threads t WHERE t.user_id = $1)",
+    )
+    .bind(user.id)
+    .bind(&email)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(error = %e, "block_sender: déplacement vers le spam");
+    }
     Ok(Json(serde_json::json!({ "message": "Expéditeur bloqué", "email": email })))
 }
 
@@ -169,7 +263,7 @@ pub async fn unblock_sender(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let res = sqlx::query("DELETE FROM mail.blocked_senders WHERE id = $1 AND user_id = $2")
+    let res = crate::db::query("DELETE FROM mail.blocked_senders WHERE id = $1 AND user_id = $2")
         .bind(id).bind(user.id)
         .execute(&state.db)
         .await?;
@@ -188,7 +282,7 @@ pub async fn list_image_senders(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let senders = sqlx::query_as::<_, BlockedSender>(
+    let senders = crate::db::query_as::<BlockedSender>(
         "SELECT id, email, created_at FROM mail.image_allowed_senders WHERE user_id = $1 ORDER BY email",
     )
     .bind(user.id)
@@ -221,10 +315,13 @@ pub async fn allow_image_sender(
     if email.is_empty() || (!is_domain && !email.contains('@')) {
         return Err(MailError::Validation("Adresse ou domaine invalide".into()));
     }
-    sqlx::query(
-        "INSERT INTO mail.image_allowed_senders (user_id, email) VALUES ($1, $2)
-         ON CONFLICT (user_id, email) DO NOTHING",
-    )
+    let backend = state.db.backend();
+    crate::db::query(format!(
+        "INSERT {}INTO mail.image_allowed_senders (id, user_id, email) VALUES ($1, $2, $3){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["user_id", "email"]),
+    ))
+    .bind(kubuno_db::new_id())
     .bind(user.id)
     .bind(&email)
     .execute(&state.db)
@@ -237,7 +334,7 @@ pub async fn forget_image_sender(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let res = sqlx::query("DELETE FROM mail.image_allowed_senders WHERE id = $1 AND user_id = $2")
+    let res = crate::db::query("DELETE FROM mail.image_allowed_senders WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user.id)
         .execute(&state.db)
@@ -253,7 +350,7 @@ pub async fn delete_filter(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let res = sqlx::query("DELETE FROM mail.filters WHERE id = $1 AND user_id = $2")
+    let res = crate::db::query("DELETE FROM mail.filters WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user.id)
         .execute(&state.db)

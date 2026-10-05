@@ -27,16 +27,18 @@ pub async fn suggest_addresses(
     if term.is_empty() {
         return Ok(Json(vec![]));
     }
-    let rows = sqlx::query_as::<_, AddressSuggestion>(
+    let rows = crate::db::query_as::<AddressSuggestion>(
         r#"SELECT email, name FROM mail.address_index
            WHERE user_id = $1
-             AND (email LIKE $2 || '%' OR email LIKE '%' || $2 || '%'
-                  OR LOWER(COALESCE(name, '')) LIKE '%' || $2 || '%')
-           ORDER BY (email LIKE $2 || '%') DESC, use_count DESC, last_used_at DESC
+             AND (email LIKE $2 OR email LIKE $3
+                  OR LOWER(COALESCE(name, '')) LIKE $3)
+           ORDER BY (email LIKE $2) DESC, use_count DESC, last_used_at DESC
            LIMIT 8"#,
     )
     .bind(user.id)
-    .bind(&term)
+    // Patterns built in Rust: `||` is not concatenation on MySQL.
+    .bind(format!("{term}%"))
+    .bind(format!("%{term}%"))
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows))

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { FileText, Download, AlertTriangle } from 'lucide-react'
+import { openSignedUrl, downloadSignedUrl } from '@kubuno/sdk'
 import { mailApi, Attachment } from '../api'
 import { sanitizeFileName } from './senderSafety'
 
@@ -20,7 +21,7 @@ export default function AttachmentRow({
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-surface-1 transition-colors group">
       <FileText size={16} className="text-text-tertiary flex-shrink-0" />
       <button
-        onClick={() => isPdf ? onOpenPdf(url, file.name) : window.open(url, '_blank')}
+        onClick={() => isPdf ? onOpenPdf(url, file.name) : void openSignedUrl(url)}
         title={file.name}
         className="flex-1 text-left text-sm text-text-primary truncate hover:text-primary transition-colors"
       >
@@ -48,7 +49,7 @@ export default function AttachmentRow({
       <a
         href={url}
         download={file.name}
-        onClick={e => e.stopPropagation()}
+        onClick={e => { e.stopPropagation(); e.preventDefault(); void downloadSignedUrl(url, file.name) }}
         className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-2 transition-all text-text-tertiary"
         title={t('mail_download')}
       >

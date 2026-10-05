@@ -38,7 +38,7 @@ pub mod worker;
 
 use std::{net::IpAddr, sync::Arc, time::Duration};
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use tokio::{net::TcpListener, sync::RwLock, task::JoinHandle};
 use tokio_rustls::TlsAcceptor;
 
@@ -89,7 +89,7 @@ fn bind_signature(cfg: &ServerConfig) -> (&str, &[Listener]) {
 
 /// Everything a protocol handler needs, gathered once per accepted connection.
 pub struct Incoming {
-    pub db:         PgPool,
+    pub db:         DbPool,
     pub cfg:        Arc<ServerConfig>,
     pub peer:       String,
     /// The listener's TLS mode — tells the handler whether to advertise
@@ -129,7 +129,7 @@ struct Running {
 
 /// Runs forever: reads the configuration, reconciles the listeners with it,
 /// sleeps, repeats.
-pub async fn run(db: PgPool, settings: Settings, http: reqwest::Client) {
+pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
     let mut running: Vec<Running> = Vec::new();
     let mut current = ServerConfig::default();
     let mut announced = false;
@@ -210,7 +210,7 @@ async fn reconcile(
     cfg: &ServerConfig,
     hardening: &Hardening,
     live: &LiveConfig,
-    db: &PgPool,
+    db: &DbPool,
 ) {
     // Stop the listeners that are no longer wanted, and WAIT for each aborted
     // task to unwind before moving on: its TcpListener is dropped only when the
@@ -258,7 +258,7 @@ async fn start(
     bind: &str,
     live: LiveConfig,
     hardening: Hardening,
-    db: PgPool,
+    db: DbPool,
 ) -> std::io::Result<JoinHandle<()>> {
     let socket = TcpListener::bind((bind, listener.port)).await?;
 
@@ -364,17 +364,17 @@ async fn start(
 /// Records a finished session. Best effort: failing to write the log must never
 /// fail the session that just ended.
 pub async fn log_session(
-    db: &PgPool,
+    db: &DbPool,
     protocol: &str,
     peer: &str,
     mailbox: Option<&auth::Mailbox>,
     commands: i32,
     error: Option<String>,
 ) {
-    let result = sqlx::query(
+    let result = crate::db::query(
         r#"INSERT INTO mail.server_sessions
-             (protocol, user_id, username, peer, authed, commands, error, ended_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())"#,
+             (id, protocol, user_id, username, peer, authed, commands, error, ended_at)
+           VALUES ($9, $1, $2, $3, $4, $5, $6, $7, $8)"#,
     )
     .bind(protocol)
     .bind(mailbox.map(|m| m.user_id))
@@ -383,12 +383,30 @@ pub async fn log_session(
     .bind(mailbox.is_some())
     .bind(commands)
     .bind(error)
+    .bind(chrono::Utc::now())
+    .bind(kubuno_db::new_id())
     .execute(db)
     .await;
 
     if let Err(e) = result {
         tracing::error!(error = %e, protocol, "Journalisation de session impossible");
     }
+}
+
+/// A pool on which every query fails: a fresh, never-migrated SQLite file, so
+/// any statement errors with "no such table". Stands in for a database that
+/// is down in the protocol tests (the old lazy PostgreSQL pool pointing at a
+/// closed port), without needing a server.
+#[cfg(test)]
+pub(crate) async fn broken_pool() -> DbPool {
+    let dir = std::env::temp_dir().join(format!("kubuno-mail-broken-{}", uuid::Uuid::new_v4()));
+    let settings: kubuno_db::DbSettings = serde_json::from_value(serde_json::json!({
+        "engine": "sqlite",
+        "path": dir.to_string_lossy(),
+        "run_migrations": false,
+    }))
+    .expect("sqlite settings");
+    kubuno_db::connect(&settings, crate::SCHEMA).await.expect("sqlite pool")
 }
 
 #[cfg(test)]

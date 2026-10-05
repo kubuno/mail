@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "Mail (Kubuno Core + browser)",
+    "Projects": [
+      {
+        "Path": "Kubuno.Mail.Server.rsproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "frontend\\Kubuno.Mail.Web.esproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

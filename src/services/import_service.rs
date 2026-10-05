@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::{
@@ -145,7 +145,7 @@ async fn probe_folders(session: &mut ImapSession) -> Result<Vec<FolderProbe>> {
 /// re-does the same work harmlessly (see the dedup note on `store_message`).
 #[allow(clippy::too_many_arguments)] // source + destination + filters + budget + cursor
 pub async fn run_chunk(
-    db: &PgPool,
+    db: &DbPool,
     mail_cfg: &MailSettings,
     src: &SourceSpec,
     target_user_id: Uuid,
@@ -176,7 +176,7 @@ pub async fn run_chunk(
 
 #[allow(clippy::too_many_arguments)] // same reason as run_chunk, plus the session
 async fn copy_chunk(
-    db: &PgPool,
+    db: &DbPool,
     mail_cfg: &MailSettings,
     account: &EmailAccount,
     session: &mut ImapSession,
@@ -393,8 +393,8 @@ fn is_older_than(raw: &[u8], limit: chrono::NaiveDate) -> bool {
 ///
 /// Columns are enumerated rather than `SELECT *` — the table also holds the
 /// encrypted IMAP/SMTP passwords, which must never be read into memory here.
-async fn load_target_account(db: &PgPool, user_id: Uuid) -> Result<EmailAccount> {
-    let found = sqlx::query_as::<_, EmailAccount>(
+async fn load_target_account(db: &DbPool, user_id: Uuid) -> Result<EmailAccount> {
+    let found = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,

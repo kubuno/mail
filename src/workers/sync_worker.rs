@@ -20,7 +20,7 @@ pub async fn run(state: Arc<AppState>) {
 }
 
 async fn sync_all_accounts(state: &AppState, crypto: &MailCrypto) {
-    let accounts = match sqlx::query_as::<_, crate::models::EmailAccount>(
+    let accounts = match crate::db::query_as::<crate::models::EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
@@ -55,7 +55,7 @@ async fn sync_all_accounts(state: &AppState, crypto: &MailCrypto) {
         };
         if let Some(msg) = err {
             tracing::warn!(account_id = %account.id, error = %msg, "Sync compte échoué");
-            let _ = sqlx::query("UPDATE mail.accounts SET last_error = $1 WHERE id = $2")
+            let _ = crate::db::query("UPDATE mail.accounts SET last_error = $1 WHERE id = $2")
                 .bind(msg)
                 .bind(account.id)
                 .execute(&state.db)

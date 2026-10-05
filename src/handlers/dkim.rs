@@ -24,6 +24,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use kubuno_db::dialect::Assign;
 
 use crate::{
     errors::MailError, middleware::AuthUser, server::dkim, services::crypto::MailCrypto,
@@ -147,7 +148,7 @@ pub async fn list_keys(
     require_admin(&user)?;
     // Audited: the only interpolation is the `SELECT_COLUMNS` constant above;
     // no caller value reaches the SQL text.
-    let rows = sqlx::query_as::<_, DkimKeyRow>(sqlx::AssertSqlSafe(format!(
+    let rows = crate::db::query_as::<DkimKeyRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLUMNS} FROM mail.dkim_keys_all \
          ORDER BY domain, is_active DESC, created_at DESC"
     )))
@@ -194,11 +195,11 @@ pub async fn create_key(
         MailError::Database(e)
     })?;
 
-    let active_selector: Option<String> = sqlx::query_scalar(
+    let active_selector: Option<String> = crate::db::query_scalar(
         "SELECT selector FROM mail.dkim_keys_all WHERE domain = $1 AND is_active",
     )
     .bind(&domain)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "create DKIM key: active lookup");
@@ -216,9 +217,9 @@ pub async fn create_key(
         .unwrap_or(active_selector.is_none() || replaces_active);
 
     if activate {
-        sqlx::query("UPDATE mail.dkim_keys_all SET is_active = FALSE WHERE domain = $1 AND is_active")
+        crate::db::query("UPDATE mail.dkim_keys_all SET is_active = FALSE WHERE domain = $1 AND is_active")
             .bind(&domain)
-            .execute(&mut *tx)
+            .execute(&mut tx)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "create DKIM key: demote previous");
@@ -226,21 +227,28 @@ pub async fn create_key(
             })?;
     }
 
-    // Audited: `SELECT_COLUMNS` is the sole interpolation; the domain, selector
-    // and key material are all bound parameters.
-    let row = sqlx::query_as::<_, DkimKeyRow>(sqlx::AssertSqlSafe(format!(
+    // The domain, selector and key material are all bound parameters. The id is
+    // generated here (kept only when the row is new) and the row is re-read by
+    // its (domain, selector) key: MySQL has no RETURNING.
+    let upsert = tx.backend().upsert(
+        "mail.dkim_keys_all",
+        &["domain", "selector"],
+        &[
+            Assign::Incoming("algorithm"),
+            Assign::Incoming("private_key_enc"),
+            Assign::Incoming("private_key_nonce"),
+            Assign::Incoming("public_key"),
+            Assign::Incoming("is_active"),
+            Assign::Incoming("created_at"),
+        ],
+    );
+    crate::db::query(format!(
         r#"INSERT INTO mail.dkim_keys_all
-             (domain, selector, algorithm, private_key_enc, private_key_nonce, public_key, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (domain, selector) DO UPDATE
-             SET algorithm = EXCLUDED.algorithm,
-                 private_key_enc = EXCLUDED.private_key_enc,
-                 private_key_nonce = EXCLUDED.private_key_nonce,
-                 public_key = EXCLUDED.public_key,
-                 is_active = EXCLUDED.is_active,
-                 created_at = NOW()
-           RETURNING {SELECT_COLUMNS}"#
-    )))
+             (id, domain, selector, algorithm, private_key_enc, private_key_nonce, public_key,
+              is_active, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9){upsert}"#
+    ))
+    .bind(kubuno_db::new_id())
     .bind(&domain)
     .bind(&selector)
     .bind(algorithm)
@@ -248,10 +256,22 @@ pub async fn create_key(
     .bind(&nonce)
     .bind(&public_b64)
     .bind(activate)
-    .fetch_one(&mut *tx)
+    .bind(Utc::now())
+    .execute(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "create DKIM key");
+        MailError::Database(e)
+    })?;
+    let row = crate::db::query_as::<DkimKeyRow>(format!(
+        "SELECT {SELECT_COLUMNS} FROM mail.dkim_keys_all WHERE domain = $1 AND selector = $2"
+    ))
+    .bind(&domain)
+    .bind(&selector)
+    .fetch_one(&mut tx)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "create DKIM key: read back");
         MailError::Database(e)
     })?;
 
@@ -278,9 +298,9 @@ pub async fn activate_key(
     })?;
 
     let domain: Option<String> =
-        sqlx::query_scalar("SELECT domain FROM mail.dkim_keys_all WHERE id = $1")
+        crate::db::query_scalar("SELECT domain FROM mail.dkim_keys_all WHERE id = $1")
             .bind(id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut tx)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "activate DKIM key: lookup");
@@ -290,22 +310,30 @@ pub async fn activate_key(
         return Err(MailError::NotFound("Clé DKIM".into()));
     };
 
-    sqlx::query("UPDATE mail.dkim_keys_all SET is_active = FALSE WHERE domain = $1 AND id <> $2")
+    crate::db::query("UPDATE mail.dkim_keys_all SET is_active = FALSE WHERE domain = $1 AND id <> $2")
         .bind(&domain)
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "activate DKIM key: demote others");
             MailError::Database(e)
         })?;
 
-    // Audited: `SELECT_COLUMNS` is the sole interpolation; the id is bound.
-    let row = sqlx::query_as::<_, DkimKeyRow>(sqlx::AssertSqlSafe(format!(
-        "UPDATE mail.dkim_keys_all SET is_active = TRUE WHERE id = $1 RETURNING {SELECT_COLUMNS}"
-    )))
+    crate::db::query("UPDATE mail.dkim_keys_all SET is_active = TRUE WHERE id = $1")
+        .bind(id)
+        .execute(&mut tx)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "activate DKIM key");
+            MailError::Database(e)
+        })?;
+    // Re-read rather than `RETURNING` (MySQL); the id is bound.
+    let row = crate::db::query_as::<DkimKeyRow>(format!(
+        "SELECT {SELECT_COLUMNS} FROM mail.dkim_keys_all WHERE id = $1"
+    ))
     .bind(id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "activate DKIM key");
@@ -326,7 +354,7 @@ pub async fn delete_key(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
     require_admin(&user)?;
-    let deleted = sqlx::query("DELETE FROM mail.dkim_keys_all WHERE id = $1")
+    let deleted = crate::db::query("DELETE FROM mail.dkim_keys_all WHERE id = $1")
         .bind(id)
         .execute(&state.db)
         .await

@@ -1,9 +1,9 @@
 use crate::config::Settings;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db:       PgPool,
+    pub db:       DbPool,
     pub settings: Arc<Settings>,
 }

@@ -23,7 +23,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use serde_json::Value;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::config::{self, ServerConfig};
@@ -40,7 +40,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(3_600);
 const BATCH: i64 = 500;
 
 /// Runs forever. Idles until an administrator sets a retention delay.
-pub async fn run(db: PgPool, settings: Settings, http: reqwest::Client) {
+pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
     tracing::info!("Rétention : worker démarré");
     loop {
         // Same read as every other background task: the console is the single
@@ -54,7 +54,7 @@ pub async fn run(db: PgPool, settings: Settings, http: reqwest::Client) {
 }
 
 /// One pass over both folders.
-async fn purge_cycle(db: &PgPool, cfg: &ServerConfig, attachments_dir: &str) {
+async fn purge_cycle(db: &DbPool, cfg: &ServerConfig, attachments_dir: &str) {
     for (folder, days) in [
         ("spam", cfg.spam_retention_days),
         ("trash", cfg.trash_retention_days),
@@ -73,7 +73,7 @@ async fn purge_cycle(db: &PgPool, cfg: &ServerConfig, attachments_dir: &str) {
 /// Removes up to [`BATCH`] messages older than `days` from `folder` and returns
 /// how many went. Returns `Ok(0)` when there is nothing to do.
 async fn purge_folder(
-    db: &PgPool,
+    db: &DbPool,
     folder: &str,
     days: i64,
     attachments_dir: &str,
@@ -86,18 +86,18 @@ async fn purge_folder(
         _ => return Ok(0),
     };
 
-    let expired = sqlx::query_as::<_, (Uuid, Uuid, Value)>(
+    let expired = crate::db::query_as::<(Uuid, Uuid, Value)>(
         r#"SELECT m.id, m.thread_id, m.attachments
              FROM mail.messages m
              JOIN mail.accounts a ON a.id = m.account_id
             WHERE m.folder = $1
               AND a.kind = 'local'
-              AND m.received_at < NOW() - ($2::int * INTERVAL '1 day')
+              AND m.received_at < $2
             ORDER BY m.received_at
             LIMIT $3"#,
     )
     .bind(folder)
-    .bind(days)
+    .bind(chrono::Utc::now() - chrono::Duration::days(i64::from(days)))
     .bind(BATCH)
     .fetch_all(db)
     .await
@@ -124,9 +124,14 @@ async fn purge_folder(
         e
     })?;
 
-    sqlx::query("DELETE FROM mail.messages WHERE id = ANY($1)")
-        .bind(&ids)
-        .execute(&mut *tx)
+    let mut del = crate::db::query(format!(
+        "DELETE FROM mail.messages WHERE id IN ({})",
+        crate::db::in_list(1, ids.len())
+    ));
+    for id in &ids {
+        del = del.bind(*id);
+    }
+    del.execute(&mut tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, folder, "Rétention : suppression des messages");
@@ -136,20 +141,23 @@ async fn purge_folder(
     // Recount what is left of each touched thread. Doing it from the messages
     // themselves rather than by decrementing keeps the counters true even if a
     // previous run was interrupted.
-    sqlx::query(
-        r#"UPDATE mail.threads t
-              SET message_count = c.total,
-                  unread_count  = c.unread
-             FROM (SELECT thread_id,
-                          COUNT(*)                                AS total,
-                          COUNT(*) FILTER (WHERE NOT is_read)     AS unread
-                     FROM mail.messages
-                    WHERE thread_id = ANY($1)
-                    GROUP BY thread_id) AS c
-            WHERE t.id = c.thread_id"#,
-    )
-    .bind(&threads)
-    .execute(&mut *tx)
+    // Correlated subqueries rather than PostgreSQL's `UPDATE … FROM`, which
+    // MySQL and SQLite spell differently. A thread left empty gets 0/0 here and
+    // is deleted just below.
+    let threads_in = crate::db::in_list(1, threads.len());
+    let mut recount = crate::db::query(format!(
+        r#"UPDATE mail.threads AS t
+              SET message_count = (SELECT COUNT(*) FROM mail.messages m
+                                    WHERE m.thread_id = t.id),
+                  unread_count  = (SELECT COUNT(*) FROM mail.messages m
+                                    WHERE m.thread_id = t.id AND NOT m.is_read)
+            WHERE t.id IN ({threads_in})"#
+    ));
+    for id in &threads {
+        recount = recount.bind(*id);
+    }
+    recount
+    .execute(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Rétention : recomptage des conversations");
@@ -157,13 +165,17 @@ async fn purge_folder(
     })?;
 
     // A thread with no message left is not a conversation any more.
-    sqlx::query(
-        r#"DELETE FROM mail.threads t
-            WHERE t.id = ANY($1)
-              AND NOT EXISTS (SELECT 1 FROM mail.messages m WHERE m.thread_id = t.id)"#,
-    )
-    .bind(&threads)
-    .execute(&mut *tx)
+    // No alias on the DELETE target: not every MySQL/MariaDB version accepts one.
+    let mut prune = crate::db::query(format!(
+        r#"DELETE FROM mail.threads
+            WHERE id IN ({threads_in})
+              AND NOT EXISTS (SELECT 1 FROM mail.messages m WHERE m.thread_id = mail.threads.id)"#
+    ));
+    for id in &threads {
+        prune = prune.bind(*id);
+    }
+    prune
+    .execute(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Rétention : suppression des conversations vides");

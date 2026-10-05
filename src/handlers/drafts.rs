@@ -15,7 +15,7 @@ pub async fn list_drafts(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let drafts = sqlx::query_as::<_, Draft>(
+    let drafts = crate::db::query_as::<Draft>(
         r#"SELECT id, account_id, user_id, to_addresses, cc_addresses, bcc_addresses,
                   subject, body_html, reply_to_id, attachments, created_at, updated_at
            FROM mail.drafts WHERE user_id = $1 ORDER BY updated_at DESC"#,
@@ -32,7 +32,7 @@ pub async fn scheduled_drafts(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let rows: Vec<(Uuid, serde_json::Value, String, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, serde_json::Value, String, String, chrono::DateTime<chrono::Utc>)> = crate::db::query_as(
         r#"SELECT id, to_addresses, subject, body_html, scheduled_at
            FROM mail.drafts
            WHERE user_id = $1 AND scheduled_at IS NOT NULL
@@ -63,7 +63,7 @@ pub async fn save_draft(
     let subject   = dto.subject.unwrap_or_default();
     let body_html = dto.body_html.unwrap_or_default();
 
-    sqlx::query(
+    crate::db::query(
         r#"INSERT INTO mail.drafts (id, account_id, user_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)"#,
     )
@@ -94,7 +94,7 @@ pub async fn update_draft(
     let subject   = dto.subject.unwrap_or_default();
     let body_html = dto.body_html.unwrap_or_default();
 
-    let result = sqlx::query(
+    let result = crate::db::query(
         r#"UPDATE mail.drafts SET to_addresses=$1, cc_addresses=$2, bcc_addresses=$3,
                   subject=$4, body_html=$5, reply_to_id=$6
            WHERE id=$7 AND user_id=$8"#,
@@ -121,7 +121,7 @@ pub async fn delete_draft(
     user: AuthUser,
     Path(draft_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let result = sqlx::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")
+    let result = crate::db::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")
         .bind(draft_id)
         .bind(user.id)
         .execute(&state.db)

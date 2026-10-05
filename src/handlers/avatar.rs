@@ -39,7 +39,7 @@ pub async fn sender_avatar(
     // profile picture rather than a domain logo or an initial. The core owns
     // that image, so the browser is pointed straight at it.
     let address = q.email.trim().to_ascii_lowercase();
-    let owner: Option<uuid::Uuid> = sqlx::query_scalar(
+    let owner: Option<uuid::Uuid> = crate::db::query_scalar(
         "SELECT user_id FROM mail.mailboxes WHERE LOWER(address) = $1 AND is_active",
     )
     .bind(&address)

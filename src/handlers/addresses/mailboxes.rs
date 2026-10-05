@@ -27,11 +27,11 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::{
-    db_error, generate_password, local_domains, parse_address, require_address_free, require_admin,
+    db_error, generate_password, like_escape, local_domains, parse_address, require_address_free, require_admin,
     require_local_domain, translate_conflict, ListQuery,
 };
 use crate::{
@@ -185,19 +185,24 @@ pub async fn list_mailboxes(
     let domain = q.domain_filter();
     let pattern = q.pattern();
 
-    let filter = r#"
-        WHERE ($1::text IS NULL OR domain = $1)
-          AND ($2::boolean IS NULL OR is_active = $2)
-          AND ($3::text IS NULL
-               OR address LIKE $3 ESCAPE '\'
-               OR LOWER(COALESCE(display_name, '')) LIKE $3 ESCAPE '\'
-               OR LOWER(COALESCE(comment, '')) LIKE $3 ESCAPE '\')
-    "#;
+    let backend = state.db.backend();
+    let esc = like_escape(backend);
+    let filter = format!(
+        r#"
+        WHERE ($1 IS NULL OR domain = $1)
+          AND ($2 IS NULL OR is_active = $2)
+          AND ($3 IS NULL
+               OR address LIKE $3{esc}
+               OR LOWER(COALESCE(display_name, '')) LIKE $3{esc}
+               OR LOWER(COALESCE(comment, '')) LIKE $3{esc})
+    "#
+    );
 
     // Audited: `filter` above is a literal; the domain, the active flag and
     // the search pattern are bound parameters.
-    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT COUNT(*) FROM mail.mailboxes {filter}"
+    let total: i64 = crate::db::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT {} FROM mail.mailboxes {filter}",
+        backend.count_bigint("*")
     )))
         .bind(&domain)
         .bind(q.active)
@@ -208,7 +213,7 @@ pub async fn list_mailboxes(
 
     // Audited: the only interpolations are the `COLUMNS` constant and the
     // `filter` literal above; every caller value is a bound parameter.
-    let rows = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+    let rows = crate::db::query_as::<MailboxRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailboxes {filter} ORDER BY address LIMIT $4 OFFSET $5"
     )))
     .bind(&domain)
@@ -307,13 +312,14 @@ pub async fn create_mailbox(
         .await
         .map_err(db_error("ouverture de la transaction de création"))?;
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound; the id is generated here (no RETURNING on
+    // MySQL) and the row re-read inside the transaction.
+    let new_id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.mailboxes
-             (address, domain, user_id, display_name, quota_bytes, is_active, comment)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING {COLUMNS}"#
-    )))
+             (id, address, domain, user_id, display_name, quota_bytes, is_active, comment)
+           VALUES ($8, $1, $2, $3, $4, $5, $6, $7)"#,
+    )
     .bind(&parsed.address)
     .bind(&parsed.domain)
     .bind(dto.user_id)
@@ -321,9 +327,11 @@ pub async fn create_mailbox(
     .bind(quota)
     .bind(dto.is_active.unwrap_or(true))
     .bind(clean_text(dto.comment.as_deref()))
-    .fetch_one(&mut *tx)
+    .bind(new_id)
+    .execute(&mut tx)
     .await
     .map_err(|e| translate_conflict(e, &parsed.address, &parsed.domain, "création d'une boîte"))?;
+    let row = fetch_one_in(&mut tx, new_id).await?;
 
     create_local_account(&mut tx, &state, &row).await?;
 
@@ -343,7 +351,7 @@ pub async fn create_mailbox(
         {
             Ok(cred) => Some(cred),
             Err(e) => {
-                if let Err(cleanup) = sqlx::query("DELETE FROM mail.accounts WHERE mailbox_id = $1")
+                if let Err(cleanup) = crate::db::query("DELETE FROM mail.accounts WHERE mailbox_id = $1")
                     .bind(row.id)
                     .execute(&state.db)
                     .await
@@ -354,7 +362,7 @@ pub async fn create_mailbox(
                         "annulation du compte local après échec de l'identifiant"
                     );
                 }
-                if let Err(cleanup) = sqlx::query("DELETE FROM mail.mailboxes WHERE id = $1")
+                if let Err(cleanup) = crate::db::query("DELETE FROM mail.mailboxes WHERE id = $1")
                     .bind(row.id)
                     .execute(&state.db)
                     .await
@@ -413,21 +421,20 @@ pub async fn update_mailbox(
         }
     }
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound; re-read rather than RETURNING (MySQL).
+    let updated = crate::db::query(
         r#"UPDATE mail.mailboxes SET
              address      = $2,
              domain       = $3,
              user_id      = COALESCE($4, user_id),
-             display_name = CASE WHEN $5::text IS NULL THEN display_name
+             display_name = CASE WHEN $5 IS NULL THEN display_name
                                  WHEN $5 = '' THEN NULL ELSE $5 END,
              quota_bytes  = COALESCE($6, quota_bytes),
              is_active    = COALESCE($7, is_active),
-             comment      = CASE WHEN $8::text IS NULL THEN comment
+             comment      = CASE WHEN $8 IS NULL THEN comment
                                  WHEN $8 = '' THEN NULL ELSE $8 END
-           WHERE id = $1
-           RETURNING {COLUMNS}"#
-    )))
+           WHERE id = $1"#,
+    )
     .bind(id)
     .bind(&address)
     .bind(&domain)
@@ -436,16 +443,20 @@ pub async fn update_mailbox(
     .bind(dto.quota_bytes)
     .bind(dto.is_active)
     .bind(dto.comment.as_deref().map(str::trim))
-    .fetch_one(&state.db)
+    .execute(&state.db)
     .await
     .map_err(|e| translate_conflict(e, &address, &domain, "mise à jour d'une boîte"))?;
+    if updated.rows_affected() == 0 {
+        return Err(MailError::NotFound(format!("Boîte {id}")));
+    }
+    let row = fetch_one(&state.db, id).await?;
 
     // Keep the local account that fronts this mailbox in step: its display name,
     // its enabled state and its address identity follow the mailbox. A no-op when
     // no account is linked (an external-only user, or a legacy mailbox created
     // before 000025).
     let account_name = row.display_name.clone().unwrap_or_else(|| row.address.clone());
-    if let Err(e) = sqlx::query(
+    if let Err(e) = crate::db::query(
         "UPDATE mail.accounts
          SET name = $2, is_active = $3, email_address = $4, imap_username = $4, smtp_username = $4
          WHERE mailbox_id = $1",
@@ -487,7 +498,7 @@ pub async fn delete_mailbox(
     // mailbox only sets `accounts.mailbox_id` to NULL (ON DELETE SET NULL) — the
     // account, and every message filed into it, is KEPT — but its owner must stop
     // composing from an address that no longer accepts mail, so it is disabled.
-    if let Err(e) = sqlx::query("UPDATE mail.accounts SET is_active = FALSE WHERE mailbox_id = $1")
+    if let Err(e) = crate::db::query("UPDATE mail.accounts SET is_active = FALSE WHERE mailbox_id = $1")
         .bind(id)
         .execute(&state.db)
         .await
@@ -495,7 +506,7 @@ pub async fn delete_mailbox(
         tracing::error!(error = %e, mailbox = %id, "désactivation du compte local avant suppression échouée");
     }
 
-    let deleted = sqlx::query("DELETE FROM mail.mailboxes WHERE id = $1")
+    let deleted = crate::db::query("DELETE FROM mail.mailboxes WHERE id = $1")
         .bind(id)
         .execute(&state.db)
         .await
@@ -506,7 +517,7 @@ pub async fn delete_mailbox(
 
     let mut credential_deleted = false;
     if q.delete_credential.unwrap_or(false) {
-        let removed = sqlx::query("DELETE FROM mail.mailbox_credentials WHERE username = $1")
+        let removed = crate::db::query("DELETE FROM mail.mailbox_credentials WHERE username = $1")
             .bind(&row.address)
             .execute(&state.db)
             .await
@@ -588,7 +599,7 @@ pub(crate) async fn provision_mailbox(
 ) -> Result<Option<String>, MailError> {
     // Already served on this domain? Then there is nothing to do — and nothing
     // to overwrite. This is the idempotency the worker relies on.
-    let has: Option<Uuid> = sqlx::query_scalar(
+    let has: Option<Uuid> = crate::db::query_scalar(
         "SELECT id FROM mail.mailboxes WHERE user_id = $1 AND domain = $2 LIMIT 1",
     )
     .bind(user_id)
@@ -630,22 +641,24 @@ pub(crate) async fn provision_mailbox(
         .await
         .map_err(db_error("provisioning : ouverture de transaction"))?;
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound; id generated here (no RETURNING on MySQL).
+    let new_id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.mailboxes
-             (address, domain, user_id, display_name, quota_bytes, is_active, comment)
-           VALUES ($1, $2, $3, $4, $5, TRUE, $6)
-           RETURNING {COLUMNS}"#
-    )))
+             (id, address, domain, user_id, display_name, quota_bytes, is_active, comment)
+           VALUES ($7, $1, $2, $3, $4, $5, TRUE, $6)"#,
+    )
     .bind(&address)
     .bind(domain)
     .bind(user_id)
     .bind(clean_text(display_name))
     .bind(quota)
     .bind(Some("Adresse attribuée automatiquement"))
-    .fetch_one(&mut *tx)
+    .bind(new_id)
+    .execute(&mut tx)
     .await
     .map_err(|e| translate_conflict(e, &address, domain, "provisioning : création de la boîte"))?;
+    let row = fetch_one_in(&mut tx, new_id).await?;
 
     create_local_account(&mut tx, state, &row).await?;
 
@@ -657,7 +670,7 @@ pub(crate) async fn provision_mailbox(
 }
 
 pub(crate) async fn create_local_account(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: &mut kubuno_db::DbTx,
     state: &AppState,
     mailbox: &MailboxRow,
 ) -> Result<(), MailError> {
@@ -671,9 +684,9 @@ pub(crate) async fn create_local_account(
     // The owner's FIRST account becomes the default, so a brand-new user with a
     // single hosted mailbox has a working composer with nothing to configure.
     let has_account: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mail.accounts WHERE user_id = $1)")
+        crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM mail.accounts WHERE user_id = $1)")
             .bind(mailbox.user_id)
-            .fetch_one(&mut **tx)
+            .fetch_one(&mut *tx)
             .await
             .map_err(db_error("recherche d'un compte existant"))?;
     let is_default = !has_account;
@@ -693,7 +706,7 @@ pub(crate) async fn create_local_account(
     let account_id = Uuid::new_v4();
 
     // $4 is the address, reused as email_address AND as the imap/smtp usernames.
-    sqlx::query(
+    crate::db::query(
         r#"INSERT INTO mail.accounts
              (id, user_id, name, email_address, kind, mailbox_id, incoming_protocol,
               imap_host, imap_port, imap_security, imap_username, imap_password, imap_password_nonce,
@@ -715,7 +728,7 @@ pub(crate) async fn create_local_account(
     .bind(smtp_nonce.as_slice())
     .bind(is_default)
     .bind(mailbox.is_active)
-    .execute(&mut **tx)
+    .execute(&mut *tx)
     .await
     .map_err(db_error("création du compte local"))?;
 
@@ -728,15 +741,16 @@ pub(crate) async fn create_local_account(
         ("Spam", "Junk"),
         ("Corbeille", "Trash"),
     ] {
-        sqlx::query(
-            "INSERT INTO mail.labels (account_id, user_id, name, imap_folder, is_system) \
-             VALUES ($1, $2, $3, $4, TRUE)",
+        crate::db::query(
+            "INSERT INTO mail.labels (id, account_id, user_id, name, imap_folder, is_system) \
+             VALUES ($1, $2, $3, $4, $5, TRUE)",
         )
+        .bind(kubuno_db::new_id())
         .bind(account_id)
         .bind(mailbox.user_id)
         .bind(label)
         .bind(folder)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(db_error("création des dossiers système du compte local"))?;
     }
@@ -762,7 +776,7 @@ pub async fn ensure_local_accounts(state: &AppState) -> Result<(), MailError> {
     // unqualified `COLUMNS` list stays unambiguous.
     // Audited: `COLUMNS` is a constant; every caller value is bound.
     // Audited: `COLUMNS` is a constant; the query takes no value at all.
-    let rows = sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+    let rows = crate::db::query_as::<MailboxRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailboxes m \
          WHERE m.is_active \
            AND NOT EXISTS (SELECT 1 FROM mail.accounts a WHERE a.mailbox_id = m.id)"
@@ -806,9 +820,19 @@ pub async fn ensure_local_accounts(state: &AppState) -> Result<(), MailError> {
     Ok(())
 }
 
-async fn fetch_one(db: &PgPool, id: Uuid) -> Result<MailboxRow, MailError> {
+/// [`fetch_one`] inside an open transaction (sees its uncommitted writes).
+async fn fetch_one_in(tx: &mut kubuno_db::DbTx, id: Uuid) -> Result<MailboxRow, MailError> {
+    crate::db::query_as::<MailboxRow>(format!("SELECT {COLUMNS} FROM mail.mailboxes WHERE id = $1"))
+        .bind(id)
+        .fetch_optional(tx)
+        .await
+        .map_err(db_error("lecture d'une boîte"))?
+        .ok_or_else(|| MailError::NotFound(format!("Boîte {id}")))
+}
+
+async fn fetch_one(db: &DbPool, id: Uuid) -> Result<MailboxRow, MailError> {
     // Audited: `COLUMNS` is a constant; every caller value is bound.
-    sqlx::query_as::<_, MailboxRow>(sqlx::AssertSqlSafe(format!(
+    crate::db::query_as::<MailboxRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailboxes WHERE id = $1"
     )))
         .bind(id)
@@ -828,7 +852,7 @@ fn clean_text(raw: Option<&str>) -> Option<String> {
 /// Fills the computed half of the view for a whole page at once: three
 /// aggregate queries rather than three per row.
 async fn decorate(
-    db: &PgPool,
+    db: &DbPool,
     rows: Vec<MailboxRow>,
     served: Option<&[String]>,
 ) -> Result<Vec<MailboxView>, MailError> {
@@ -844,33 +868,49 @@ async fn decorate(
     };
     let addresses: Vec<String> = rows.iter().map(|r| r.address.clone()).collect();
 
-    let counts: Vec<(Uuid, i64)> = sqlx::query_as(
-        "SELECT user_id, COUNT(*) FROM mail.messages \
-         WHERE user_id = ANY($1) AND is_deleted = FALSE GROUP BY user_id",
-    )
-    .bind(&user_ids)
-    .fetch_all(db)
-    .await
-    .map_err(db_error("comptage des messages par propriétaire"))?;
+    // `rows` is non-empty, so neither IN-list below is empty.
+    let backend = db.backend();
+    let users_in = crate::db::in_list(1, user_ids.len());
+    let mut q = crate::db::query_as::<(Uuid, i64)>(format!(
+        "SELECT user_id, {} FROM mail.messages \
+         WHERE user_id IN ({users_in}) AND is_deleted = FALSE GROUP BY user_id",
+        backend.count_bigint("*")
+    ));
+    for id in &user_ids {
+        q = q.bind(*id);
+    }
+    let counts: Vec<(Uuid, i64)> = q
+        .fetch_all(db)
+        .await
+        .map_err(db_error("comptage des messages par propriétaire"))?;
 
     // The only proof of existence available without `core.users`: an id the mail
     // schema has already recorded somewhere.
-    let known: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT user_id FROM mail.accounts WHERE user_id = ANY($1) \
+    let users_in_2 = crate::db::in_list(user_ids.len() + 1, user_ids.len());
+    let mut q = crate::db::query_scalar::<Uuid>(format!(
+        "SELECT user_id FROM mail.accounts WHERE user_id IN ({users_in}) \
          UNION \
-         SELECT user_id FROM mail.mailbox_credentials WHERE user_id = ANY($1)",
-    )
-    .bind(&user_ids)
-    .fetch_all(db)
-    .await
-    .map_err(db_error("reconnaissance des propriétaires"))?;
+         SELECT user_id FROM mail.mailbox_credentials WHERE user_id IN ({users_in_2})"
+    ));
+    for id in user_ids.iter().chain(user_ids.iter()) {
+        q = q.bind(*id);
+    }
+    let known: Vec<Uuid> = q
+        .fetch_all(db)
+        .await
+        .map_err(db_error("reconnaissance des propriétaires"))?;
 
-    let with_credential: Vec<String> =
-        sqlx::query_scalar("SELECT username FROM mail.mailbox_credentials WHERE username = ANY($1)")
-            .bind(&addresses)
-            .fetch_all(db)
-            .await
-            .map_err(db_error("identifiants existants"))?;
+    let mut q = crate::db::query_scalar::<String>(format!(
+        "SELECT username FROM mail.mailbox_credentials WHERE username IN ({})",
+        crate::db::in_list(1, addresses.len())
+    ));
+    for a in &addresses {
+        q = q.bind(a);
+    }
+    let with_credential: Vec<String> = q
+        .fetch_all(db)
+        .await
+        .map_err(db_error("identifiants existants"))?;
 
     Ok(rows
         .into_iter()
@@ -901,17 +941,20 @@ async fn decorate(
         .collect())
 }
 
-async fn owner_message_count(db: &PgPool, user_id: Uuid) -> Result<i64, MailError> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM mail.messages WHERE user_id = $1 AND is_deleted = FALSE")
+async fn owner_message_count(db: &DbPool, user_id: Uuid) -> Result<i64, MailError> {
+    crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.messages WHERE user_id = $1 AND is_deleted = FALSE",
+        db.backend().count_bigint("*")
+    ))
         .bind(user_id)
         .fetch_one(db)
         .await
         .map_err(db_error("comptage des messages du propriétaire"))
 }
 
-async fn default_quota(db: &PgPool, domain: &str) -> Result<i64, MailError> {
+async fn default_quota(db: &DbPool, domain: &str) -> Result<i64, MailError> {
     let quota: Option<i64> =
-        sqlx::query_scalar("SELECT default_quota_bytes FROM mail.domain_policies WHERE domain = $1")
+        crate::db::query_scalar("SELECT default_quota_bytes FROM mail.domain_policies WHERE domain = $1")
             .bind(domain)
             .fetch_optional(db)
             .await
@@ -921,9 +964,9 @@ async fn default_quota(db: &PgPool, domain: &str) -> Result<i64, MailError> {
 
 /// Refuses a creation that would exceed the domain's mailbox ceiling. Never
 /// applied retroactively: lowering the ceiling does not delete anything.
-async fn enforce_mailbox_ceiling(db: &PgPool, domain: &str) -> Result<(), MailError> {
+async fn enforce_mailbox_ceiling(db: &DbPool, domain: &str) -> Result<(), MailError> {
     let max: Option<i32> =
-        sqlx::query_scalar("SELECT max_mailboxes FROM mail.domain_policies WHERE domain = $1")
+        crate::db::query_scalar("SELECT max_mailboxes FROM mail.domain_policies WHERE domain = $1")
             .bind(domain)
             .fetch_optional(db)
             .await
@@ -933,7 +976,10 @@ async fn enforce_mailbox_ceiling(db: &PgPool, domain: &str) -> Result<(), MailEr
         return Ok(());
     };
 
-    let used: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mail.mailboxes WHERE domain = $1")
+    let used: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.mailboxes WHERE domain = $1",
+        db.backend().count_bigint("*")
+    ))
         .bind(domain)
         .fetch_one(db)
         .await
@@ -947,8 +993,8 @@ async fn enforce_mailbox_ceiling(db: &PgPool, domain: &str) -> Result<(), MailEr
     Ok(())
 }
 
-async fn credential_exists(db: &PgPool, address: &str) -> Result<bool, MailError> {
-    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM mail.mailbox_credentials WHERE username = $1)")
+async fn credential_exists(db: &DbPool, address: &str) -> Result<bool, MailError> {
+    crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM mail.mailbox_credentials WHERE username = $1)")
         .bind(address)
         .fetch_one(db)
         .await
@@ -960,7 +1006,7 @@ async fn credential_exists(db: &PgPool, address: &str) -> Result<bool, MailError
 /// The plaintext is never logged: no `tracing` call below sees it, and the error
 /// path reports only the failure.
 async fn issue_credential(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     address: &str,
     label: Option<&str>,

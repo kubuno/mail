@@ -32,7 +32,7 @@ use std::{net::IpAddr, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use base64::Engine;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio_rustls::TlsAcceptor;
 
@@ -382,7 +382,7 @@ impl Session {
         }
     }
 
-    async fn cmd_auth(&mut self, db: &PgPool, rest: &str) -> Result<()> {
+    async fn cmd_auth(&mut self, db: &DbPool, rest: &str) -> Result<()> {
         if self.greeting.is_none() {
             return self.reply("503 5.5.1 Send HELO/EHLO first").await;
         }
@@ -489,7 +489,7 @@ impl Session {
     ///
     /// The base64-wrapped SASL data is never logged: even the intermediate
     /// messages carry material an attacker could use.
-    async fn cmd_auth_scram(&mut self, db: &PgPool, initial: &str) -> Result<()> {
+    async fn cmd_auth_scram(&mut self, db: &DbPool, initial: &str) -> Result<()> {
         // client-first: either the SASL initial response, or read after an empty
         // `334` challenge (RFC 4954 §4). `*` / EOF cancels the exchange.
         let client_first_b64 = if initial.is_empty() {
@@ -549,7 +549,7 @@ impl Session {
 
                 // The secret came from a real row (known == true), so the mailbox
                 // exists; fetch the user_id it belongs to.
-                let user_id = match sqlx::query_scalar::<_, uuid::Uuid>(
+                let user_id = match crate::db::query_scalar::<uuid::Uuid>(
                     "SELECT user_id FROM mail.mailbox_credentials WHERE username = $1",
                 )
                 .bind(username.trim().to_ascii_lowercase())
@@ -594,7 +594,7 @@ impl Session {
         }
     }
 
-    async fn cmd_mail(&mut self, db: &PgPool, cfg: &ServerConfig, rest: &str) -> Result<()> {
+    async fn cmd_mail(&mut self, db: &DbPool, cfg: &ServerConfig, rest: &str) -> Result<()> {
         if self.greeting.is_none() {
             return self.reply("503 5.5.1 Send HELO/EHLO first").await;
         }
@@ -672,7 +672,7 @@ impl Session {
         self.reply("250 2.1.0 Sender ok").await
     }
 
-    async fn cmd_rcpt(&mut self, db: &PgPool, cfg: &ServerConfig, rest: &str) -> Result<()> {
+    async fn cmd_rcpt(&mut self, db: &DbPool, cfg: &ServerConfig, rest: &str) -> Result<()> {
         if self.sender.is_none() {
             return self.reply("503 5.5.1 Need MAIL before RCPT").await;
         }
@@ -824,7 +824,7 @@ impl Session {
     /// must end.
     async fn cmd_data(
         &mut self,
-        db: &PgPool,
+        db: &DbPool,
         cfg: &ServerConfig,
         peer: &str,
     ) -> Result<Option<String>> {
@@ -1382,7 +1382,7 @@ fn sender_is_owned(envelope_from: &str, owned_addresses: &[&str]) -> bool {
 /// Confirms the envelope sender belongs to the authenticated user. The mailbox
 /// login is owned by definition; anything else must be one of the addresses on
 /// the user's configured accounts, which only the database knows.
-async fn verify_sender_ownership(db: &PgPool, address: &str, mailbox: &Mailbox) -> SenderCheck {
+async fn verify_sender_ownership(db: &DbPool, address: &str, mailbox: &Mailbox) -> SenderCheck {
     if sender_is_owned(address, &[mailbox.username.as_str()]) {
         return SenderCheck::Accept;
     }
@@ -1391,7 +1391,7 @@ async fn verify_sender_ownership(db: &PgPool, address: &str, mailbox: &Mailbox) 
         return SenderCheck::Reject("553 5.7.1 Sender address not owned by authenticated user");
     }
 
-    let owned: bool = match sqlx::query_scalar::<_, bool>(
+    let owned: bool = match crate::db::query_scalar::<bool>(
         "SELECT EXISTS(SELECT 1 FROM mail.accounts WHERE user_id = $1 AND LOWER(email_address) = $2)",
     )
     .bind(mailbox.user_id)
@@ -2177,15 +2177,12 @@ mod tests {
 
     // ── A real session, over a real socket ──────────────────────────────────
     //
-    // The database handle points nowhere on purpose: refusing to relay must
+    // The database handle fails every query on purpose: refusing to relay must
     // need no query at all, and a database that is down must yield a TEMPORARY
     // refusal — a 550 there would bounce legitimate mail for good.
 
-    fn unreachable_pool() -> PgPool {
-        sqlx::postgres::PgPoolOptions::new()
-            .acquire_timeout(Duration::from_millis(200))
-            .connect_lazy("postgres://nobody:nobody@127.0.0.1:1/none")
-            .expect("pool paresseux")
+    async fn unreachable_pool() -> DbPool {
+        crate::server::broken_pool().await
     }
 
     async fn expect_line(
@@ -2221,7 +2218,7 @@ mod tests {
         tokio::spawn(async move {
             let (stream, peer) = listener.accept().await.expect("connexion entrante");
             let inc = Incoming {
-                db: unreachable_pool(),
+                db: unreachable_pool().await,
                 cfg: Arc::new(cfg),
                 peer: peer.to_string(),
                 tls_mode: TlsMode::None,

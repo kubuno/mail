@@ -21,7 +21,7 @@
 use std::{collections::HashSet, net::IpAddr, sync::Arc, time::Duration};
 
 use anyhow::{bail, Context, Result};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use sqlx::postgres::PgListener;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -123,7 +123,7 @@ struct Selected {
 }
 
 struct Session {
-    db:       PgPool,
+    db:       DbPool,
     cfg:      Arc<ServerConfig>,
     /// One buffered stream for both directions. `None` only for the instant a
     /// STARTTLS upgrade owns it, which returns before any further I/O.
@@ -1379,22 +1379,21 @@ impl Session {
             return Err(e);
         }
 
-        // PostgreSQL LISTEN is the push source: a trigger on mail.messages emits
-        // NOTIFY 'mail_changes' with a JSON {user_id, folder} on every change. A
-        // failed subscription degrades IDLE to "wait for DONE" — it never spins.
-        let mut listener = match PgListener::connect_with(&self.db).await {
-            Ok(mut l) => match l.listen("mail_changes").await {
-                Ok(()) => Some(l),
-                Err(e) => {
-                    tracing::error!(error = %e, "Abonnement LISTEN mail_changes impossible");
-                    None
-                }
-            },
-            Err(e) => {
-                tracing::error!(error = %e, "Connexion LISTEN mail_changes impossible");
-                None
-            }
+        let mut source = ChangeSource::open(&self.db).await;
+        // What the poller compares against (MySQL/SQLite only). Taken now, so a
+        // change between SELECT and IDLE is not reported twice — nor lost: the
+        // snapshot the session holds is what resync diffs against.
+        let poll_target = match (
+            self.mailbox.as_ref().map(|m| m.user_id),
+            self.selected.as_ref().map(|s| s.folder),
+        ) {
+            (Some(user_id), Some(folder)) => Some((user_id, folder)),
+            _ => None,
         };
+        if let (ChangeSource::Poll { last, .. }, Some((user_id, folder))) = (&mut source, poll_target) {
+            *last = folder_state(&self.db, user_id, folder).await;
+        }
+        let poll_db = self.db.clone();
 
         let mut keepalive = tokio::time::interval(IDLE_KEEPALIVE);
         keepalive.tick().await; // the first tick fires immediately; discard it.
@@ -1422,13 +1421,15 @@ impl Session {
                         }
                     }
                 }
-                payload = recv_notification(listener.as_mut()) => {
-                    if let Some(payload) = payload {
-                        if self.notification_matches(&payload) {
-                            if let Err(e) = self.resync(&mut conn).await {
-                                tracing::error!(error = %e, "Resynchronisation IDLE impossible");
-                                break false;
-                            }
+                change = source.next(&poll_db, poll_target) => {
+                    let relevant = match change {
+                        Change::Payload(payload) => self.notification_matches(&payload),
+                        Change::Polled => true,
+                    };
+                    if relevant {
+                        if let Err(e) = self.resync(&mut conn).await {
+                            tracing::error!(error = %e, "Resynchronisation IDLE impossible");
+                            break false;
                         }
                     }
                 }
@@ -1694,27 +1695,113 @@ async fn write_raw(conn: &mut Reader, data: &[u8]) -> Result<()> {
     conn.flush().await.context("Vidage IMAP pendant IDLE")
 }
 
-/// Awaits the next change notification. With no listener (a failed LISTEN) it
-/// never resolves, so IDLE falls back to DONE-only rather than spinning.
-async fn recv_notification(listener: Option<&mut PgListener>) -> Option<String> {
-    match listener {
-        Some(listener) => match listener.recv().await {
-            Ok(notification) => Some(notification.payload().to_string()),
+/// How often an IDLE session without `LISTEN` (MySQL/MariaDB, SQLite) looks
+/// for changes to its selected folder.
+const IDLE_POLL: Duration = Duration::from_secs(5);
+
+/// Where IDLE learns that the selected folder changed.
+enum ChangeSource {
+    /// PostgreSQL: a trigger on `mail.messages` emits `NOTIFY mail_changes` with
+    /// a JSON `{user_id, folder}` on every change, pushed to this listener.
+    Listen(PgListener),
+    /// MySQL/SQLite have no `LISTEN`: every [`IDLE_POLL`] the folder's state
+    /// (highest modseq, message count) is compared with the last one seen.
+    Poll {
+        every: tokio::time::Interval,
+        last: Option<(i64, i64)>,
+    },
+    /// A failed subscription: IDLE degrades to "wait for DONE" — never spins.
+    Nothing,
+}
+
+/// One wake-up of the IDLE loop.
+enum Change {
+    /// A `mail_changes` payload, still to be matched against the session.
+    Payload(String),
+    /// The polled state of the selected folder moved.
+    Polled,
+}
+
+impl ChangeSource {
+    async fn open(db: &DbPool) -> Self {
+        let Some(pg) = db.as_pg() else {
+            let mut every = tokio::time::interval(IDLE_POLL);
+            every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            return ChangeSource::Poll { every, last: None };
+        };
+        match PgListener::connect_with(pg).await {
+            Ok(mut l) => match l.listen("mail_changes").await {
+                Ok(()) => ChangeSource::Listen(l),
+                Err(e) => {
+                    tracing::error!(error = %e, "Abonnement LISTEN mail_changes impossible");
+                    ChangeSource::Nothing
+                }
+            },
             Err(e) => {
-                tracing::error!(error = %e, "Réception LISTEN mail_changes impossible");
-                std::future::pending().await
+                tracing::error!(error = %e, "Connexion LISTEN mail_changes impossible");
+                ChangeSource::Nothing
             }
-        },
-        None => std::future::pending().await,
+        }
     }
+
+    /// Resolves at the next change; never resolves when there is no source (or
+    /// no selected folder to poll), so IDLE then waits for DONE.
+    async fn next(&mut self, db: &DbPool, target: Option<(Uuid, &'static str)>) -> Change {
+        match self {
+            ChangeSource::Listen(listener) => match listener.recv().await {
+                Ok(notification) => Change::Payload(notification.payload().to_string()),
+                Err(e) => {
+                    tracing::error!(error = %e, "Réception LISTEN mail_changes impossible");
+                    std::future::pending().await
+                }
+            },
+            ChangeSource::Poll { every, last } => {
+                let Some((user_id, folder)) = target else {
+                    return std::future::pending().await;
+                };
+                loop {
+                    every.tick().await;
+                    let now = folder_state(db, user_id, folder).await;
+                    // An unreadable state (None) is not a change: the next tick
+                    // retries rather than resyncing on a database hiccup.
+                    if now.is_some() && now != *last {
+                        *last = now;
+                        return Change::Polled;
+                    }
+                }
+            }
+            ChangeSource::Nothing => std::future::pending().await,
+        }
+    }
+}
+
+/// The polled state of a folder: its HIGHESTMODSEQ (which every insert, flag
+/// change and departure advances, the triggers stamping it on every engine)
+/// and its live message count (which a hard delete changes without a modseq).
+async fn folder_state(db: &DbPool, user_id: Uuid, folder: &str) -> Option<(i64, i64)> {
+    let modseq = store::highest_modseq(db, user_id, folder)
+        .await
+        .map_err(|e| tracing::error!(error = %e, "IDLE : lecture de l'état du dossier impossible"))
+        .ok()?;
+    let count: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.messages WHERE user_id = $1 AND folder = $2 AND is_deleted = FALSE",
+        db.backend().count_bigint("*")
+    ))
+    .bind(user_id)
+    .bind(folder)
+    .fetch_one(db)
+    .await
+    .map_err(|e| tracing::error!(error = %e, "IDLE : comptage du dossier impossible"))
+    .ok()?;
+    Some((modseq, count))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Drives the real session loop over a real socket. The pool is lazy and
-    /// points nowhere: everything asserted here happens before any data is
+    /// Drives the real session loop over a real socket. The pool is a never-migrated SQLite file
+    /// fails every query: everything asserted here happens before any data is
     /// touched, which is exactly the part that must never hang up on a client.
     #[tokio::test]
     async fn a_session_answers_over_a_real_socket() {
@@ -1722,12 +1809,7 @@ mod tests {
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("adresse locale");
-        let db = sqlx::postgres::PgPoolOptions::new()
-            // Without a short deadline the pool would keep retrying an address
-            // that will never answer, and the test would spend that time idle.
-            .acquire_timeout(Duration::from_millis(100))
-            .connect_lazy("postgres://nobody@127.0.0.1:1/nothing")
-            .expect("pool paresseux");
+        let db = crate::server::broken_pool().await;
         let cfg = Arc::new(ServerConfig::default());
 
         let server = tokio::spawn(async move {

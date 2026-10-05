@@ -29,7 +29,7 @@
 //! delivery uses — and this module is never called FROM that path. A journalled
 //! copy therefore produces no second copy of itself.
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use super::{
     config::ServerConfig,
@@ -44,7 +44,7 @@ use super::{
 /// a journal silently not recording is the one failure mode that matters — and
 /// swallowed.
 pub async fn archive(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     attachments_dir: &str,
     envelope_from: &str,

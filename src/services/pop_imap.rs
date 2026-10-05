@@ -16,7 +16,8 @@
 //! `000037` header for the field-by-field rationale.
 
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 // ── Enumerations (parsed / validated at the edge, stored as text) ────────────
@@ -208,8 +209,8 @@ type SettingsRow = (bool, String, String, i32, bool, String, i64, String);
 /// one. A malformed stored enum (only reachable by a hand-edited row, since the
 /// writer validates) falls back to that field's default rather than failing the
 /// login — a mail client must not be locked out by a bad settings row.
-pub async fn load(db: &PgPool, user_id: Uuid) -> Result<PopImapSettings> {
-    let row: Option<SettingsRow> = sqlx::query_as(
+pub async fn load(db: &DbPool, user_id: Uuid) -> Result<PopImapSettings> {
+    let row: Option<SettingsRow> = crate::db::query_as(
         "SELECT imap_enabled, imap_expunge_mode, imap_purge_mode, imap_folder_limit,
                 pop_enabled, pop_mode, pop_from_uid, pop_post_action
          FROM mail.pop_imap_settings WHERE user_id = $1",
@@ -249,25 +250,30 @@ pub async fn load(db: &PgPool, user_id: Uuid) -> Result<PopImapSettings> {
 /// Inserts or replaces a user's policy. The caller has already validated the
 /// enums (they arrive typed); `imap_auto_expunge` is stored consistent with the
 /// mode.
-pub async fn upsert(db: &PgPool, user_id: Uuid, s: &PopImapSettings) -> Result<()> {
+pub async fn upsert(db: &DbPool, user_id: Uuid, s: &PopImapSettings) -> Result<()> {
     let auto_expunge = s.imap_expunge_mode == ImapExpungeMode::Auto;
-    sqlx::query(
+    let upsert = db.backend().upsert(
+        "mail.pop_imap_settings",
+        &["user_id"],
+        &[
+            Assign::Incoming("imap_enabled"),
+            Assign::Incoming("imap_expunge_mode"),
+            Assign::Incoming("imap_auto_expunge"),
+            Assign::Incoming("imap_purge_mode"),
+            Assign::Incoming("imap_folder_limit"),
+            Assign::Incoming("pop_enabled"),
+            Assign::Incoming("pop_mode"),
+            Assign::Incoming("pop_from_uid"),
+            Assign::Incoming("pop_post_action"),
+            Assign::Incoming("updated_at"),
+        ],
+    );
+    crate::db::query(format!(
         r#"INSERT INTO mail.pop_imap_settings
              (user_id, imap_enabled, imap_expunge_mode, imap_auto_expunge, imap_purge_mode,
               imap_folder_limit, pop_enabled, pop_mode, pop_from_uid, pop_post_action, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-           ON CONFLICT (user_id) DO UPDATE SET
-             imap_enabled      = EXCLUDED.imap_enabled,
-             imap_expunge_mode = EXCLUDED.imap_expunge_mode,
-             imap_auto_expunge = EXCLUDED.imap_auto_expunge,
-             imap_purge_mode   = EXCLUDED.imap_purge_mode,
-             imap_folder_limit = EXCLUDED.imap_folder_limit,
-             pop_enabled       = EXCLUDED.pop_enabled,
-             pop_mode          = EXCLUDED.pop_mode,
-             pop_from_uid      = EXCLUDED.pop_from_uid,
-             pop_post_action   = EXCLUDED.pop_post_action,
-             updated_at        = NOW()"#,
-    )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11){upsert}"#
+    ))
     .bind(user_id)
     .bind(s.imap_enabled)
     .bind(s.imap_expunge_mode.as_str())
@@ -278,6 +284,7 @@ pub async fn upsert(db: &PgPool, user_id: Uuid, s: &PopImapSettings) -> Result<(
     .bind(s.pop_mode.as_str())
     .bind(s.pop_from_uid)
     .bind(s.pop_post_action.as_str())
+    .bind(chrono::Utc::now())
     .execute(db)
     .await
     .context("Enregistrement des préférences POP/IMAP")?;
@@ -288,8 +295,8 @@ pub async fn upsert(db: &PgPool, user_id: Uuid, s: &PopImapSettings) -> Result<(
 /// messages. This is the cursor snapped when a user switches POP to "from now
 /// on" — everything at or below it is considered already-arrived and hidden.
 /// A user with no mail yet gets 0, so the very next message is visible.
-pub async fn current_inbox_cursor(db: &PgPool, user_id: Uuid) -> Result<i64> {
-    let cursor: Option<i64> = sqlx::query_scalar(
+pub async fn current_inbox_cursor(db: &DbPool, user_id: Uuid) -> Result<i64> {
+    let cursor: Option<i64> = crate::db::query_scalar(
         "SELECT MAX(local_uid) FROM mail.messages
          WHERE user_id = $1 AND local_uid IS NOT NULL",
     )

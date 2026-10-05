@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use mail_parser::{HeaderValue, MessageParser, MimeHeaders};
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::server::config::ServerConfig;
@@ -66,7 +66,7 @@ pub enum Disposition {
 /// callable from a test or from another entry point.
 #[allow(clippy::too_many_arguments)] // one delivery, and every part of it is needed
 pub async fn deliver_local(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     envelope_from: &str,
     recipient: &str,
@@ -315,7 +315,7 @@ pub async fn deliver_local(
     let msg_at = sent_at.unwrap_or_else(Utc::now);
 
     // A blocked sender goes straight to spam, exactly as on the sync side.
-    let blocked: bool = sqlx::query_scalar(
+    let blocked: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM mail.blocked_senders WHERE user_id = $1 AND email = LOWER($2))",
     )
     .bind(target.user_id)
@@ -359,7 +359,7 @@ pub async fn deliver_local(
     )
     .await?;
 
-    sqlx::query(
+    crate::db::query(
         r#"INSERT INTO mail.messages
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
             from_name, from_email, to_addresses, cc_addresses, attachments,
@@ -367,7 +367,7 @@ pub async fn deliver_local(
             reply_to, mailed_by, signed_by, security, category, auth_dmarc, is_starred, received_at,
             structured_data)
            VALUES ($1,$2,$3,$4,$5,$6,NULL,'INBOX',$7,$8,$9,$10,$11,$12,$13,$14,FALSE,$15,$16,$17,
-                   $18,$19,$20,$21,$22,$23,FALSE,NOW(),$24)"#,
+                   $18,$19,$20,$21,$22,$23,FALSE,$25,$24)"#,
     )
     .bind(msg_id)
     .bind(thread_id)
@@ -393,7 +393,8 @@ pub async fn deliver_local(
     .bind(category)
     .bind(auth_dmarc)
     .bind(structured_data)
-    .execute(&mut *tx)
+    .bind(Utc::now())
+    .execute(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, recipient = %recipient, "Insertion du message entrant échouée");
@@ -403,8 +404,8 @@ pub async fn deliver_local(
 
     // Thread roll-up: counters are RECOMPUTED, and the headline fields only
     // move when this message really is the newest of the conversation.
-    sqlx::query(
-        "UPDATE mail.threads t
+    crate::db::query(format!(
+        "UPDATE mail.threads AS t
          SET message_count     = (SELECT COUNT(*) FROM mail.messages m
                                   WHERE m.thread_id = t.id AND m.is_deleted = FALSE),
              unread_count      = (SELECT COUNT(*) FROM mail.messages m
@@ -416,9 +417,10 @@ pub async fn deliver_local(
              category          = CASE WHEN t.category_pinned THEN t.category
                                       WHEN $6 >= t.last_message_at THEN $7
                                       ELSE COALESCE(t.category, $7) END,
-             last_message_at   = GREATEST(t.last_message_at, $6)
+             last_message_at   = {}
          WHERE t.id = $1",
-    )
+        crate::db::greatest(tx.backend(), &["t.last_message_at", "$6"])
+    ))
     .bind(thread_id)
     .bind(snippet.as_deref())
     .bind(from_name.as_deref())
@@ -426,7 +428,7 @@ pub async fn deliver_local(
     .bind(has_attachments)
     .bind(msg_at)
     .bind(category)
-    .execute(&mut *tx)
+    .execute(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, thread_id = %thread_id, "Mise à jour du fil échouée");
@@ -467,7 +469,7 @@ pub async fn deliver_local(
         {
             Ok(verdict) => {
                 if let Some(score) = verdict.score {
-                    if let Err(e) = sqlx::query("UPDATE mail.messages SET spam_score = $1 WHERE id = $2")
+                    if let Err(e) = crate::db::query("UPDATE mail.messages SET spam_score = $1 WHERE id = $2")
                         .bind(score as f32)
                         .bind(msg_id)
                         .execute(db)
@@ -477,7 +479,7 @@ pub async fn deliver_local(
                     }
                 }
                 if verdict.move_to_spam {
-                    if let Err(e) = sqlx::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1")
+                    if let Err(e) = crate::db::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1")
                         .bind(msg_id)
                         .execute(db)
                         .await
@@ -613,7 +615,7 @@ fn sanitize_html(html: &str) -> String {
 /// Attaches the message to a conversation, inside the caller's transaction.
 #[allow(clippy::too_many_arguments)] // threading needs the full envelope context
 async fn find_or_create_thread(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: &mut kubuno_db::DbTx,
     target: LocalTarget,
     subject: &str,
     in_reply_to: Option<&str>,
@@ -631,16 +633,20 @@ async fn find_or_create_thread(
         }
     }
     if !candidates.is_empty() {
-        let existing: Option<Uuid> = sqlx::query_scalar(
+        let mut q = crate::db::query_scalar::<Uuid>(format!(
             "SELECT t.id FROM mail.threads t
              JOIN mail.messages m ON m.thread_id = t.id
-             WHERE t.account_id = $1 AND m.message_id = ANY($2)
+             WHERE t.account_id = $1 AND m.message_id IN ({})
              ORDER BY t.last_message_at DESC
              LIMIT 1",
-        )
-        .bind(target.account_id)
-        .bind(&candidates)
-        .fetch_optional(&mut **tx)
+            crate::db::in_list(2, candidates.len())
+        ))
+        .bind(target.account_id);
+        for c in &candidates {
+            q = q.bind(c);
+        }
+        let existing: Option<Uuid> = q
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Recherche du fil par références");
@@ -658,17 +664,18 @@ async fn find_or_create_thread(
     let normalized = normalize_subject(subject);
     let had_prefix = normalized != subject.to_lowercase().trim();
     if had_prefix {
-        let existing: Option<Uuid> = sqlx::query_scalar(
+        let existing: Option<Uuid> = crate::db::query_scalar(
             "SELECT id FROM mail.threads
              WHERE account_id = $1
                AND LOWER(subject) = $2
-               AND last_message_at > NOW() - INTERVAL '30 days'
+               AND last_message_at > $3
              ORDER BY last_message_at DESC
              LIMIT 1",
         )
         .bind(target.account_id)
         .bind(&normalized)
-        .fetch_optional(&mut **tx)
+        .bind(Utc::now() - chrono::Duration::days(30))
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Recherche du fil par sujet");
@@ -682,7 +689,7 @@ async fn find_or_create_thread(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO mail.threads (id, account_id, user_id, subject, last_sender_name, last_sender_email, last_message_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7)",
     )
@@ -693,7 +700,7 @@ async fn find_or_create_thread(
     .bind(sender_name)
     .bind(sender_email)
     .bind(last_at)
-    .execute(&mut **tx)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Création du fil échouée");

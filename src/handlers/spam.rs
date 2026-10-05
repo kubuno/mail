@@ -1,6 +1,7 @@
 //! Spam classifier endpoints: model stats, settings, and full retraining.
 
 use axum::{extract::State, Json};
+use kubuno_db::dialect::Assign;
 use uuid::Uuid;
 
 use crate::{errors::MailError, middleware::AuthUser, services::spam_classifier, state::AppState};
@@ -14,7 +15,7 @@ pub async fn stats(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let row: Option<(i32, i32, bool, f32)> = sqlx::query_as(
+    let row: Option<(i32, i32, bool, f32)> = crate::db::query_as(
         "SELECT spam_messages, ham_messages, auto_classify, threshold
          FROM mail.spam_stats WHERE user_id = $1",
     )
@@ -22,7 +23,11 @@ pub async fn stats(
     .fetch_optional(&state.db)
     .await?;
 
-    let tokens: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mail.spam_tokens WHERE user_id = $1")
+    let count_sql = format!(
+        "SELECT {} FROM mail.spam_tokens WHERE user_id = $1",
+        state.db.backend().count_bigint("*")
+    );
+    let tokens: i64 = crate::db::query_scalar(count_sql)
         .bind(user.id)
         .fetch_one(&state.db)
         .await
@@ -49,23 +54,28 @@ pub async fn update_settings(
     let threshold = body["threshold"].as_f64().map(|t| t.clamp(0.5, 0.999) as f32);
 
     // Ensure a row exists, then apply only the provided fields.
-    sqlx::query(
-        "INSERT INTO mail.spam_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING",
-    )
+    let backend = state.db.backend();
+    crate::db::query(format!(
+        "INSERT {}INTO mail.spam_stats (user_id) VALUES ($1){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["user_id"]),
+    ))
     .bind(user.id)
     .execute(&state.db)
     .await?;
 
     if let Some(a) = auto {
-        sqlx::query("UPDATE mail.spam_stats SET auto_classify = $1, updated_at = NOW() WHERE user_id = $2")
+        crate::db::query("UPDATE mail.spam_stats SET auto_classify = $1, updated_at = $2 WHERE user_id = $3")
             .bind(a)
+            .bind(chrono::Utc::now())
             .bind(user.id)
             .execute(&state.db)
             .await?;
     }
     if let Some(t) = threshold {
-        sqlx::query("UPDATE mail.spam_stats SET threshold = $1, updated_at = NOW() WHERE user_id = $2")
+        crate::db::query("UPDATE mail.spam_stats SET threshold = $1, updated_at = $2 WHERE user_id = $3")
             .bind(t)
+            .bind(chrono::Utc::now())
             .bind(user.id)
             .execute(&state.db)
             .await?;
@@ -82,19 +92,28 @@ pub async fn train(
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
     // Reset the model but keep the user's auto_classify / threshold settings.
-    sqlx::query("DELETE FROM mail.spam_tokens WHERE user_id = $1")
+    crate::db::query("DELETE FROM mail.spam_tokens WHERE user_id = $1")
         .bind(user.id)
         .execute(&state.db)
         .await?;
-    sqlx::query(
-        "INSERT INTO mail.spam_stats (user_id, spam_messages, ham_messages)
-         VALUES ($1, 0, 0)
-         ON CONFLICT (user_id) DO UPDATE SET spam_messages = 0, ham_messages = 0, updated_at = NOW()",
-    )
+    let upsert = state.db.backend().upsert(
+        "mail.spam_stats",
+        &["user_id"],
+        &[
+            Assign::Expr { col: "spam_messages", expr: "0" },
+            Assign::Expr { col: "ham_messages", expr: "0" },
+            Assign::Incoming("updated_at"),
+        ],
+    );
+    crate::db::query(format!(
+        "INSERT INTO mail.spam_stats (user_id, spam_messages, ham_messages, updated_at)
+         VALUES ($1, 0, 0, $2){upsert}"
+    ))
     .bind(user.id)
+    .bind(chrono::Utc::now())
     .execute(&state.db)
     .await?;
-    sqlx::query("UPDATE mail.messages SET spam_trained = NULL, spam_score = NULL WHERE user_id = $1")
+    crate::db::query("UPDATE mail.messages SET spam_trained = NULL, spam_score = NULL WHERE user_id = $1")
         .bind(user.id)
         .execute(&state.db)
         .await?;
@@ -132,7 +151,7 @@ async fn train_class(
     );
     // Audited: the only interpolation is `read_clause`, one of two literals
     // picked by `is_spam`; the folder and the cap are bound parameters.
-    let msgs: Vec<(Uuid, String, Option<String>, String)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let msgs: Vec<(Uuid, String, Option<String>, String)> = crate::db::query_as(sqlx::AssertSqlSafe(sql))
         .bind(user_id)
         .bind(folder)
         .bind(REBUILD_CAP)
@@ -147,7 +166,7 @@ async fn train_class(
         .await
         {
             Ok(guard) => {
-                let _ = sqlx::query("UPDATE mail.messages SET spam_trained = $1 WHERE id = $2")
+                let _ = crate::db::query("UPDATE mail.messages SET spam_trained = $1 WHERE id = $2")
                     .bind(guard)
                     .bind(id)
                     .execute(&state.db)

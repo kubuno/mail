@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { openImagePicker } from '@kubuno/sdk'
+import { openImagePicker, api } from '@kubuno/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FloatingWindow, Dropdown, MenuDropdown, useIsMobile, serializeMentions, type MenuItem, type MenuDropdownPos } from '@ui'
 import { prompt } from '@kubuno/sdk'
@@ -369,7 +369,32 @@ export default function ComposeWindow() {
       title: t('mail_insert_image', { defaultValue: 'Insérer une image' }),
       exclude: ['upload', 'webcam'],
     })
-    if (picked?.kind === 'url') exec('insertImage', picked.url)
+    if (picked?.kind !== 'url') return
+    // An internal URL (Drive download) is authenticated and can never be
+    // loaded by a recipient, and a signed ticket must never be written into an
+    // email. Embed the bytes as a data: URL instead; external URLs stay as is.
+    const internal = picked.url.startsWith('/api/v1/')
+    if (!internal) { exec('insertImage', picked.url); return }
+    try {
+      const res = await api.get<Blob>(picked.url.slice('/api/v1'.length), { responseType: 'blob' })
+      const blob = res.data
+      // base64 adds about a third, and the image shares the message budget
+      // with the text and the attachments: allow half of it at most.
+      if (blob.size > maxBytes / 2) {
+        // Too big to embed: keep the previous behaviour (the link as the source).
+        exec('insertImage', picked.url)
+        return
+      }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(blob)
+      })
+      exec('insertImage', dataUrl)
+    } catch {
+      exec('insertImage', picked.url)
+    }
   }
   const [alignMenu,    setAlignMenu]    = useState<MenuDropdownPos | null>(null)
   const [confidential, setConfidential] = useState(false)

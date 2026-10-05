@@ -18,7 +18,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::{errors::MailError, middleware::AuthUser};
@@ -138,10 +138,10 @@ const SELECT_COLS: &str = "id, grantor_user_id, grantor_email, delegate_user_id,
 // ── Database access (always scoped by grantor or delegate) ──────────────────
 
 /// Delegations `grantor` has granted (any status), newest first.
-pub async fn list_granted(db: &PgPool, grantor: Uuid) -> Result<Vec<Delegation>> {
+pub async fn list_granted(db: &DbPool, grantor: Uuid) -> Result<Vec<Delegation>> {
     // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
     // are bound parameters.
-    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let rows: Vec<Row> = crate::db::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLS} FROM mail.delegations \
          WHERE grantor_user_id = $1 ORDER BY created_at DESC"
     )))
@@ -161,13 +161,14 @@ pub async fn list_granted(db: &PgPool, grantor: Uuid) -> Result<Vec<Delegation>>
 /// act on). Revoked rows are excluded. The delegate's settings UI shows the
 /// accept/decline controls for the pending ones; a future app-switcher filters
 /// this to `accepted`.
-pub async fn list_incoming(db: &PgPool, delegate: Uuid) -> Result<Vec<Delegation>> {
+pub async fn list_incoming(db: &DbPool, delegate: Uuid) -> Result<Vec<Delegation>> {
     // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
     // are bound parameters.
-    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let rows: Vec<Row> = crate::db::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLS} FROM mail.delegations \
          WHERE delegate_user_id = $1 AND status IN ('pending', 'accepted') \
-         ORDER BY status DESC, accepted_at DESC NULLS LAST, created_at DESC"
+         ORDER BY status DESC, CASE WHEN accepted_at IS NULL THEN 1 ELSE 0 END, \
+                  accepted_at DESC, created_at DESC"
     )))
     .bind(delegate)
     .fetch_all(db)
@@ -181,10 +182,10 @@ pub async fn list_incoming(db: &PgPool, delegate: Uuid) -> Result<Vec<Delegation
 }
 
 /// The one row for a (grantor, delegate) pair, if any.
-pub async fn find_pair(db: &PgPool, grantor: Uuid, delegate: Uuid) -> Result<Option<Delegation>> {
+pub async fn find_pair(db: &DbPool, grantor: Uuid, delegate: Uuid) -> Result<Option<Delegation>> {
     // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
     // are bound parameters.
-    let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let row: Option<Row> = crate::db::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SELECT_COLS} FROM mail.delegations \
          WHERE grantor_user_id = $1 AND delegate_user_id = $2"
     )))
@@ -206,7 +207,7 @@ pub async fn find_pair(db: &PgPool, grantor: Uuid, delegate: Uuid) -> Result<Opt
 /// Returns `Ok(None)` when an ACTIVE or still-PENDING delegation already exists
 /// (a duplicate the caller must refuse), or `Ok(Some(row))` on success.
 pub async fn grant(
-    db: &PgPool,
+    db: &DbPool,
     grantor: Uuid,
     grantor_email: &str,
     delegate: Uuid,
@@ -215,13 +216,14 @@ pub async fn grant(
     let mut tx = db.begin().await.context("Ouverture transaction de délégation")?;
 
     // Lock the pair's row (if any) for the duration of the decision.
-    let existing: Option<(Uuid, String)> = sqlx::query_as(
+    let existing: Option<(Uuid, String)> = crate::db::query_as(format!(
         "SELECT id, status FROM mail.delegations \
-         WHERE grantor_user_id = $1 AND delegate_user_id = $2 FOR UPDATE",
-    )
+         WHERE grantor_user_id = $1 AND delegate_user_id = $2{}",
+        crate::db::for_update(tx.backend())
+    ))
     .bind(grantor)
     .bind(delegate)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut tx)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Délégation : verrou de paire échoué");
@@ -229,7 +231,9 @@ pub async fn grant(
     })
     .context("Verrouillage d'une délégation")?;
 
-    let row: Row = match existing {
+    // The write, then a re-read by id inside the same transaction (MySQL has no
+    // RETURNING; the id is generated here for a new row).
+    let id = match existing {
         Some((_, status)) if !can_regrant(&status) => {
             // Active or pending already: nothing to do, signal a duplicate.
             tx.rollback().await.ok();
@@ -237,44 +241,60 @@ pub async fn grant(
         }
         Some((id, _)) => {
             // Revoked → re-arm as a fresh pending invitation.
-            // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
-            // are bound parameters.
-            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            crate::db::query(
                 "UPDATE mail.delegations \
                  SET status = 'pending', can_send = TRUE, accepted_at = NULL, \
-                     grantor_email = $2, delegate_email = $3 \
-                 WHERE id = $1 RETURNING {SELECT_COLS}"
-            )))
+                     grantor_email = $2, delegate_email = $3, updated_at = $4 \
+                 WHERE id = $1",
+            )
             .bind(id)
             .bind(grantor_email)
             .bind(delegate_email)
-            .fetch_one(&mut *tx)
+            .bind(Utc::now())
+            .execute(&mut tx)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Délégation : réarmement échoué");
                 e
             })
-            .context("Réarmement d'une délégation révoquée")?
+            .context("Réarmement d'une délégation révoquée")?;
+            id
         }
-        // Audited: `SELECT_COLS` is a constant; the user ids and e-mail addresses
-        // are bound parameters.
-        None => sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "INSERT INTO mail.delegations \
-                 (grantor_user_id, grantor_email, delegate_user_id, delegate_email, status) \
-             VALUES ($1, $2, $3, $4, 'pending') RETURNING {SELECT_COLS}"
-        )))
-        .bind(grantor)
-        .bind(grantor_email)
-        .bind(delegate)
-        .bind(delegate_email)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Délégation : insertion échouée");
-            e
-        })
-        .context("Insertion d'une délégation")?,
+        None => {
+            let id = kubuno_db::new_id();
+            crate::db::query(
+                "INSERT INTO mail.delegations \
+                     (id, grantor_user_id, grantor_email, delegate_user_id, delegate_email, status) \
+                 VALUES ($1, $2, $3, $4, $5, 'pending')",
+            )
+            .bind(id)
+            .bind(grantor)
+            .bind(grantor_email)
+            .bind(delegate)
+            .bind(delegate_email)
+            .execute(&mut tx)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Délégation : insertion échouée");
+                e
+            })
+            .context("Insertion d'une délégation")?;
+            id
+        }
     };
+
+    // Audited: `SELECT_COLS` is a constant; the id is a bound parameter.
+    let row: Row = crate::db::query_as(format!(
+        "SELECT {SELECT_COLS} FROM mail.delegations WHERE id = $1"
+    ))
+    .bind(id)
+    .fetch_one(&mut tx)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Délégation : relecture échouée");
+        e
+    })
+    .context("Relecture d'une délégation")?;
 
     tx.commit().await.context("Validation transaction de délégation")?;
     Ok(Some(to_delegation(row)))
@@ -282,8 +302,8 @@ pub async fn grant(
 
 /// Revokes a delegation the GRANTOR owns. Returns the affected row count (0 = not
 /// this grantor's / unknown id).
-pub async fn revoke_as_grantor(db: &PgPool, grantor: Uuid, id: Uuid) -> Result<u64> {
-    let res = sqlx::query(
+pub async fn revoke_as_grantor(db: &DbPool, grantor: Uuid, id: Uuid) -> Result<u64> {
+    let res = crate::db::query(
         "UPDATE mail.delegations SET status = 'revoked', accepted_at = NULL \
          WHERE id = $1 AND grantor_user_id = $2 AND status <> 'revoked'",
     )
@@ -301,13 +321,14 @@ pub async fn revoke_as_grantor(db: &PgPool, grantor: Uuid, id: Uuid) -> Result<u
 
 /// The delegate accepts a PENDING invitation addressed to them. Guarded by
 /// `status = 'pending'` in SQL so a double-accept or a race is a no-op.
-pub async fn accept_as_delegate(db: &PgPool, delegate: Uuid, id: Uuid) -> Result<u64> {
-    let res = sqlx::query(
-        "UPDATE mail.delegations SET status = 'accepted', accepted_at = NOW() \
+pub async fn accept_as_delegate(db: &DbPool, delegate: Uuid, id: Uuid) -> Result<u64> {
+    let res = crate::db::query(
+        "UPDATE mail.delegations SET status = 'accepted', accepted_at = $3 \
          WHERE id = $1 AND delegate_user_id = $2 AND status = 'pending'",
     )
     .bind(id)
     .bind(delegate)
+    .bind(Utc::now())
     .execute(db)
     .await
     .map_err(|e| {
@@ -320,8 +341,8 @@ pub async fn accept_as_delegate(db: &PgPool, delegate: Uuid, id: Uuid) -> Result
 
 /// The delegate declines a pending invitation, or steps away from an accepted
 /// one (both remove access). Sets the row to `revoked`.
-pub async fn decline_as_delegate(db: &PgPool, delegate: Uuid, id: Uuid) -> Result<u64> {
-    let res = sqlx::query(
+pub async fn decline_as_delegate(db: &DbPool, delegate: Uuid, id: Uuid) -> Result<u64> {
+    let res = crate::db::query(
         "UPDATE mail.delegations SET status = 'revoked', accepted_at = NULL \
          WHERE id = $1 AND delegate_user_id = $2 AND status IN ('pending', 'accepted')",
     )
@@ -349,7 +370,7 @@ pub async fn decline_as_delegate(db: &PgPool, delegate: Uuid, id: Uuid) -> Resul
 ///   grantor's mailbox) and the delegated access is logged; otherwise a generic
 ///   `403` — never a reason a caller could probe.
 pub async fn resolve_acting_user(
-    db: &PgPool,
+    db: &DbPool,
     auth_user: &AuthUser,
     on_behalf_of: Option<Uuid>,
 ) -> Result<Uuid, MailError> {
@@ -394,11 +415,11 @@ pub async fn resolve_acting_user(
 /// This is a second, send-specific gate on top of [`resolve_acting_user`]: a
 /// delegate may be allowed to READ (accepted) yet not to SEND (`can_send=false`).
 pub async fn send_authority(
-    db: &PgPool,
+    db: &DbPool,
     grantor: Uuid,
     delegate: Uuid,
 ) -> Result<bool, MailError> {
-    let can: Option<bool> = sqlx::query_scalar(
+    let can: Option<bool> = crate::db::query_scalar(
         "SELECT can_send FROM mail.delegations \
          WHERE grantor_user_id = $1 AND delegate_user_id = $2 AND status = 'accepted'",
     )

@@ -29,7 +29,8 @@
 //! evidence to stop.
 
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::server::config::ServerConfig;
@@ -54,8 +55,8 @@ pub struct ForwardingRule {
 type RuleRow = (String, bool, bool);
 
 /// Reads every forwarding rule of a user, in insertion order.
-pub async fn load(db: &PgPool, user_id: Uuid) -> Result<Vec<ForwardingRule>> {
-    let rows: Vec<RuleRow> = sqlx::query_as(
+pub async fn load(db: &DbPool, user_id: Uuid) -> Result<Vec<ForwardingRule>> {
+    let rows: Vec<RuleRow> = crate::db::query_as(
         "SELECT forward_to, enabled, keep_copy
          FROM mail.forwarding_rules WHERE user_id = $1
          ORDER BY created_at, forward_to",
@@ -76,12 +77,12 @@ pub async fn load(db: &PgPool, user_id: Uuid) -> Result<Vec<ForwardingRule>> {
 /// — delete what was there, insert what is there now — rather than diffing.
 ///
 /// `rules` is `(forward_to, enabled, keep_copy)`; addresses are lower-cased here.
-pub async fn replace(db: &PgPool, user_id: Uuid, rules: &[(String, bool, bool)]) -> Result<()> {
+pub async fn replace(db: &DbPool, user_id: Uuid, rules: &[(String, bool, bool)]) -> Result<()> {
     let mut tx = db.begin().await.context("Ouverture de la transaction de transfert")?;
 
-    sqlx::query("DELETE FROM mail.forwarding_rules WHERE user_id = $1")
+    crate::db::query("DELETE FROM mail.forwarding_rules WHERE user_id = $1")
         .bind(user_id)
-        .execute(&mut *tx)
+        .execute(&mut tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Purge des règles de transfert échouée");
@@ -89,20 +90,26 @@ pub async fn replace(db: &PgPool, user_id: Uuid, rules: &[(String, bool, bool)])
         })
         .context("Purge des règles de transfert")?;
 
+    let upsert = tx.backend().upsert(
+        "mail.forwarding_rules",
+        &["user_id", "forward_to"],
+        &[
+            Assign::Incoming("enabled"),
+            Assign::Incoming("keep_copy"),
+            Assign::Incoming("updated_at"),
+        ],
+    );
     for (forward_to, enabled, keep_copy) in rules {
-        sqlx::query(
+        crate::db::query(format!(
             "INSERT INTO mail.forwarding_rules (user_id, forward_to, enabled, keep_copy, updated_at)
-             VALUES ($1, LOWER($2), $3, $4, NOW())
-             ON CONFLICT (user_id, forward_to) DO UPDATE SET
-                enabled = EXCLUDED.enabled,
-                keep_copy = EXCLUDED.keep_copy,
-                updated_at = NOW()",
-        )
+             VALUES ($1, $2, $3, $4, $5){upsert}"
+        ))
         .bind(user_id)
-        .bind(forward_to.trim())
+        .bind(forward_to.trim().to_lowercase())
         .bind(enabled)
         .bind(keep_copy)
-        .execute(&mut *tx)
+        .bind(chrono::Utc::now())
+        .execute(&mut tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Insertion d'une règle de transfert échouée");
@@ -244,7 +251,7 @@ pub struct Incoming<'a> {
 /// swallowed rather than propagated.
 #[allow(clippy::too_many_arguments)]
 pub async fn maybe_forward(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     attachments_dir: &str,
     recipient_user_id: Uuid,
@@ -329,7 +336,7 @@ pub async fn maybe_forward(
     // "Archive the local copy" only makes sense once a copy actually left, and
     // only touches a message still in the inbox (a filter may have moved it).
     if any_forwarded && want_archive {
-        if let Err(e) = sqlx::query(
+        if let Err(e) = crate::db::query(
             "UPDATE mail.messages SET folder = 'archive' WHERE id = $1 AND folder = 'inbox'",
         )
         .bind(stored_msg_id)
@@ -346,7 +353,7 @@ pub async fn maybe_forward(
 /// the copy actually left (delivered or queued); a remote destination with
 /// outbound delivery off cannot leave.
 async fn deliver_forward(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     attachments_dir: &str,
     envelope_from: &str,
@@ -416,8 +423,8 @@ async fn deliver_forward(
 }
 
 /// The canonical address of the local account that received the message.
-async fn mailbox_address(db: &PgPool, account_id: Uuid) -> Option<String> {
-    match sqlx::query_scalar::<_, String>("SELECT email_address FROM mail.accounts WHERE id = $1")
+async fn mailbox_address(db: &DbPool, account_id: Uuid) -> Option<String> {
+    match crate::db::query_scalar::<String>("SELECT email_address FROM mail.accounts WHERE id = $1")
         .bind(account_id)
         .fetch_optional(db)
         .await

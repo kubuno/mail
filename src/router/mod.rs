@@ -34,11 +34,15 @@ pub fn build(state: AppState) -> Router {
         .route("/internal/migration/run",   post(migration::run))
         // Core → module event delivery. The core tries /ipc/events first and
         // /events second, posting X-Internal-Secret on BOTH; both live behind
-        // the shared-secret guard set as a `.layer` below. This is how Mail
-        // receives `calendar.invite` and turns it into an invitation e-mail.
+        // the shared-secret guard set below. This is how Mail receives
+        // `calendar.invite` and turns it into an invitation e-mail.
         .route("/ipc/events", post(events::handle_event))
         .route("/events",     post(events::handle_event))
-        .layer(middleware::from_fn_with_state(state.clone(), require_internal_secret))
+        // `route_layer`, not `layer`: the guard wraps these routes only. As a
+        // `layer` it also wrapped this sub-router's fallback, which the merge
+        // below makes the whole router's, so any unknown path answered 401
+        // instead of 404.
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_internal_secret))
         .with_state(state.clone());
 
     Router::new()

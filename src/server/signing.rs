@@ -6,7 +6,7 @@
 //! the crypto key) rather than at enqueue, over the exact bytes about to go on
 //! the wire.
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use super::dkim::{self, SigningKey};
 use crate::services::crypto::MailCrypto;
@@ -37,14 +37,14 @@ pub enum Signed {
 /// they turned `dkim_require_signature` on. A key that is present but fails to
 /// load or sign logs the error and yields `Unsigned` rather than dropping the
 /// message.
-pub async fn sign(db: &PgPool, crypto: &MailCrypto, raw: &[u8]) -> Signed {
+pub async fn sign(db: &DbPool, crypto: &MailCrypto, raw: &[u8]) -> Signed {
     let unsigned = |reason: String| Signed::Unsigned { raw: raw.to_vec(), reason };
 
     let Some(domain) = from_domain(raw) else {
         return unsigned("le message n'a pas d'en-tête From: exploitable".to_string());
     };
 
-    let row: Result<Option<StoredKey>, _> = sqlx::query_as(
+    let row: Result<Option<StoredKey>, _> = crate::db::query_as(
         "SELECT selector, algorithm, private_key_enc, private_key_nonce \
          FROM mail.dkim_keys WHERE domain = $1",
     )

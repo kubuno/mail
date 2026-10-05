@@ -2,7 +2,6 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use sqlx::{Postgres, QueryBuilder};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -44,7 +43,8 @@ pub async fn list_threads(
         // (see services::search_query). Spam & trash are excluded by default,
         // like Gmail, unless the query names a location explicitly (`in:`).
         let parsed = crate::services::search_query::parse(raw);
-        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+        let mut qb = kubuno_db::DbQueryBuilder::new(
+            state.db.backend(),
             "SELECT DISTINCT t.id, t.account_id, t.user_id, t.subject, \
                     t.message_count, t.unread_count, t.has_attachments, \
                     t.is_starred, t.is_important, t.snippet, t.last_sender_name, t.last_sender_email, \
@@ -66,9 +66,9 @@ pub async fn list_threads(
             qb.push(" AND t.last_message_at < ").push_bind(before);
         }
         qb.push(" ORDER BY t.last_message_at DESC LIMIT ").push_bind(limit);
-        qb.build_query_as::<Thread>().fetch_all(&state.db).await?
+        qb.fetch_all_as::<Thread>(&state.db).await?
     } else if q.important == Some(true) {
-        sqlx::query_as::<_, Thread>(
+        crate::db::query_as::<Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
                       t.is_starred, t.is_important, t.snippet,
@@ -77,8 +77,8 @@ pub async fn list_threads(
                FROM mail.threads t
                WHERE t.user_id = $1
                  AND t.is_important = TRUE
-                 AND ($2::uuid IS NULL OR t.account_id = $2)
-                 AND ($3::timestamptz IS NULL OR t.last_message_at < $3)
+                 AND ($2 IS NULL OR t.account_id = $2)
+                 AND ($3 IS NULL OR t.last_message_at < $3)
                ORDER BY t.last_message_at DESC
                LIMIT $4"#,
         )
@@ -90,7 +90,7 @@ pub async fn list_threads(
         .await?
     } else if q.snoozed == Some(true) {
         // En attente : fils dont le réveil est dans le futur.
-        sqlx::query_as::<_, Thread>(
+        crate::db::query_as::<Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
                       t.is_starred, t.is_important, t.snippet,
@@ -98,9 +98,9 @@ pub async fn list_threads(
                       t.last_message_at, t.created_at
                FROM mail.threads t
                WHERE t.user_id = $1
-                 AND t.snoozed_until > NOW()
-                 AND ($2::uuid IS NULL OR t.account_id = $2)
-                 AND ($3::timestamptz IS NULL OR t.snoozed_until < $3)
+                 AND t.snoozed_until > $5
+                 AND ($2 IS NULL OR t.account_id = $2)
+                 AND ($3 IS NULL OR t.snoozed_until < $3)
                ORDER BY t.snoozed_until ASC
                LIMIT $4"#,
         )
@@ -108,10 +108,11 @@ pub async fn list_threads(
         .bind(q.account_id)
         .bind(q.before)
         .bind(limit)
+        .bind(Utc::now())
         .fetch_all(&state.db)
         .await?
     } else if let Some(label_id) = q.label_id {
-        sqlx::query_as::<_, Thread>(
+        crate::db::query_as::<Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
                       t.is_starred, t.is_important, t.snippet,
@@ -121,7 +122,7 @@ pub async fn list_threads(
                JOIN mail.thread_labels tl ON tl.thread_id = t.id
                WHERE t.user_id = $1
                  AND tl.label_id = $2
-                 AND ($3::timestamptz IS NULL OR t.last_message_at < $3)
+                 AND ($3 IS NULL OR t.last_message_at < $3)
                ORDER BY t.last_message_at DESC
                LIMIT $4"#,
         )
@@ -132,7 +133,7 @@ pub async fn list_threads(
         .fetch_all(&state.db)
         .await?
     } else if q.starred == Some(true) {
-        sqlx::query_as::<_, Thread>(
+        crate::db::query_as::<Thread>(
             r#"SELECT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
                       t.is_starred, t.is_important, t.snippet,
@@ -141,8 +142,8 @@ pub async fn list_threads(
                FROM mail.threads t
                WHERE t.user_id = $1
                  AND t.is_starred = TRUE
-                 AND ($2::uuid IS NULL OR t.account_id = $2)
-                 AND ($3::timestamptz IS NULL OR t.last_message_at < $3)
+                 AND ($2 IS NULL OR t.account_id = $2)
+                 AND ($3 IS NULL OR t.last_message_at < $3)
                ORDER BY t.last_message_at DESC
                LIMIT $4"#,
         )
@@ -155,8 +156,8 @@ pub async fn list_threads(
     } else {
         // Audited: `CATEGORY_SQL` is a constant; the folder, the account, the
         // cursor, the limit, the category and the IMAP folder are all bound.
-        sqlx::query_as::<_, Thread>(sqlx::AssertSqlSafe(format!(
-            r#"SELECT DISTINCT ON (t.id, t.last_message_at) t.id, t.account_id, t.user_id, t.subject,
+        crate::db::query_as::<Thread>(sqlx::AssertSqlSafe(format!(
+            r#"SELECT DISTINCT t.id, t.account_id, t.user_id, t.subject,
                       t.message_count, t.unread_count, t.has_attachments,
                       t.is_starred, t.is_important, t.snippet,
                       t.last_sender_name, t.last_sender_email,
@@ -167,13 +168,13 @@ pub async fn list_threads(
                  AND ($2 = 'all' OR m.folder = $2)
                  AND m.is_deleted = FALSE
                  -- snoozed threads leave the inbox until they wake up
-                 AND ($2 <> 'inbox' OR t.snoozed_until IS NULL OR t.snoozed_until <= NOW())
+                 AND ($2 <> 'inbox' OR t.snoozed_until IS NULL OR t.snoozed_until <= $8)
                  -- muted threads never come back to the inbox
                  AND ($2 <> 'inbox' OR NOT t.is_muted)
-                 AND ($3::uuid IS NULL OR t.account_id = $3)
-                 AND ($4::timestamptz IS NULL OR t.last_message_at < $4)
-                 AND ($6::text IS NULL OR ({CATEGORY_SQL}) = $6)
-                 AND ($7::text IS NULL OR m.imap_folder = $7)
+                 AND ($3 IS NULL OR t.account_id = $3)
+                 AND ($4 IS NULL OR t.last_message_at < $4)
+                 AND ($6 IS NULL OR ({CATEGORY_SQL}) = $6)
+                 AND ($7 IS NULL OR m.imap_folder = $7)
                ORDER BY t.last_message_at DESC
                LIMIT $5"#,
         )))
@@ -184,6 +185,7 @@ pub async fn list_threads(
         .bind(limit)
         .bind(&q.category)
         .bind(&q.imap_folder)
+        .bind(Utc::now())
         .fetch_all(&state.db)
         .await?
     };
@@ -198,11 +200,12 @@ pub async fn list_threads(
     let special_total: Option<i64> = if q.search.is_some() {
         None
     } else if let Some(label_id) = q.label_id {
-        sqlx::query_scalar(
-            "SELECT COUNT(DISTINCT t.id) FROM mail.threads t \
+        crate::db::query_scalar(format!(
+            "SELECT {} FROM mail.threads t \
              JOIN mail.thread_labels tl ON tl.thread_id = t.id \
              WHERE t.user_id = $1 AND tl.label_id = $2",
-        )
+            state.db.backend().count_bigint("DISTINCT t.id"),
+        ))
         .bind(user.id)
         .bind(label_id)
         .fetch_one(&state.db)
@@ -215,17 +218,19 @@ pub async fn list_threads(
         } else if q.important == Some(true) {
             "t.is_important = TRUE"
         } else {
-            "t.snoozed_until > NOW()"
+            "t.snoozed_until > $3"
         };
         // Audited: `predicate` is one of the three literals just above, chosen by
         // the view asked for — no caller text reaches the SQL.
-        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT COUNT(*) FROM mail.threads t \
-             WHERE t.user_id = $1 AND {predicate} \
-               AND ($2::uuid IS NULL OR t.account_id = $2)",
+        crate::db::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT {count} FROM mail.threads t \
+             WHERE t.user_id = $1 \
+               AND ($2 IS NULL OR t.account_id = $2) AND {predicate}",
+            count = state.db.backend().count_bigint("*"),
         )))
         .bind(user.id)
         .bind(q.account_id)
+        .bind(Utc::now())
         .fetch_one(&state.db)
         .await
         .map_err(|e| tracing::error!(error = %e, "list_threads: total de la vue"))
@@ -244,24 +249,26 @@ pub async fn list_threads(
     {
         // Audited: `CATEGORY_SQL` is a constant; the folder, the account, the
         // category and the IMAP folder asked for are bound parameters.
-        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            r#"SELECT COUNT(DISTINCT t.id)
+        crate::db::query_scalar(sqlx::AssertSqlSafe(format!(
+            r#"SELECT {count}
                FROM mail.threads t
                JOIN mail.messages m ON m.thread_id = t.id
                WHERE t.user_id = $1
                  AND ($2 = 'all' OR m.folder = $2)
                  AND m.is_deleted = FALSE
-                 AND ($2 <> 'inbox' OR t.snoozed_until IS NULL OR t.snoozed_until <= NOW())
+                 AND ($2 <> 'inbox' OR t.snoozed_until IS NULL OR t.snoozed_until <= $6)
                  AND ($2 <> 'inbox' OR NOT t.is_muted)
-                 AND ($3::uuid IS NULL OR t.account_id = $3)
-                 AND ($4::text IS NULL OR ({CATEGORY_SQL}) = $4)
-                 AND ($5::text IS NULL OR m.imap_folder = $5)"#,
+                 AND ($3 IS NULL OR t.account_id = $3)
+                 AND ($4 IS NULL OR ({CATEGORY_SQL}) = $4)
+                 AND ($5 IS NULL OR m.imap_folder = $5)"#,
+            count = state.db.backend().count_bigint("DISTINCT t.id"),
         )))
         .bind(user.id)
         .bind(&folder)
         .bind(q.account_id)
         .bind(&q.category)
         .bind(&q.imap_folder)
+        .bind(Utc::now())
         .fetch_one(&state.db)
         .await
         .map_err(|e| tracing::error!(error = %e, "list_threads: total du filtre"))
@@ -289,7 +296,7 @@ pub async fn list_threads(
 /// query keyed on the page's thread ids; a query failure degrades to empty
 /// chips rather than failing the whole listing.
 pub(crate) async fn enrich_threads(
-    db: &sqlx::PgPool,
+    db: &kubuno_db::DbPool,
     user_id: Uuid,
     threads: &[Thread],
 ) -> Vec<serde_json::Value> {
@@ -297,11 +304,19 @@ pub(crate) async fn enrich_threads(
     // folders its messages sit in. Two set-based queries, instead of joining
     // both into every branch of the selection above.
     let ids: Vec<Uuid> = threads.iter().map(|t| t.id).collect();
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    // `IN ($1, …, $n)` over the page's thread ids; the user id is `$n+1`.
+    let id_list = crate::db::in_list(1, ids.len());
+    let user_ph = ids.len() + 1;
 
-    let category_rows: Vec<(Uuid, Option<String>)> = sqlx::query_as(
-        "SELECT id, category FROM mail.threads WHERE id = ANY($1) AND user_id = $2",
+    let category_rows: Vec<(Uuid, Option<String>)> = bind_ids(
+        crate::db::query_as(format!(
+            "SELECT id, category FROM mail.threads WHERE id IN ({id_list}) AND user_id = ${user_ph}"
+        )),
+        &ids,
     )
-    .bind(&ids)
     .bind(user_id)
     .fetch_all(db)
     .await
@@ -309,28 +324,32 @@ pub(crate) async fn enrich_threads(
     .unwrap_or_default();
     let category_by_thread: HashMap<Uuid, Option<String>> = category_rows.into_iter().collect();
 
-    let label_rows: Vec<(Uuid, Uuid, String, Option<String>)> = sqlx::query_as(
-        r#"SELECT tl.thread_id, l.id, l.name, l.color
-           FROM mail.thread_labels tl
-           JOIN mail.labels l ON l.id = tl.label_id
-           WHERE tl.thread_id = ANY($1)
-             AND l.user_id = $2
-             AND NOT l.is_system
-             AND l.message_list_visibility <> 'hide'"#,
+    let label_rows: Vec<(Uuid, Uuid, String, Option<String>)> = bind_ids(
+        crate::db::query_as(format!(
+            r#"SELECT tl.thread_id, l.id, l.name, l.color
+               FROM mail.thread_labels tl
+               JOIN mail.labels l ON l.id = tl.label_id
+               WHERE tl.thread_id IN ({id_list})
+                 AND l.user_id = ${user_ph}
+                 AND NOT l.is_system
+                 AND l.message_list_visibility <> 'hide'"#
+        )),
+        &ids,
     )
-    .bind(&ids)
     .bind(user_id)
     .fetch_all(db)
     .await
     .map_err(|e| tracing::error!(error = %e, "enrich_threads: libellés des fils"))
     .unwrap_or_default();
 
-    let folder_rows: Vec<(Uuid, String)> = sqlx::query_as(
-        r#"SELECT DISTINCT m.thread_id, m.folder
-           FROM mail.messages m
-           WHERE m.thread_id = ANY($1) AND m.user_id = $2 AND NOT m.is_deleted"#,
+    let folder_rows: Vec<(Uuid, String)> = bind_ids(
+        crate::db::query_as(format!(
+            r#"SELECT DISTINCT m.thread_id, m.folder
+               FROM mail.messages m
+               WHERE m.thread_id IN ({id_list}) AND m.user_id = ${user_ph} AND NOT m.is_deleted"#
+        )),
+        &ids,
     )
-    .bind(&ids)
     .bind(user_id)
     .fetch_all(db)
     .await
@@ -347,14 +366,22 @@ pub(crate) async fn enrich_threads(
 
     // List-Unsubscribe of the newest message, so the list can offer Gmail's
     // "Unsubscribe" affordance on hover without opening the conversation.
-    let unsub_rows: Vec<(Uuid, String)> = sqlx::query_as(
-        r#"SELECT DISTINCT ON (m.thread_id) m.thread_id, m.list_unsubscribe
-           FROM mail.messages m
-           WHERE m.thread_id = ANY($1) AND m.user_id = $2
-             AND m.list_unsubscribe IS NOT NULL AND m.list_unsubscribe <> ''
-           ORDER BY m.thread_id, m.received_at DESC"#,
+    // (ROW_NUMBER() replaces PostgreSQL's DISTINCT ON; all three engines have
+    // window functions.)
+    let unsub_rows: Vec<(Uuid, String)> = bind_ids(
+        crate::db::query_as(format!(
+            r#"SELECT x.thread_id, x.list_unsubscribe FROM (
+                   SELECT m.thread_id, m.list_unsubscribe,
+                          ROW_NUMBER() OVER (PARTITION BY m.thread_id
+                                             ORDER BY m.received_at DESC) AS rn
+                   FROM mail.messages m
+                   WHERE m.thread_id IN ({id_list}) AND m.user_id = ${user_ph}
+                     AND m.list_unsubscribe IS NOT NULL AND m.list_unsubscribe <> ''
+               ) x
+               WHERE x.rn = 1"#
+        )),
+        &ids,
     )
-    .bind(&ids)
     .bind(user_id)
     .fetch_all(db)
     .await
@@ -363,14 +390,21 @@ pub(crate) async fn enrich_threads(
     let unsub_by_thread: HashMap<Uuid, String> = unsub_rows.into_iter().collect();
 
     // Attachment chips on the row: name + mime of the newest message's files.
-    let att_rows: Vec<(Uuid, Uuid, serde_json::Value)> = sqlx::query_as(
-        r#"SELECT DISTINCT ON (m.thread_id) m.thread_id, m.id, m.attachments
-           FROM mail.messages m
-           WHERE m.thread_id = ANY($1) AND m.user_id = $2
-             AND m.attachments IS NOT NULL AND jsonb_array_length(m.attachments) > 0
-           ORDER BY m.thread_id, m.received_at DESC"#,
+    let att_rows: Vec<(Uuid, Uuid, serde_json::Value)> = bind_ids(
+        crate::db::query_as(format!(
+            r#"SELECT x.thread_id, x.id, x.attachments FROM (
+                   SELECT m.thread_id, m.id, m.attachments,
+                          ROW_NUMBER() OVER (PARTITION BY m.thread_id
+                                             ORDER BY m.received_at DESC) AS rn
+                   FROM mail.messages m
+                   WHERE m.thread_id IN ({id_list}) AND m.user_id = ${user_ph}
+                     AND m.attachments IS NOT NULL AND {nonempty}
+               ) x
+               WHERE x.rn = 1"#,
+            nonempty = json_array_nonempty(db.backend(), "m.attachments"),
+        )),
+        &ids,
     )
-    .bind(&ids)
     .bind(user_id)
     .fetch_all(db)
     .await
@@ -481,16 +515,16 @@ pub async fn changes(
     // now entirely deleted/trashed. Ordered by that modseq ascending so the
     // client resumes from `cursor` with neither a gap nor a duplicate — modseq
     // values are globally unique, so a thread's max is unique too.
-    let rows: Vec<(Uuid, i64, bool)> = sqlx::query_as(
+    let rows: Vec<(Uuid, i64, bool)> = crate::db::query_as(
         r#"WITH changed AS (
                SELECT DISTINCT thread_id
                FROM mail.messages
                WHERE user_id = $1 AND modseq > $2
-                 AND ($3::uuid IS NULL OR account_id = $3)
+                 AND ($3 IS NULL OR account_id = $3)
            )
            SELECT m.thread_id,
                   MAX(m.modseq)                                AS max_modseq,
-                  bool_and(m.is_deleted OR m.folder = 'trash') AS fully_deleted
+                  MIN(CASE WHEN m.is_deleted OR m.folder = 'trash' THEN 1 ELSE 0 END) = 1 AS fully_deleted
            FROM mail.messages m
            JOIN changed c ON c.thread_id = m.thread_id
            WHERE m.user_id = $1
@@ -524,15 +558,19 @@ pub async fn changes(
     // modseq) so the enriched output keeps the keyset order.
     let mut threads_json: Vec<serde_json::Value> = Vec::new();
     if !live_ids.is_empty() {
-        let fetched: Vec<Thread> = sqlx::query_as::<_, Thread>(
-            r#"SELECT id, account_id, user_id, subject,
-                      message_count, unread_count, has_attachments,
-                      is_starred, is_important, snippet,
-                      last_sender_name, last_sender_email,
-                      last_message_at, created_at
-               FROM mail.threads WHERE id = ANY($1) AND user_id = $2"#,
+        let fetched: Vec<Thread> = bind_ids(
+            crate::db::query_as::<Thread>(format!(
+                r#"SELECT id, account_id, user_id, subject,
+                          message_count, unread_count, has_attachments,
+                          is_starred, is_important, snippet,
+                          last_sender_name, last_sender_email,
+                          last_message_at, created_at
+                   FROM mail.threads WHERE id IN ({}) AND user_id = ${}"#,
+                crate::db::in_list(1, live_ids.len()),
+                live_ids.len() + 1,
+            )),
+            &live_ids,
         )
-        .bind(&live_ids)
         .bind(user.id)
         .fetch_all(&state.db)
         .await?;
@@ -555,13 +593,14 @@ pub async fn changes(
 /// Thread-level flag actions (star, important, mute, snooze, category, labels)
 /// write only to `mail.threads`/`mail.thread_labels`, which the delta endpoint
 /// — keyed on `mail.messages.modseq` — would otherwise miss. A no-op UPDATE on
-/// the thread's messages fires the `BEFORE UPDATE` trigger that stamps a fresh
-/// modseq (migration 000021), so the change surfaces in the next
+/// the thread's messages fires the trigger that stamps a fresh modseq (a
+/// `BEFORE UPDATE` trigger on PostgreSQL and MySQL, `AFTER UPDATE` on SQLite;
+/// every matched row is stamped, changed or not), so the change surfaces in the next
 /// `GET /changes`. Best-effort: the user-visible action has already committed;
 /// a failed bump only means a delta client falls back to a fuller sync, so it
 /// is logged rather than fatal.
-pub(crate) async fn bump_thread_modseq(db: &sqlx::PgPool, user_id: Uuid, thread_id: Uuid) {
-    if let Err(e) = sqlx::query(
+pub(crate) async fn bump_thread_modseq(db: &kubuno_db::DbPool, user_id: Uuid, thread_id: Uuid) {
+    if let Err(e) = crate::db::query(
         "UPDATE mail.messages SET modseq = modseq WHERE thread_id = $1 AND user_id = $2",
     )
     .bind(thread_id)
@@ -583,7 +622,7 @@ pub async fn get_thread(
     let acting_id = crate::services::delegation::resolve_acting_user(&state.db, &user, q.on_behalf_of).await?;
     let user = AuthUser { id: acting_id, ..user };
 
-    let thread = sqlx::query_as::<_, Thread>(
+    let thread = crate::db::query_as::<Thread>(
         r#"SELECT id, account_id, user_id, subject,
                   message_count, unread_count, has_attachments,
                   is_starred, is_important, snippet,
@@ -597,7 +636,7 @@ pub async fn get_thread(
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Thread {thread_id}")))?;
 
-    let messages = sqlx::query_as::<_, EmailMessage>(
+    let messages = crate::db::query_as::<EmailMessage>(
         r#"SELECT id, thread_id, account_id, user_id, message_id, in_reply_to,
                   imap_uid, imap_folder, from_name, from_email,
                   to_addresses, cc_addresses, bcc_addresses, reply_to,
@@ -634,12 +673,7 @@ pub async fn star_thread(
     user: AuthUser,
     Path(thread_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let row = sqlx::query_scalar::<_, bool>(
-        "UPDATE mail.threads SET is_starred = NOT is_starred WHERE id = $1 AND user_id = $2 RETURNING is_starred"
-    )
-    .bind(thread_id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
+    let row = toggle_thread_flag(&state.db, ThreadFlag::Starred, thread_id, user.id)
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Thread {thread_id}")))?;
 
@@ -663,17 +697,17 @@ pub async fn set_thread_category(
         }
     }
 
-    let updated = sqlx::query(
-        "UPDATE mail.threads t SET
+    let updated = crate::db::query(
+        "UPDATE mail.threads SET
            category_pinned = $1 IS NOT NULL,
            category = COALESCE(
              $1,
              (SELECT m.category FROM mail.messages m
-              WHERE m.thread_id = t.id AND m.is_deleted = FALSE
-              ORDER BY m.sent_at DESC NULLS LAST, m.received_at DESC
+              WHERE m.thread_id = mail.threads.id AND m.is_deleted = FALSE
+              ORDER BY m.sent_at IS NULL, m.sent_at DESC, m.received_at DESC
               LIMIT 1),
              'main')
-         WHERE t.id = $2 AND t.user_id = $3",
+         WHERE id = $2 AND user_id = $3",
     )
     .bind(&category)
     .bind(thread_id)
@@ -708,7 +742,7 @@ pub async fn move_thread(
         return Err(MailError::Validation(format!("Dossier invalide: {folder}")));
     }
 
-    sqlx::query("UPDATE mail.messages SET folder = $1 WHERE thread_id = $2 AND user_id = $3")
+    crate::db::query("UPDATE mail.messages SET folder = $1 WHERE thread_id = $2 AND user_id = $3")
         .bind(&folder)
         .bind(thread_id)
         .bind(user.id)
@@ -719,7 +753,7 @@ pub async fn move_thread(
     // (folder='inbox') entraîne le classifieur sur les messages du fil.
     if folder == "spam" || folder == "inbox" {
         let is_spam = folder == "spam";
-        let msgs: Vec<SpamTrainRow> = sqlx::query_as(
+        let msgs: Vec<SpamTrainRow> = crate::db::query_as(
             "SELECT id, subject, body_text, from_email, spam_trained
              FROM mail.messages WHERE thread_id = $1 AND user_id = $2",
         )
@@ -734,7 +768,7 @@ pub async fn move_thread(
                 &state.db, user.id, &subject, body.as_deref(), &from_email, is_spam, prev,
             ).await {
                 Ok(guard) => {
-                    let _ = sqlx::query("UPDATE mail.messages SET spam_trained = $1, spam_score = NULL WHERE id = $2")
+                    let _ = crate::db::query("UPDATE mail.messages SET spam_trained = $1, spam_score = NULL WHERE id = $2")
                         .bind(guard).bind(id).execute(&state.db).await;
                 }
                 Err(e) => tracing::warn!(error = %e, "Entraînement spam (feedback) échoué"),
@@ -750,7 +784,7 @@ pub async fn delete_thread(
     user: AuthUser,
     Path(thread_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let exists: bool = sqlx::query_scalar::<_, bool>(
+    let exists: bool = crate::db::query_scalar::<bool>(
         "SELECT EXISTS(SELECT 1 FROM mail.threads WHERE id = $1 AND user_id = $2)"
     )
     .bind(thread_id)
@@ -762,7 +796,7 @@ pub async fn delete_thread(
         return Err(MailError::NotFound(format!("Thread {thread_id}")));
     }
 
-    sqlx::query(
+    crate::db::query(
         "UPDATE mail.messages SET is_deleted = TRUE, folder = 'trash' WHERE thread_id = $1 AND user_id = $2"
     )
     .bind(thread_id)
@@ -779,12 +813,7 @@ pub async fn important_thread(
     user: AuthUser,
     Path(thread_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let row = sqlx::query_scalar::<_, bool>(
-        "UPDATE mail.threads SET is_important = NOT is_important WHERE id = $1 AND user_id = $2 RETURNING is_important",
-    )
-    .bind(thread_id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
+    let row = toggle_thread_flag(&state.db, ThreadFlag::Important, thread_id, user.id)
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Thread {thread_id}")))?;
     bump_thread_modseq(&state.db, user.id, thread_id).await;
@@ -796,12 +825,7 @@ pub async fn mute_thread(
     user: AuthUser,
     Path(thread_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let row = sqlx::query_scalar::<_, bool>(
-        "UPDATE mail.threads SET is_muted = NOT is_muted WHERE id = $1 AND user_id = $2 RETURNING is_muted",
-    )
-    .bind(thread_id)
-    .bind(user.id)
-    .fetch_optional(&state.db)
+    let row = toggle_thread_flag(&state.db, ThreadFlag::Muted, thread_id, user.id)
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Thread {thread_id}")))?;
     bump_thread_modseq(&state.db, user.id, thread_id).await;
@@ -814,7 +838,7 @@ pub async fn snooze_thread(
     Path(thread_id): Path<Uuid>,
     Json(dto): Json<SnoozeDto>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let res = sqlx::query(
+    let res = crate::db::query(
         "UPDATE mail.threads SET snoozed_until = $1 WHERE id = $2 AND user_id = $3",
     )
     .bind(dto.until)
@@ -837,14 +861,15 @@ pub async fn read_thread(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, MailError> {
     let is_read = body["is_read"].as_bool().unwrap_or(true);
-    sqlx::query("UPDATE mail.messages SET is_read = $1 WHERE thread_id = $2 AND user_id = $3")
+    crate::db::query("UPDATE mail.messages SET is_read = $1 WHERE thread_id = $2 AND user_id = $3")
         .bind(is_read).bind(thread_id).bind(user.id)
         .execute(&state.db).await?;
-    let unread: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mail.messages WHERE thread_id = $1 AND is_read = FALSE AND is_deleted = FALSE",
-    )
+    let unread: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.messages WHERE thread_id = $1 AND is_read = FALSE AND is_deleted = FALSE",
+        state.db.backend().count_bigint("*"),
+    ))
     .bind(thread_id).fetch_one(&state.db).await.unwrap_or(0);
-    sqlx::query("UPDATE mail.threads SET unread_count = $1 WHERE id = $2")
+    crate::db::query("UPDATE mail.threads SET unread_count = $1 WHERE id = $2")
         .bind(unread as i32).bind(thread_id).execute(&state.db).await?;
     Ok(Json(serde_json::json!({ "unread_count": unread })))
 }
@@ -853,19 +878,29 @@ pub async fn subscriptions(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let rows: Vec<SubscriptionRow> = sqlx::query_as(
-        r#"SELECT m.from_email,
-                  MAX(m.from_name)                                                      AS from_name,
-                  (ARRAY_AGG(m.list_unsubscribe ORDER BY m.received_at DESC))[1]         AS list_unsubscribe,
-                  COUNT(*)                                                              AS cnt,
-                  MAX(m.received_at)                                                    AS last_at
-           FROM mail.messages m
-           JOIN mail.threads t ON t.id = m.thread_id
-           WHERE t.user_id = $1 AND m.list_unsubscribe IS NOT NULL AND m.is_deleted = FALSE
-           GROUP BY m.from_email
-           ORDER BY cnt DESC
-           LIMIT 500"#,
-    )
+    let rows: Vec<SubscriptionRow> = crate::db::query_as(format!(
+        r#"SELECT g.from_email, g.from_name,
+                  (SELECT m2.list_unsubscribe
+                   FROM mail.messages m2
+                   JOIN mail.threads t2 ON t2.id = m2.thread_id
+                   WHERE t2.user_id = $1 AND m2.from_email = g.from_email
+                     AND m2.list_unsubscribe IS NOT NULL AND m2.is_deleted = FALSE
+                   ORDER BY m2.received_at DESC
+                   LIMIT 1) AS list_unsubscribe,
+                  g.cnt, g.last_at
+           FROM (SELECT m.from_email,
+                        MAX(m.from_name)   AS from_name,
+                        {cnt}              AS cnt,
+                        MAX(m.received_at) AS last_at
+                 FROM mail.messages m
+                 JOIN mail.threads t ON t.id = m.thread_id
+                 WHERE t.user_id = $1 AND m.list_unsubscribe IS NOT NULL AND m.is_deleted = FALSE
+                 GROUP BY m.from_email
+                 ORDER BY cnt DESC
+                 LIMIT 500) g
+           ORDER BY g.cnt DESC"#,
+        cnt = state.db.backend().count_bigint("*"),
+    ))
     .bind(user.id)
     .fetch_all(&state.db)
     .await
@@ -894,13 +929,14 @@ pub async fn counts(
     let user = AuthUser { id: acting_id, ..user };
 
     // Non-lus par dossier
-    let unread_rows: Vec<(String, i64)> = sqlx::query_as(
-        r#"SELECT m.folder, COUNT(*)
+    let unread_rows: Vec<(String, i64)> = crate::db::query_as(format!(
+        r#"SELECT m.folder, {cnt}
            FROM mail.messages m
            JOIN mail.threads t ON t.id = m.thread_id
            WHERE t.user_id = $1 AND m.is_read = FALSE AND m.is_deleted = FALSE
            GROUP BY m.folder"#,
-    )
+        cnt = state.db.backend().count_bigint("*"),
+    ))
     .bind(user.id)
     .fetch_all(&state.db)
     .await?;
@@ -910,13 +946,14 @@ pub async fn counts(
     }
 
     // Total fils par dossier (pour les badges « tous »)
-    let total_rows: Vec<(String, i64)> = sqlx::query_as(
-        r#"SELECT m.folder, COUNT(DISTINCT t.id)
+    let total_rows: Vec<(String, i64)> = crate::db::query_as(format!(
+        r#"SELECT m.folder, {cnt_distinct}
            FROM mail.messages m
            JOIN mail.threads t ON t.id = m.thread_id
            WHERE t.user_id = $1 AND m.is_deleted = FALSE
            GROUP BY m.folder"#,
-    )
+        cnt_distinct = state.db.backend().count_bigint("DISTINCT t.id"),
+    ))
     .bind(user.id)
     .fetch_all(&state.db)
     .await?;
@@ -925,43 +962,51 @@ pub async fn counts(
         total.insert(folder, serde_json::json!(n));
     }
 
-    let drafts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mail.drafts WHERE user_id = $1")
+    let drafts: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.drafts WHERE user_id = $1",
+        state.db.backend().count_bigint("*"),
+    ))
         .bind(user.id)
         .fetch_one(&state.db)
         .await
         .unwrap_or(0);
 
-    let starred: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mail.threads WHERE user_id = $1 AND is_starred = TRUE",
-    )
+    let starred: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.threads WHERE user_id = $1 AND is_starred = TRUE",
+        state.db.backend().count_bigint("*"),
+    ))
     .bind(user.id)
     .fetch_one(&state.db)
     .await
     .unwrap_or(0);
 
-    let important: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mail.threads WHERE user_id = $1 AND is_important = TRUE",
-    )
+    let important: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.threads WHERE user_id = $1 AND is_important = TRUE",
+        state.db.backend().count_bigint("*"),
+    ))
     .bind(user.id).fetch_one(&state.db).await.unwrap_or(0);
 
-    let snoozed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mail.threads WHERE user_id = $1 AND snoozed_until > NOW()",
-    )
-    .bind(user.id).fetch_one(&state.db).await.unwrap_or(0);
+    let snoozed: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.threads WHERE user_id = $1 AND snoozed_until > $2",
+        state.db.backend().count_bigint("*"),
+    ))
+    .bind(user.id).bind(Utc::now()).fetch_one(&state.db).await.unwrap_or(0);
 
-    let scheduled: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mail.drafts WHERE user_id = $1 AND scheduled_at IS NOT NULL",
-    )
+    let scheduled: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.drafts WHERE user_id = $1 AND scheduled_at IS NOT NULL",
+        state.db.backend().count_bigint("*"),
+    ))
     .bind(user.id).fetch_one(&state.db).await.unwrap_or(0);
 
     // Unread threads per label — Gmail's sidebar badge counts unread, not total.
-    let label_rows: Vec<(Uuid, i64)> = sqlx::query_as(
-        r#"SELECT tl.label_id, COUNT(DISTINCT tl.thread_id)
+    let label_rows: Vec<(Uuid, i64)> = crate::db::query_as(format!(
+        r#"SELECT tl.label_id, {cnt_labels}
            FROM mail.thread_labels tl
            JOIN mail.threads t ON t.id = tl.thread_id
            WHERE t.user_id = $1 AND t.unread_count > 0
            GROUP BY tl.label_id"#,
-    )
+        cnt_labels = state.db.backend().count_bigint("DISTINCT tl.thread_id"),
+    ))
     .bind(user.id)
     .fetch_all(&state.db)
     .await
@@ -981,4 +1026,73 @@ pub async fn counts(
         "scheduled": scheduled,
         "labels":    labels,
     })))
+}
+
+/// Binds every id of an `IN (…)` list built with [`crate::db::in_list`], in
+/// order. The caller has already ruled out an empty list.
+fn bind_ids<O>(mut q: crate::db::Query<O>, ids: &[Uuid]) -> crate::db::Query<O> {
+    for id in ids {
+        q = q.bind(*id);
+    }
+    q
+}
+
+/// `col` holds a non-empty JSON array, in the local spelling.
+fn json_array_nonempty(backend: kubuno_db::Backend, col: &'static str) -> String {
+    match backend {
+        kubuno_db::Backend::Postgres => format!("jsonb_array_length({col}) > 0"),
+        kubuno_db::Backend::MySql => format!("JSON_LENGTH({col}) > 0"),
+        kubuno_db::Backend::Sqlite => format!("json_array_length({col}) > 0"),
+    }
+}
+
+/// A boolean thread flag the UI toggles.
+#[derive(Clone, Copy)]
+enum ThreadFlag {
+    Starred,
+    Important,
+    Muted,
+}
+
+impl ThreadFlag {
+    fn column(self) -> &'static str {
+        match self {
+            ThreadFlag::Starred => "is_starred",
+            ThreadFlag::Important => "is_important",
+            ThreadFlag::Muted => "is_muted",
+        }
+    }
+}
+
+/// Flips a thread flag and returns its new value, `None` when the thread is not
+/// the user's. MySQL has no `UPDATE … RETURNING`, so the flip and the read-back
+/// run in one transaction (the row lock taken by the UPDATE keeps another writer
+/// from slipping between them).
+async fn toggle_thread_flag(
+    db: &kubuno_db::DbPool,
+    flag: ThreadFlag,
+    thread_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<bool>, sqlx::Error> {
+    let col = flag.column();
+    let mut tx = db.begin().await?;
+    let res = crate::db::query(format!(
+        "UPDATE mail.threads SET {col} = NOT {col} WHERE id = $1 AND user_id = $2"
+    ))
+    .bind(thread_id)
+    .bind(user_id)
+    .execute(&mut tx)
+    .await?;
+    if res.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    let value = crate::db::query_scalar::<bool>(format!(
+        "SELECT {col} FROM mail.threads WHERE id = $1"
+    ))
+    .bind(thread_id)
+    .fetch_optional(&mut tx)
+    .await?;
+    tx.commit().await?;
+    Ok(value)
 }

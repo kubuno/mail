@@ -17,7 +17,8 @@
 use anyhow::Result;
 use hickory_resolver::proto::rr::RData;
 use hickory_resolver::TokioResolver;
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::DbPool;
 
 /// Largest logo we will store: BIMI logos are small SVGs; anything heavier is
 /// not a logo and has no business sitting in the database.
@@ -48,7 +49,7 @@ pub struct Avatar {
 /// spoofing `paypal.com` must never borrow PayPal's logo — while neutral marks
 /// (a mailbox provider, a favicon) stay allowed since they claim no identity.
 pub async fn for_domain(
-    db: &PgPool,
+    db: &DbPool,
     http: &reqwest::Client,
     domain: &str,
     allow_brand: bool,
@@ -59,11 +60,12 @@ pub async fn for_domain(
     }
 
     // 1. Fresh cache entry (hit or miss) answers straight away.
-    let cached: Option<CachedRow> = sqlx::query_as(
+    let cached: Option<CachedRow> = crate::db::query_as(
         "SELECT not_found, mime, bytes, source FROM mail.sender_avatars \
-         WHERE domain = $1 AND expires_at > NOW()",
+         WHERE domain = $1 AND expires_at > $2",
     )
     .bind(&domain)
+    .bind(chrono::Utc::now())
     .fetch_optional(db)
     .await?;
 
@@ -222,25 +224,35 @@ async fn bimi_logo_url(resolver: &TokioResolver, domain: &str) -> Option<String>
 
 /// Writes the outcome to the cache. A storage failure must never break the
 /// request: the avatar simply is not cached this time.
-async fn remember(db: &PgPool, domain: &str, found: Option<(&str, &[u8], &str)>) {
+async fn remember(db: &DbPool, domain: &str, found: Option<(&str, &[u8], &str)>) {
     let (not_found, mime, bytes, source) = match found {
         Some((mime, bytes, source)) => (false, Some(mime), Some(bytes), source),
         None => (true, None, None, "none"),
     };
-    let result = sqlx::query(
+    let upsert = db.backend().upsert(
+        "mail.sender_avatars",
+        &["domain"],
+        &[
+            Assign::Incoming("source"),
+            Assign::Incoming("mime"),
+            Assign::Incoming("bytes"),
+            Assign::Incoming("not_found"),
+            Assign::Incoming("fetched_at"),
+            Assign::Incoming("expires_at"),
+        ],
+    );
+    let now = chrono::Utc::now();
+    let result = crate::db::query(format!(
         "INSERT INTO mail.sender_avatars (domain, source, mime, bytes, not_found, fetched_at, expires_at) \
-         VALUES ($1, $6, $2, $3, $4, NOW(), NOW() + ($5 || ' days')::interval) \
-         ON CONFLICT (domain) DO UPDATE SET \
-           source = EXCLUDED.source, \
-           mime = EXCLUDED.mime, bytes = EXCLUDED.bytes, not_found = EXCLUDED.not_found, \
-           fetched_at = EXCLUDED.fetched_at, expires_at = EXCLUDED.expires_at",
-    )
+         VALUES ($1, $2, $3, $4, $5, $6, $7){upsert}"
+    ))
     .bind(domain)
+    .bind(source)
     .bind(mime)
     .bind(bytes)
     .bind(not_found)
-    .bind(TTL_DAYS.to_string())
-    .bind(source)
+    .bind(now)
+    .bind(now + chrono::Duration::days(TTL_DAYS))
     .execute(db)
     .await;
 

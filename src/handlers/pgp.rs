@@ -10,6 +10,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use kubuno_db::dialect::Assign;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -51,7 +52,7 @@ pub async fn list_keys(
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
     require_gpg(&state).await?;
-    let rows = sqlx::query_as::<_, (Uuid, Option<String>, String, String, bool, chrono::DateTime<chrono::Utc>)>(
+    let rows = crate::db::query_as::<(Uuid, Option<String>, String, String, bool, chrono::DateTime<chrono::Utc>)>(
         r#"SELECT id, email, fingerprint, public_key, is_default, created_at
            FROM mail.pgp_keys WHERE user_id = $1 ORDER BY created_at"#,
     )
@@ -128,21 +129,36 @@ async fn store_key(
         .map_err(|_| MailError::Crypto)?;
     let email = material.emails.first().cloned();
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mail.pgp_keys WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_one(&state.db)
-        .await?;
+    let backend = state.db.backend();
+    let count: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.pgp_keys WHERE user_id = $1",
+        backend.count_bigint("*")
+    ))
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await?;
     let is_default = count == 0;
 
-    let id: Uuid = sqlx::query_scalar(
+    // Re-importing a known fingerprint refreshes it in place. The id is bound
+    // (no UUID default off PostgreSQL) and read back by the natural key, since
+    // MySQL has no RETURNING; `(user_id, fingerprint)` is the table's only
+    // unique key besides the id, so MySQL's ON DUPLICATE KEY targets it too.
+    let upsert = backend.upsert(
+        "mail.pgp_keys",
+        &["user_id", "fingerprint"],
+        &[
+            Assign::Incoming("email"),
+            Assign::Incoming("public_key"),
+            Assign::Incoming("private_key"),
+            Assign::Incoming("private_key_nonce"),
+        ],
+    );
+    crate::db::query(format!(
         r#"INSERT INTO mail.pgp_keys
-              (user_id, email, fingerprint, public_key, private_key, private_key_nonce, is_default)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (user_id, fingerprint) DO UPDATE
-              SET email = EXCLUDED.email, public_key = EXCLUDED.public_key,
-                  private_key = EXCLUDED.private_key, private_key_nonce = EXCLUDED.private_key_nonce
-           RETURNING id"#,
-    )
+              (id, user_id, email, fingerprint, public_key, private_key, private_key_nonce, is_default)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8){upsert}"#
+    ))
+    .bind(kubuno_db::new_id())
     .bind(user_id)
     .bind(&email)
     .bind(&material.fingerprint)
@@ -150,6 +166,13 @@ async fn store_key(
     .bind(&enc)
     .bind(&nonce)
     .bind(is_default)
+    .execute(&state.db)
+    .await?;
+    let id: Uuid = crate::db::query_scalar(
+        "SELECT id FROM mail.pgp_keys WHERE user_id = $1 AND fingerprint = $2",
+    )
+    .bind(user_id)
+    .bind(&material.fingerprint)
     .fetch_one(&state.db)
     .await?;
 
@@ -165,7 +188,7 @@ pub async fn delete_key(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
     require_gpg(&state).await?;
-    let done = sqlx::query("DELETE FROM mail.pgp_keys WHERE id = $1 AND user_id = $2")
+    let done = crate::db::query("DELETE FROM mail.pgp_keys WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user.id)
         .execute(&state.db)
@@ -183,7 +206,7 @@ pub async fn list_contacts(
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
     require_gpg(&state).await?;
-    let rows = sqlx::query_as::<_, (Uuid, String, String, String, String, chrono::DateTime<chrono::Utc>)>(
+    let rows = crate::db::query_as::<(Uuid, String, String, String, String, chrono::DateTime<chrono::Utc>)>(
         r#"SELECT id, email, fingerprint, public_key, source, created_at
            FROM mail.pgp_contacts WHERE user_id = $1 ORDER BY email"#,
     )
@@ -227,20 +250,7 @@ pub async fn add_contact(
         .or_else(|| emails.first().cloned())
         .ok_or_else(|| MailError::Validation("Adresse du contact manquante".into()))?;
 
-    let id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO mail.pgp_contacts (user_id, email, fingerprint, public_key, source)
-           VALUES ($1, $2, $3, $4, 'manual')
-           ON CONFLICT (user_id, lower(email)) DO UPDATE
-              SET fingerprint = EXCLUDED.fingerprint, public_key = EXCLUDED.public_key,
-                  source = 'manual'
-           RETURNING id"#,
-    )
-    .bind(user.id)
-    .bind(&email)
-    .bind(&fingerprint)
-    .bind(&re_armored)
-    .fetch_one(&state.db)
-    .await?;
+    let id = upsert_contact(&state.db, user.id, &email, &fingerprint, &re_armored).await?;
 
     Ok(Json(serde_json::json!({
         "id": id, "email": email, "fingerprint": fingerprint,
@@ -253,7 +263,7 @@ pub async fn delete_contact(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
     require_gpg(&state).await?;
-    let done = sqlx::query("DELETE FROM mail.pgp_contacts WHERE id = $1 AND user_id = $2")
+    let done = crate::db::query("DELETE FROM mail.pgp_contacts WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user.id)
         .execute(&state.db)
@@ -262,4 +272,59 @@ pub async fn delete_contact(
         return Err(MailError::NotFound("contact".into()));
     }
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// Stores (or replaces) a correspondent's key from a manual import. One key per
+/// `(user_id, lower(email))` — a unique key on an expression, which an
+/// `ON CONFLICT` target cannot name portably — so the row is looked up first and
+/// updated in place, else inserted; a concurrent insert of the same address
+/// surfaces as a unique violation and is resolved by updating the winner.
+async fn upsert_contact(
+    db: &kubuno_db::DbPool,
+    user_id: Uuid,
+    email: &str,
+    fingerprint: &str,
+    public_key: &str,
+) -> Result<Uuid, MailError> {
+    for _ in 0..2 {
+        let existing: Option<Uuid> = crate::db::query_scalar(
+            "SELECT id FROM mail.pgp_contacts WHERE user_id = $1 AND lower(email) = lower($2)",
+        )
+        .bind(user_id)
+        .bind(email)
+        .fetch_optional(db)
+        .await?;
+        if let Some(id) = existing {
+            crate::db::query(
+                "UPDATE mail.pgp_contacts SET fingerprint = $1, public_key = $2, source = 'manual', \
+                 updated_at = $3 WHERE id = $4",
+            )
+            .bind(fingerprint)
+            .bind(public_key)
+            .bind(chrono::Utc::now())
+            .bind(id)
+            .execute(db)
+            .await?;
+            return Ok(id);
+        }
+        let id = kubuno_db::new_id();
+        match crate::db::query(
+            "INSERT INTO mail.pgp_contacts (id, user_id, email, fingerprint, public_key, source) \
+             VALUES ($1, $2, $3, $4, $5, 'manual')",
+        )
+        .bind(id)
+        .bind(user_id)
+        .bind(email)
+        .bind(fingerprint)
+        .bind(public_key)
+        .execute(db)
+        .await
+        {
+            Ok(_) => return Ok(id),
+            // Lost a race with a concurrent import: loop once to update it.
+            Err(e) if crate::db::is_unique_violation(&e) => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(MailError::Conflict("clé du contact modifiée en parallèle".into()))
 }

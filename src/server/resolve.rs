@@ -58,7 +58,7 @@ use std::collections::{HashSet, VecDeque};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use sqlx::PgPool;
+use kubuno_db::{DbPool, JsonVec};
 use uuid::Uuid;
 
 use crate::server::config::ServerConfig;
@@ -599,11 +599,11 @@ fn dedup(expansion: &mut Expansion) {
 /// The real directory: `mail` schema, plain queries, every failure logged
 /// before it is returned.
 pub struct PgDirectory<'a> {
-    db: &'a PgPool,
+    db: &'a DbPool,
 }
 
 impl<'a> PgDirectory<'a> {
-    pub fn new(db: &'a PgPool) -> Self {
+    pub fn new(db: &'a DbPool) -> Self {
         Self { db }
     }
 }
@@ -611,7 +611,7 @@ impl<'a> PgDirectory<'a> {
 #[async_trait]
 impl Directory for PgDirectory<'_> {
     async fn mailbox(&self, address: &str) -> Result<Option<MailboxRow>> {
-        let row: Option<(String, Uuid, i64, bool)> = sqlx::query_as(
+        let row: Option<(String, Uuid, i64, bool)> = crate::db::query_as(
             "SELECT address, user_id, quota_bytes, is_active
              FROM mail.mailboxes WHERE address = $1",
         )
@@ -633,7 +633,7 @@ impl Directory for PgDirectory<'_> {
     }
 
     async fn alias(&self, address: &str) -> Result<Option<AliasRow>> {
-        let row: Option<(String, Vec<String>, bool)> = sqlx::query_as(
+        let row: Option<(String, JsonVec<String>, bool)> = crate::db::query_as(
             "SELECT address, destinations, is_active FROM mail.aliases WHERE address = $1",
         )
         .bind(address)
@@ -647,13 +647,13 @@ impl Directory for PgDirectory<'_> {
 
         Ok(row.map(|(address, destinations, is_active)| AliasRow {
             address,
-            destinations,
+            destinations: destinations.into_inner(),
             is_active,
         }))
     }
 
     async fn mailing_list(&self, address: &str) -> Result<Option<ListRow>> {
-        let row: Option<(Uuid, String, String, Vec<String>, bool)> = sqlx::query_as(
+        let row: Option<(Uuid, String, String, JsonVec<String>, bool)> = crate::db::query_as(
             "SELECT id, address, post_policy, allowed_senders, is_active
              FROM mail.mailing_lists WHERE address = $1",
         )
@@ -673,7 +673,7 @@ impl Directory for PgDirectory<'_> {
 
         // Members are only read once the list is known: a lookup that misses —
         // the common case — costs one query, not two.
-        let members: Vec<String> = sqlx::query_scalar(
+        let members: Vec<String> = crate::db::query_scalar(
             "SELECT address FROM mail.mailing_list_members WHERE list_id = $1",
         )
         .bind(id)
@@ -688,7 +688,7 @@ impl Directory for PgDirectory<'_> {
         Ok(Some(ListRow {
             address,
             policy: PostPolicy::parse(&policy),
-            allowed_senders,
+            allowed_senders: allowed_senders.into_inner(),
             members,
             is_active,
         }))
@@ -697,7 +697,7 @@ impl Directory for PgDirectory<'_> {
     async fn catch_all(&self, domain: &str) -> Result<Option<AliasRow>> {
         // The partial unique index guarantees at most one per domain, so this
         // cannot depend on row order.
-        let row: Option<(String, Vec<String>, bool)> = sqlx::query_as(
+        let row: Option<(String, JsonVec<String>, bool)> = crate::db::query_as(
             "SELECT address, destinations, is_active
              FROM mail.aliases WHERE domain = $1 AND is_catch_all",
         )
@@ -712,7 +712,7 @@ impl Directory for PgDirectory<'_> {
 
         Ok(row.map(|(address, destinations, is_active)| AliasRow {
             address,
-            destinations,
+            destinations: destinations.into_inner(),
             is_active,
         }))
     }
@@ -720,7 +720,7 @@ impl Directory for PgDirectory<'_> {
     async fn legacy_user(&self, address: &str) -> Result<Option<Uuid>> {
         // The mailbox credential — what a mail client actually logs in with.
         let by_credential: Option<(Uuid,)> =
-            sqlx::query_as("SELECT user_id FROM mail.mailbox_credentials WHERE username = $1")
+            crate::db::query_as("SELECT user_id FROM mail.mailbox_credentials WHERE username = $1")
                 .bind(address)
                 .fetch_optional(self.db)
                 .await
@@ -735,7 +735,7 @@ impl Directory for PgDirectory<'_> {
         }
 
         // Failing that, one of the user's configured accounts.
-        let by_account: Option<(Uuid,)> = sqlx::query_as(
+        let by_account: Option<(Uuid,)> = crate::db::query_as(
             "SELECT user_id FROM mail.accounts
              WHERE LOWER(email_address) = $1
              ORDER BY is_default DESC, is_active DESC, created_at
@@ -759,7 +759,7 @@ impl Directory for PgDirectory<'_> {
         // otherwise a message to `test001@` could land in the owner's Gmail. Then
         // the historical order: the account carrying the address, the user's
         // default, any active one.
-        let account: Option<(Uuid,)> = sqlx::query_as(
+        let account: Option<(Uuid,)> = crate::db::query_as(
             "SELECT id FROM mail.accounts
              WHERE user_id = $1
              ORDER BY (kind = 'local' AND LOWER(email_address) = $2) DESC,

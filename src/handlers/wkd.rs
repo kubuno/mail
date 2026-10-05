@@ -68,7 +68,7 @@ pub async fn hu(
 
     // Match the served hash against the active local mailboxes of the domain.
     // `?l=` only narrows the scan; the hash is what must agree.
-    let rows: Vec<(String, uuid::Uuid)> = sqlx::query_as(
+    let rows: Vec<(String, uuid::Uuid)> = crate::db::query_as(
         "SELECT address, user_id FROM mail.mailboxes WHERE domain = $1 AND is_active = TRUE",
     )
     .bind(&domain)
@@ -92,9 +92,9 @@ pub async fn hu(
 
     // The mailbox owner's key: prefer one whose User ID matches the address, then
     // the default identity.
-    let public_armored: Option<String> = sqlx::query_scalar(
+    let public_armored: Option<String> = crate::db::query_scalar(
         r#"SELECT public_key FROM mail.pgp_keys WHERE user_id = $1
-           ORDER BY (lower(email) = lower($2)) DESC, is_default DESC, created_at
+           ORDER BY CASE WHEN lower(email) = lower($2) THEN 1 ELSE 0 END DESC, is_default DESC, created_at
            LIMIT 1"#,
     )
     .bind(user_id)

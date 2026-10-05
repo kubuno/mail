@@ -46,7 +46,7 @@ pub async fn list_credentials(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<CredentialRow>>, MailError> {
-    let rows = sqlx::query_as::<_, CredentialRow>(
+    let rows = crate::db::query_as::<CredentialRow>(
         "SELECT id, username, label, last_used_at, created_at \
          FROM mail.mailbox_credentials WHERE user_id = $1 ORDER BY created_at DESC",
     )
@@ -73,7 +73,7 @@ pub async fn create_credential(
 
     // The address must be one this user actually owns, otherwise anyone could
     // claim a colleague's address and receive their mail.
-    let owned: bool = sqlx::query_scalar(
+    let owned: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM mail.accounts \
          WHERE user_id = $1 AND LOWER(email_address) = $2)",
     )
@@ -108,7 +108,7 @@ pub async fn delete_credential(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let deleted = sqlx::query("DELETE FROM mail.mailbox_credentials WHERE id = $1 AND user_id = $2")
+    let deleted = crate::db::query("DELETE FROM mail.mailbox_credentials WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user.id)
         .execute(&state.db)

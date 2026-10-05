@@ -9,7 +9,7 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::{config::settings::MailSettings, services::crypto::MailCrypto};
@@ -219,7 +219,7 @@ pub async fn fetch_userinfo_email(provider: Provider, access_token: &str) -> Res
 /// (token revoked / expired), sets an explicit `last_error` on the account so
 /// the UI can prompt for a reconnection.
 pub async fn valid_access_token(
-    db:      &PgPool,
+    db:      &DbPool,
     crypto:  &MailCrypto,
     mail:    &MailSettings,
     account_id: Uuid,
@@ -233,7 +233,7 @@ pub async fn valid_access_token(
         Option<DateTime<Utc>>,
     );
     let row: OauthRow =
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT auth_kind, oauth_refresh_token, oauth_refresh_nonce, \
                     oauth_access_token, oauth_access_nonce, oauth_expires_at \
              FROM mail.accounts WHERE id = $1",
@@ -293,7 +293,7 @@ pub async fn valid_access_token(
         if kind == "invalid_grant" {
             // Token revoked or expired: surface a clear, actionable error.
             let msg = "Autorisation OAuth expirée ou révoquée — reconnexion requise dans les réglages du compte";
-            let _ = sqlx::query("UPDATE mail.accounts SET last_error = $1 WHERE id = $2")
+            let _ = crate::db::query("UPDATE mail.accounts SET last_error = $1 WHERE id = $2")
                 .bind(msg)
                 .bind(account_id)
                 .execute(db)
@@ -309,7 +309,7 @@ pub async fn valid_access_token(
     let (acc_enc, acc_nonce) = crypto
         .encrypt(&tok.access_token)
         .map_err(|_| anyhow!("Chiffrement du jeton d'accès échoué"))?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE mail.accounts SET oauth_access_token = $1, oauth_access_nonce = $2, oauth_expires_at = $3 WHERE id = $4",
     )
     .bind(acc_enc.as_slice())
@@ -323,7 +323,7 @@ pub async fn valid_access_token(
     // Microsoft rotates refresh tokens: persist the new one when returned.
     if let Some(new_refresh) = tok.refresh_token.as_deref().filter(|t| !t.is_empty()) {
         if let Ok((r_enc, r_nonce)) = crypto.encrypt(new_refresh) {
-            let _ = sqlx::query(
+            let _ = crate::db::query(
                 "UPDATE mail.accounts SET oauth_refresh_token = $1, oauth_refresh_nonce = $2 WHERE id = $3",
             )
             .bind(r_enc.as_slice())

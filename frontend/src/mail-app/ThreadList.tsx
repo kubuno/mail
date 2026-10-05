@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Mail as MailIcon, RefreshCw } from 'lucide-react'
 import { useMenuDropdown, useIsMobile, type MenuDropdownPos } from '@ui'
-import { ModuleServiceRegistry } from '@kubuno/sdk'
+import { ModuleServiceRegistry, openSignedUrl } from '@kubuno/sdk'
 import { mailApi, Thread, type ThreadAttachment } from '../api'
 import { usePullToRefresh } from './usePullToRefresh'
 import { useMailStore } from '../store'
@@ -258,7 +258,7 @@ export default function ThreadList() {
     if (att.mime === 'application/pdf' || att.mime.startsWith('image/')) {
       setPreview(source)
     } else {
-      window.open(url, '_blank', 'noopener')
+      void openSignedUrl(url)
     }
   }
   // `composeOpen` / the two manager modals are read only to keep the keyboard

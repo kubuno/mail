@@ -34,7 +34,7 @@ pub mod mailboxes;
 
 use rand::Rng;
 use serde::Deserialize;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::{errors::MailError, middleware::AuthUser, server::config, server::hygiene, state::AppState};
@@ -315,18 +315,18 @@ pub(crate) fn require_local_domain(domains: &[String], domain: &str) -> Result<(
 /// What already holds this address, if anything. `exclude` skips the row being
 /// updated so renaming an object to its own address is not a conflict.
 pub(crate) async fn address_owner(
-    db: &PgPool,
+    db: &DbPool,
     address: &str,
     exclude: Option<Uuid>,
 ) -> Result<Option<AddressKind>, MailError> {
     let probes = [
-        (AddressKind::Mailbox, "SELECT 1 FROM mail.mailboxes WHERE address = $1 AND ($2::uuid IS NULL OR id <> $2)"),
-        (AddressKind::Alias, "SELECT 1 FROM mail.aliases WHERE address = $1 AND ($2::uuid IS NULL OR id <> $2)"),
-        (AddressKind::List, "SELECT 1 FROM mail.mailing_lists WHERE address = $1 AND ($2::uuid IS NULL OR id <> $2)"),
+        (AddressKind::Mailbox, "SELECT 1 FROM mail.mailboxes WHERE address = $1 AND ($2 IS NULL OR id <> $2)"),
+        (AddressKind::Alias, "SELECT 1 FROM mail.aliases WHERE address = $1 AND ($2 IS NULL OR id <> $2)"),
+        (AddressKind::List, "SELECT 1 FROM mail.mailing_lists WHERE address = $1 AND ($2 IS NULL OR id <> $2)"),
     ];
 
     for (kind, sql) in probes {
-        let taken: Option<i32> = sqlx::query_scalar(sql)
+        let taken: Option<i32> = crate::db::query_scalar(sql)
             .bind(address)
             .bind(exclude)
             .fetch_optional(db)
@@ -341,7 +341,7 @@ pub(crate) async fn address_owner(
 
 /// Refuses an address already used by another object, naming that object.
 pub(crate) async fn require_address_free(
-    db: &PgPool,
+    db: &DbPool,
     address: &str,
     exclude: Option<Uuid>,
 ) -> Result<(), MailError> {
@@ -378,9 +378,14 @@ pub(crate) fn translate_conflict(
     domain: &str,
     context: &'static str,
 ) -> MailError {
-    if let sqlx::Error::Database(ref db_err) = e {
-        if db_err.code().as_deref() == Some("23505") {
-            if db_err.constraint() == Some("idx_mail_aliases_catch_all") {
+    if is_address_conflict(&e) {
+        if let sqlx::Error::Database(ref db_err) = e {
+            // PostgreSQL names the partial index; MySQL and SQLite report no
+            // constraint name, but for a catch-all address (`@domain`) any
+            // uniqueness conflict IS the one-catch-all-per-domain rule.
+            if db_err.constraint() == Some("idx_mail_aliases_catch_all")
+                || (db_err.constraint().is_none() && address.starts_with('@'))
+            {
                 return MailError::Conflict(format!(
                     "Le domaine « {domain} » a déjà un attrape-tout : il ne peut y en avoir qu'un, sinon la distribution dépendrait de l'ordre des lignes"
                 ));
@@ -391,6 +396,43 @@ pub(crate) fn translate_conflict(
         }
     }
     db_error(context)(e)
+}
+
+/// True when a write was refused because the address (or the catch-all slot)
+/// is already taken — a unique key, or the `assert_address_is_free` trigger.
+///
+/// PostgreSQL raises the trigger as `unique_violation` (23505) and MySQL
+/// signals it as `ER_DUP_ENTRY` (1062), both seen by
+/// [`crate::db::is_unique_violation`]. SQLite's `RAISE(ABORT, …)` is a plain
+/// constraint error with no unique kind, so it is recognised by its message.
+pub(crate) fn is_address_conflict(e: &sqlx::Error) -> bool {
+    if crate::db::is_unique_violation(e) {
+        return true;
+    }
+    e.as_database_error()
+        .map(|d| d.message().contains(ADDRESS_TAKEN_MARKER))
+        .unwrap_or(false)
+}
+
+/// The text the MySQL/SQLite `assert_address_is_free` triggers raise (also a
+/// substring of no other error the address writes can produce).
+pub(crate) const ADDRESS_TAKEN_MARKER: &str = "address already in use";
+
+/// ` ESCAPE '\'` for a `LIKE` whose pattern was escaped by
+/// [`ListQuery::pattern`]. MySQL already uses the backslash as its default
+/// escape character, and in a MySQL string literal `'\'` would itself be an
+/// unterminated escape, so the clause is omitted there.
+pub(crate) fn like_escape(backend: kubuno_db::Backend) -> &'static str {
+    match backend {
+        kubuno_db::Backend::MySql => "",
+        _ => r" ESCAPE '\'",
+    }
+}
+
+/// A JSON-array column as searchable text (its serialised form), so a `LIKE`
+/// can look inside it on every engine.
+pub(crate) fn json_as_text(backend: kubuno_db::Backend, col: &'static str) -> String {
+    backend.cast(col, kubuno_db::dialect::SqlType::Text)
 }
 
 // ── Pagination ───────────────────────────────────────────────────────────────
@@ -598,18 +640,37 @@ mod routing_tests {
         body::Body,
         http::{Request, StatusCode},
     };
-    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use std::sync::Arc;
     use tower::ServiceExt;
 
     use crate::{config::Settings, router, state::AppState};
 
-    /// A router over a pool that is never connected.
-    fn test_router() -> axum::Router {
-        let db = PgPoolOptions::new()
-            .max_connections(1)
-            .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").database("unused"));
-        let settings = Settings::load().expect("réglages par défaut");
+    /// The module secret of the test router: identities are signed tokens.
+    const TEST_SECRET: &str = "mail-routing-test-secret";
+
+    /// A signed identity, as the core proxy mints it.
+    fn token(role: &str) -> String {
+        let user = kubuno_modauth::ModuleUser {
+            id: uuid::Uuid::from_u128(1),
+            role: role.to_string(),
+            email: "someone@example.com".to_string(),
+        };
+        kubuno_modauth::sign(TEST_SECRET.as_bytes(), &user, "mail")
+    }
+
+    /// A router over a throwaway, un-migrated SQLite pool: every route asserted
+    /// here answers before touching a table.
+    async fn test_router() -> axum::Router {
+        let dir = std::env::temp_dir().join(format!("kubuno-mail-routing-{}", uuid::Uuid::new_v4()));
+        let settings_db: kubuno_db::DbSettings = serde_json::from_value(serde_json::json!({
+            "engine": "sqlite",
+            "path": dir.to_string_lossy(),
+            "run_migrations": false,
+        }))
+        .expect("sqlite settings");
+        let db = kubuno_db::connect(&settings_db, crate::SCHEMA).await.expect("sqlite pool");
+        let mut settings = Settings::load().expect("default settings");
+        settings.core.internal_secret = TEST_SECRET.to_string();
         router::build(AppState {
             db,
             settings: Arc::new(settings),
@@ -619,10 +680,7 @@ mod routing_tests {
     fn request(method: &str, uri: &str, role: Option<&str>, body: &'static str) -> Request<Body> {
         let mut builder = Request::builder().method(method).uri(uri);
         if let Some(role) = role {
-            builder = builder
-                .header("X-Kubuno-User-Id", "00000000-0000-0000-0000-000000000001")
-                .header("X-Kubuno-User-Email", "someone@example.com")
-                .header("X-Kubuno-User-Role", role);
+            builder = builder.header(kubuno_modauth::TOKEN_HEADER, token(role));
         }
         builder
             .header("Content-Type", "application/json")
@@ -632,6 +690,7 @@ mod routing_tests {
 
     async fn status(method: &str, uri: &str, role: Option<&str>, body: &'static str) -> StatusCode {
         test_router()
+            .await
             .oneshot(request(method, uri, role, body))
             .await
             .expect("réponse")
@@ -727,12 +786,11 @@ mod routing_tests {
             let req = Request::builder()
                 .method(method)
                 .uri(uri)
-                .header("X-Kubuno-User-Id", "00000000-0000-0000-0000-000000000001")
-                .header("X-Kubuno-User-Role", "admin")
+                .header(kubuno_modauth::TOKEN_HEADER, token("admin"))
                 .header("Content-Type", "application/json")
                 .body(Body::from(body))
                 .expect("requête");
-            let status = test_router().oneshot(req).await.expect("réponse").status();
+            let status = test_router().await.oneshot(req).await.expect("réponse").status();
             assert_eq!(
                 status,
                 StatusCode::UNPROCESSABLE_ENTITY,

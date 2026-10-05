@@ -23,15 +23,19 @@ pub async fn list_custom_folders(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<CustomFolder>>, MailError> {
-    let mut rows = sqlx::query_as::<_, CustomFolder>(
+    let backend = state.db.backend();
+    let mut rows = crate::db::query_as::<CustomFolder>(format!(
         r#"SELECT imap_folder AS name,
-                  COUNT(*)                                    AS total,
-                  COUNT(*) FILTER (WHERE is_read = FALSE)     AS unread
+                  {} AS total,
+                  {} AS unread
            FROM mail.messages
            WHERE user_id = $1 AND folder = 'custom' AND is_deleted = FALSE
            GROUP BY imap_folder
            ORDER BY imap_folder"#,
-    )
+        backend.count_bigint("*"),
+        // `COUNT(*) FILTER (WHERE …)` is PostgreSQL-only; COUNT ignores NULLs.
+        backend.count_bigint("CASE WHEN is_read = FALSE THEN 1 END"),
+    ))
     .bind(user.id)
     .fetch_all(&state.db)
     .await
