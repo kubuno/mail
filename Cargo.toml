@@ -153,7 +153,7 @@ kubuno-seccomp     = { git = "https://github.com/kubuno/core", tag = "seccomp-v0
 kubuno-modauth     = { git = "https://github.com/kubuno/core", tag = "modauth-v0.1.0", package = "kubuno-modauth" }
 # Runtime-dispatch database foundation: one binary, three engines (PostgreSQL,
 # MySQL/MariaDB, SQLite), the engine chosen by the administrator at run time.
-kubuno-db          = { git = "https://github.com/kubuno/core", tag = "db-v0.8.0", package = "kubuno-db" }
+kubuno-db          = { git = "https://github.com/kubuno/core", tag = "db-v0.10.0", package = "kubuno-db" }
 
 # Erreurs
 thiserror = "1"
