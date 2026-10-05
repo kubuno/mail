@@ -374,7 +374,7 @@ pub async fn handle(inc: crate::server::Incoming, stream: MailStream) -> Result<
 /// never surfaced — the client has already received its mail. All four actions
 /// are idempotent, so re-running over the same ids changes nothing.
 async fn apply_post_fetch(
-    db: &sqlx::PgPool,
+    db: &kubuno_db::DbPool,
     user_id: Uuid,
     action: PopPostAction,
     retrieved: &[Uuid],

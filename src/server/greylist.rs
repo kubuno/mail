@@ -31,7 +31,7 @@ use std::net::{IpAddr, Ipv6Addr};
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use chrono::{DateTime, Duration, Utc};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::server::config::ServerConfig;
 use crate::server::hygiene;
@@ -166,16 +166,15 @@ pub fn client_network(ip: IpAddr) -> String {
     }
 }
 
-/// What the lookup brings back: the two stored columns, plus the database's own
-/// clock so the decision never depends on the module's.
-type StoredRow = (DateTime<Utc>, Option<DateTime<Utc>>, DateTime<Utc>);
+/// What the lookup brings back: the two stored columns.
+type StoredRow = (DateTime<Utc>, Option<DateTime<Utc>>);
 
 /// Runs the greylist check for one RCPT and records the result.
 ///
 /// Returns [`Verdict::Pass`] whenever anything goes wrong: a filter that cannot
 /// reach its state must not become a mail outage.
 pub async fn check(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     client_ip: IpAddr,
     sender: &str,
@@ -200,10 +199,11 @@ pub async fn check(
     let delay = Duration::seconds(cfg.greylist_delay_secs);
     let window = Duration::hours(cfg.greylist_window_hours);
 
-    // One read. `NOW()` comes back with it so the decision is taken against the
-    // database's clock, never against ours.
-    let row: Option<StoredRow> = match sqlx::query_as(
-        "SELECT first_seen, passed_at, NOW() \
+    // One read. The decision and every timestamp written below use ONE clock,
+    // the module's: SQLite has no server clock to defer to, and mixing the two
+    // would skew the retry window by the clock difference.
+    let row: Option<StoredRow> = match crate::db::query_as(
+        "SELECT first_seen, passed_at \
            FROM mail.greylist \
           WHERE client_net = $1 AND sender = $2 AND recipient = $3",
     )
@@ -220,40 +220,37 @@ pub async fn check(
         }
     };
 
-    let now = row.map(|(_, _, now)| now).unwrap_or_else(Utc::now);
-    let entry = row.map(|(first_seen, passed_at, _)| Entry { first_seen, passed_at });
+    let now = Utc::now();
+    let entry = row.map(|(first_seen, passed_at)| Entry { first_seen, passed_at });
     let outcome = decide(now, entry, delay, window);
 
     // The write matching the decision. A concurrent session on the SAME triplet
     // can race us here; the worst it costs is one extra deferral, which is the
     // benign side of the trade.
-    let write = match outcome {
-        Outcome::FirstContact => sqlx::query(
-            "INSERT INTO mail.greylist (client_net, sender, recipient) VALUES ($1, $2, $3) \
-             ON CONFLICT (client_net, sender, recipient) DO NOTHING",
+    let backend = db.backend();
+    let write_sql = match outcome {
+        Outcome::FirstContact => format!(
+            "INSERT {}INTO mail.greylist (client_net, sender, recipient, first_seen, last_seen) \
+             VALUES ($1, $2, $3, $4, $4){}",
+            backend.insert_ignore_prefix(),
+            backend.on_conflict_do_nothing(&["client_net", "sender", "recipient"]),
         ),
-        Outcome::TooSoon => sqlx::query(
-            "UPDATE mail.greylist SET last_seen = NOW() \
-              WHERE client_net = $1 AND sender = $2 AND recipient = $3",
-        ),
-        Outcome::Expired => sqlx::query(
-            "UPDATE mail.greylist SET first_seen = NOW(), last_seen = NOW(), passed_at = NULL \
-              WHERE client_net = $1 AND sender = $2 AND recipient = $3",
-        ),
-        Outcome::Promote => sqlx::query(
-            "UPDATE mail.greylist SET passed_at = NOW(), last_seen = NOW() \
-              WHERE client_net = $1 AND sender = $2 AND recipient = $3",
-        ),
-        Outcome::Trusted => sqlx::query(
-            "UPDATE mail.greylist SET last_seen = NOW() \
-              WHERE client_net = $1 AND sender = $2 AND recipient = $3",
-        ),
+        Outcome::TooSoon | Outcome::Trusted => "UPDATE mail.greylist SET last_seen = $4 \
+              WHERE client_net = $1 AND sender = $2 AND recipient = $3"
+            .to_string(),
+        Outcome::Expired => "UPDATE mail.greylist SET first_seen = $4, last_seen = $4, passed_at = NULL \
+              WHERE client_net = $1 AND sender = $2 AND recipient = $3"
+            .to_string(),
+        Outcome::Promote => "UPDATE mail.greylist SET passed_at = $4, last_seen = $4 \
+              WHERE client_net = $1 AND sender = $2 AND recipient = $3"
+            .to_string(),
     };
 
-    if let Err(e) = write
+    if let Err(e) = crate::db::query(write_sql)
         .bind(&network)
         .bind(&sender)
         .bind(&recipient)
+        .bind(now)
         .execute(db)
         .await
     {
@@ -284,7 +281,7 @@ pub async fn check(
 ///
 /// The listener has no scheduler of its own, so the trigger is the traffic
 /// itself; the compare-and-swap makes sure only one caller wins the slot.
-fn maybe_purge(db: &PgPool, window: Duration) {
+fn maybe_purge(db: &DbPool, window: Duration) {
     let now = Utc::now().timestamp();
     let last = LAST_PURGE.load(Ordering::Relaxed);
     if now - last < PURGE_EVERY_SECS {
@@ -301,19 +298,23 @@ fn maybe_purge(db: &PgPool, window: Duration) {
     let db = db.clone();
     let probation_secs = window.num_seconds().max(1);
     tokio::spawn(async move {
-        match sqlx::query_scalar::<_, i32>("SELECT mail.purge_greylist($1, $2)")
-            .bind(sqlx::postgres::types::PgInterval {
-                months: 0,
-                days: 0,
-                microseconds: probation_secs.saturating_mul(1_000_000),
-            })
-            .bind(sqlx::postgres::types::PgInterval {
-                months: 0,
-                days: TRUST_TTL_DAYS as i32,
-                microseconds: 0,
-            })
-            .fetch_one(&db)
-            .await
+        // The same two lifetimes as PostgreSQL's `mail.purge_greylist()`, as one
+        // portable DELETE with the cutoffs computed here: a row still on
+        // probation past its retry window, and a passed row unused for the
+        // trust TTL. (The PostgreSQL function is left in place, unused.)
+        let now = Utc::now();
+        let probation_cutoff = now - Duration::seconds(probation_secs);
+        let trust_cutoff = now - Duration::days(TRUST_TTL_DAYS);
+        match crate::db::query(
+            "DELETE FROM mail.greylist \
+              WHERE (passed_at IS NULL     AND first_seen < $1) \
+                 OR (passed_at IS NOT NULL AND last_seen  < $2)",
+        )
+        .bind(probation_cutoff)
+        .bind(trust_cutoff)
+        .execute(&db)
+        .await
+        .map(|done| done.rows_affected())
         {
             Ok(removed) if removed > 0 => {
                 tracing::info!(removed, "Greylisting : triplets expirés purgés")

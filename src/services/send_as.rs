@@ -14,7 +14,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 /// Length of a confirmation code — long enough not to be guessable in the resend
@@ -160,8 +160,8 @@ type SecretRow = (String, String, bool, Option<String>, Option<DateTime<Utc>>, D
 
 /// Every send-as identity of `user_id`, newest first. Public columns only — the
 /// code never leaves the database.
-pub async fn list(db: &PgPool, user_id: Uuid) -> Result<Vec<SendAsAddress>> {
-    let rows: Vec<PublicRow> = sqlx::query_as(
+pub async fn list(db: &DbPool, user_id: Uuid) -> Result<Vec<SendAsAddress>> {
+    let rows: Vec<PublicRow> = crate::db::query_as(
         "SELECT id, email, display_name, verified, treat_as_alias, created_at
          FROM mail.send_as_addresses
          WHERE user_id = $1
@@ -175,8 +175,8 @@ pub async fn list(db: &PgPool, user_id: Uuid) -> Result<Vec<SendAsAddress>> {
 }
 
 /// Does this user already have this address (case-insensitive)?
-pub async fn exists(db: &PgPool, user_id: Uuid, email: &str) -> Result<bool> {
-    let exists: bool = sqlx::query_scalar(
+pub async fn exists(db: &DbPool, user_id: Uuid, email: &str) -> Result<bool> {
+    let exists: bool = crate::db::query_scalar(
         "SELECT EXISTS(
              SELECT 1 FROM mail.send_as_addresses
              WHERE user_id = $1 AND lower(email) = lower($2)
@@ -193,37 +193,52 @@ pub async fn exists(db: &PgPool, user_id: Uuid, email: &str) -> Result<bool> {
 /// Inserts a new (unverified) identity with its pending code, returning the
 /// public row.
 pub async fn insert(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     email: &str,
     display_name: &str,
     code: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<SendAsAddress> {
-    let row: PublicRow = sqlx::query_as(
+    // The id is generated here and the row read back by it: MySQL has neither a
+    // UUID default nor RETURNING.
+    let id = kubuno_db::new_id();
+    crate::db::query(
         "INSERT INTO mail.send_as_addresses
-             (user_id, email, display_name, verified, verification_code, verification_expires_at)
-         VALUES ($1, $2, $3, FALSE, $4, $5)
-         RETURNING id, email, display_name, verified, treat_as_alias, created_at",
+             (id, user_id, email, display_name, verified, verification_code, verification_expires_at)
+         VALUES ($1, $2, $3, $4, FALSE, $5, $6)",
     )
+    .bind(id)
     .bind(user_id)
     .bind(email)
     .bind(display_name)
     .bind(code)
     .bind(expires_at)
-    .fetch_one(db)
+    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Insertion d'une adresse d'envoi échouée");
         e
     })
     .context("Insertion d'une adresse d'envoi")?;
+    let row: PublicRow = crate::db::query_as(
+        "SELECT id, email, display_name, verified, treat_as_alias, created_at
+         FROM mail.send_as_addresses WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Relecture d'une adresse d'envoi échouée");
+        e
+    })
+    .context("Relecture d'une adresse d'envoi")?;
     Ok(to_public(row))
 }
 
 /// Reads a single identity's verification state, scoped to its owner.
-pub async fn load_secret(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<Option<SecretState>> {
-    let row: Option<SecretRow> = sqlx::query_as(
+pub async fn load_secret(db: &DbPool, user_id: Uuid, id: Uuid) -> Result<Option<SecretState>> {
+    let row: Option<SecretRow> = crate::db::query_as(
         "SELECT email, display_name, verified, verification_code, verification_expires_at, updated_at
          FROM mail.send_as_addresses
          WHERE id = $1 AND user_id = $2",
@@ -247,13 +262,13 @@ pub async fn load_secret(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<Option<
 /// Replaces the pending code and its expiry for a resend. The `updated_at`
 /// trigger bumps the resend clock. Returns the address on success.
 pub async fn regenerate_code(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     id: Uuid,
     code: &str,
     expires_at: DateTime<Utc>,
 ) -> Result<()> {
-    sqlx::query(
+    crate::db::query(
         "UPDATE mail.send_as_addresses
          SET verification_code = $3, verification_expires_at = $4
          WHERE id = $1 AND user_id = $2",
@@ -273,8 +288,8 @@ pub async fn regenerate_code(
 }
 
 /// Marks an identity verified and clears its now-spent code.
-pub async fn mark_verified(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<()> {
-    sqlx::query(
+pub async fn mark_verified(db: &DbPool, user_id: Uuid, id: Uuid) -> Result<()> {
+    crate::db::query(
         "UPDATE mail.send_as_addresses
          SET verified = TRUE, verification_code = NULL, verification_expires_at = NULL
          WHERE id = $1 AND user_id = $2",
@@ -292,8 +307,8 @@ pub async fn mark_verified(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<()> {
 }
 
 /// Deletes an identity; returns how many rows went (0 = not this user's).
-pub async fn delete(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<u64> {
-    let res = sqlx::query(
+pub async fn delete(db: &DbPool, user_id: Uuid, id: Uuid) -> Result<u64> {
+    let res = crate::db::query(
         "DELETE FROM mail.send_as_addresses WHERE id = $1 AND user_id = $2",
     )
     .bind(id)

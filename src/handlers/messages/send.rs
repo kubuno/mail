@@ -63,20 +63,26 @@ pub async fn send_message(
 
     if let Some(key) = &key {
         // Lazy TTL purge (~24 h) so the table cannot grow without bound.
-        let _ = sqlx::query(
-            "DELETE FROM mail.send_idempotency WHERE created_at < NOW() - INTERVAL '24 hours'",
+        let _ = crate::db::query(
+            "DELETE FROM mail.send_idempotency WHERE created_at < $1",
         )
+        .bind(chrono::Utc::now() - chrono::Duration::hours(24))
         .execute(&state.db)
         .await;
 
         // Claim the key. ON CONFLICT DO NOTHING makes two concurrent requests
         // race for a single winner: exactly one inserts the row and sends.
-        let claimed = sqlx::query(
-            "INSERT INTO mail.send_idempotency (user_id, key) VALUES ($1, $2) \
-             ON CONFLICT (user_id, key) DO NOTHING",
-        )
+        // `key` is a reserved word on MySQL: always quoted (the MySQL pool runs
+        // with ANSI_QUOTES, and "key" is standard on PostgreSQL/SQLite).
+        let backend = state.db.backend();
+        let claimed = crate::db::query(format!(
+            "INSERT {}INTO mail.send_idempotency (user_id, \"key\", created_at) VALUES ($1, $2, $3){}",
+            backend.insert_ignore_prefix(),
+            backend.on_conflict_do_nothing(&["user_id", "\"key\""]),
+        ))
         .bind(user.id)
         .bind(key)
+        .bind(chrono::Utc::now())
         .execute(&state.db)
         .await?
         .rows_affected()
@@ -87,8 +93,8 @@ pub async fn send_message(
             // the first send is still in flight (no response yet) — refuse,
             // rather than risk a second delivery.
             let stored: Option<serde_json::Value> =
-                sqlx::query_scalar::<_, Option<serde_json::Value>>(
-                    "SELECT response_json FROM mail.send_idempotency WHERE user_id = $1 AND key = $2",
+                crate::db::query_scalar::<Option<serde_json::Value>>(
+                    "SELECT response_json FROM mail.send_idempotency WHERE user_id = $1 AND \"key\" = $2",
                 )
                 .bind(user.id)
                 .bind(key)
@@ -114,8 +120,8 @@ pub async fn send_message(
         match &result {
             // Success → memorise the response so a replay returns it verbatim.
             Ok(response) => {
-                if let Err(e) = sqlx::query(
-                    "UPDATE mail.send_idempotency SET response_json = $3 WHERE user_id = $1 AND key = $2",
+                if let Err(e) = crate::db::query(
+                    "UPDATE mail.send_idempotency SET response_json = $3 WHERE user_id = $1 AND \"key\" = $2",
                 )
                 .bind(user.id)
                 .bind(key)
@@ -129,7 +135,7 @@ pub async fn send_message(
             // Failure → drop the claim so an honest retry can proceed.
             Err(_) => {
                 let _ =
-                    sqlx::query("DELETE FROM mail.send_idempotency WHERE user_id = $1 AND key = $2")
+                    crate::db::query("DELETE FROM mail.send_idempotency WHERE user_id = $1 AND \"key\" = $2")
                         .bind(user.id)
                         .bind(key)
                         .execute(&state.db)
@@ -153,10 +159,10 @@ pub(crate) async fn send_message_inner(
     // Envoi PROGRAMMÉ : on stocke comme brouillon planifié ; le worker scheduler
     // l'enverra quand l'heure sera venue. (Voir workers::scheduler_worker.)
     if let Some(when) = dto.scheduled_at {
-        sqlx::query(
+        crate::db::query(
             r#"INSERT INTO mail.drafts
                (id, account_id, user_id, to_addresses, cc_addresses, bcc_addresses, subject, body_html, reply_to_id, scheduled_at)
-               VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+               VALUES ($10, $1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
         )
         .bind(dto.account_id)
         .bind(user_id)
@@ -167,16 +173,17 @@ pub(crate) async fn send_message_inner(
         .bind(ammonia::clean(&dto.body_html))
         .bind(dto.reply_to_id)
         .bind(when)
+        .bind(kubuno_db::new_id())
         .execute(&state.db)
         .await?;
         if let Some(draft_id) = dto.draft_id {
-            let _ = sqlx::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")
+            let _ = crate::db::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")
                 .bind(draft_id).bind(user_id).execute(&state.db).await;
         }
         return Ok(serde_json::json!({ "message": "Envoi programmé", "scheduled_at": when }));
     }
 
-    let account = sqlx::query_as::<_, EmailAccount>(
+    let account = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
@@ -226,7 +233,7 @@ pub(crate) async fn send_message_inner(
             .map_err(|e| MailError::Smtp(e.to_string()))?;
             (token, true)
         } else {
-            let (smtp_pass_enc, smtp_nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+            let (smtp_pass_enc, smtp_nonce): (Vec<u8>, Vec<u8>) = crate::db::query_as(
                 "SELECT smtp_password, smtp_password_nonce FROM mail.accounts WHERE id = $1"
             )
             .bind(account.id)
@@ -273,7 +280,7 @@ pub(crate) async fn send_message_inner(
     }
 
     if let Some(draft_id) = dto.draft_id {
-        let _ = sqlx::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")
+        let _ = crate::db::query("DELETE FROM mail.drafts WHERE id = $1 AND user_id = $2")
             .bind(draft_id)
             .bind(user_id)
             .execute(&state.db)
@@ -300,35 +307,43 @@ pub(crate) async fn send_message_inner(
 /// error. Best-effort: a labelling failure only gets logged — the mail already
 /// left. Uses `mail.thread_labels`, the same link table every other labelling
 /// path writes to (handlers::labels, filters, sync).
-async fn apply_sent_labels(db: &sqlx::PgPool, user_id: Uuid, thread_id: Uuid, requested: &[Uuid]) {
+async fn apply_sent_labels(db: &kubuno_db::DbPool, user_id: Uuid, thread_id: Uuid, requested: &[Uuid]) {
     if requested.is_empty() {
         return;
     }
     // Which of the requested ids does this user own? Ownership is enforced here.
-    let owned: Vec<Uuid> = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM mail.labels WHERE id = ANY($1) AND user_id = $2",
-    )
-    .bind(requested)
-    .bind(user_id)
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    let mut q = crate::db::query_scalar::<Uuid>(format!(
+        "SELECT id FROM mail.labels WHERE id IN ({}) AND user_id = ${}",
+        crate::db::in_list(1, requested.len()),
+        requested.len() + 1,
+    ));
+    for id in requested {
+        q = q.bind(*id);
+    }
+    let owned: Vec<Uuid> = q.bind(user_id).fetch_all(db).await.unwrap_or_default();
 
     let to_apply = retain_owned_labels(requested, &owned);
     if to_apply.is_empty() {
         return;
     }
 
-    if let Err(e) = sqlx::query(
-        "INSERT INTO mail.thread_labels (thread_id, label_id) \
-         SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
-    )
-    .bind(thread_id)
-    .bind(&to_apply)
-    .execute(db)
-    .await
-    {
-        tracing::error!(error = %e, %thread_id, "Application des libellés à la copie « envoyés » échouée");
+    // One row per label (no `unnest` outside PostgreSQL); an already-linked
+    // label is skipped.
+    let backend = db.backend();
+    let sql = format!(
+        "INSERT {}INTO mail.thread_labels (thread_id, label_id) VALUES ($1, $2){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["thread_id", "label_id"]),
+    );
+    for label_id in &to_apply {
+        if let Err(e) = crate::db::query(&sql)
+            .bind(thread_id)
+            .bind(*label_id)
+            .execute(db)
+            .await
+        {
+            tracing::error!(error = %e, %thread_id, "Application des libellés à la copie « envoyés » échouée");
+        }
     }
 }
 

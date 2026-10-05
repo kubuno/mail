@@ -36,7 +36,8 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use lettre::message::header::{Header, HeaderName, HeaderValue};
 use lettre::message::{header::ContentType, Mailbox, Message, MultiPart, SinglePart};
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::server::config::ServerConfig;
@@ -65,9 +66,9 @@ pub struct ResponderConfig {
 type ResponderRow = (bool, Option<NaiveDate>, Option<NaiveDate>, String, String, bool);
 
 /// Reads a user's responder, or `None` when they never configured one.
-pub async fn load(db: &PgPool, user_id: Uuid) -> Result<Option<ResponderConfig>> {
+pub async fn load(db: &DbPool, user_id: Uuid) -> Result<Option<ResponderConfig>> {
     let row: Option<ResponderRow> =
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT enabled, start_date, end_date, subject, message_html, contacts_only
              FROM mail.vacation_responders WHERE user_id = $1",
         )
@@ -84,7 +85,7 @@ pub async fn load(db: &PgPool, user_id: Uuid) -> Result<Option<ResponderConfig>>
 /// Inserts or replaces a user's responder configuration.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     enabled: bool,
     start_date: Option<NaiveDate>,
@@ -93,19 +94,24 @@ pub async fn upsert(
     message_html: &str,
     contacts_only: bool,
 ) -> Result<()> {
-    sqlx::query(
+    let upsert = db.backend().upsert(
+        "mail.vacation_responders",
+        &["user_id"],
+        &[
+            Assign::Incoming("enabled"),
+            Assign::Incoming("start_date"),
+            Assign::Incoming("end_date"),
+            Assign::Incoming("subject"),
+            Assign::Incoming("message_html"),
+            Assign::Incoming("contacts_only"),
+            Assign::Incoming("updated_at"),
+        ],
+    );
+    crate::db::query(format!(
         "INSERT INTO mail.vacation_responders
             (user_id, enabled, start_date, end_date, subject, message_html, contacts_only, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET
-            enabled = EXCLUDED.enabled,
-            start_date = EXCLUDED.start_date,
-            end_date = EXCLUDED.end_date,
-            subject = EXCLUDED.subject,
-            message_html = EXCLUDED.message_html,
-            contacts_only = EXCLUDED.contacts_only,
-            updated_at = NOW()",
-    )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8){upsert}"
+    ))
     .bind(user_id)
     .bind(enabled)
     .bind(start_date)
@@ -113,6 +119,7 @@ pub async fn upsert(
     .bind(subject)
     .bind(message_html)
     .bind(contacts_only)
+    .bind(Utc::now())
     .execute(db)
     .await
     .map_err(|e| {
@@ -304,7 +311,7 @@ pub struct Incoming<'a> {
 /// swallowed rather than propagated.
 #[allow(clippy::too_many_arguments)]
 pub async fn maybe_autorespond(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     attachments_dir: &str,
     recipient_user_id: Uuid,
@@ -425,7 +432,7 @@ fn normalize_reply_target(envelope_from: &str, from_email: &str) -> String {
 /// delivery off cannot leave, and is not recorded against the rate-limit.
 #[allow(clippy::too_many_arguments)]
 async fn send_reply(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     attachments_dir: &str,
     from_box: &str,
@@ -573,8 +580,8 @@ fn ensure_brackets(id: &str) -> String {
 // ── Database side-lookups ───────────────────────────────────────────────────
 
 /// The canonical address of the local account that received the message.
-async fn mailbox_address(db: &PgPool, account_id: Uuid) -> Option<String> {
-    match sqlx::query_scalar::<_, String>(
+async fn mailbox_address(db: &DbPool, account_id: Uuid) -> Option<String> {
+    match crate::db::query_scalar::<String>(
         "SELECT email_address FROM mail.accounts WHERE id = $1",
     )
     .bind(account_id)
@@ -591,12 +598,12 @@ async fn mailbox_address(db: &PgPool, account_id: Uuid) -> Option<String> {
 
 /// Is `email` a correspondent this user already knows? The mail module's notion
 /// of "contacts" is `mail.address_index` (see the module note above).
-async fn is_known_contact(db: &PgPool, user_id: Uuid, email: &str) -> Result<bool> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM mail.address_index WHERE user_id = $1 AND email = LOWER($2))",
+async fn is_known_contact(db: &DbPool, user_id: Uuid, email: &str) -> Result<bool> {
+    let exists: bool = crate::db::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM mail.address_index WHERE user_id = $1 AND email = $2)",
     )
     .bind(user_id)
-    .bind(email)
+    .bind(email.to_lowercase())
     .fetch_one(db)
     .await
     .context("Vérification des contacts du répondeur")?;
@@ -604,12 +611,12 @@ async fn is_known_contact(db: &PgPool, user_id: Uuid, email: &str) -> Result<boo
 }
 
 /// When we last auto-replied to `from_email` on behalf of `user_id`.
-async fn last_reply_at(db: &PgPool, user_id: Uuid, from_email: &str) -> Result<Option<DateTime<Utc>>> {
-    let at: Option<DateTime<Utc>> = sqlx::query_scalar(
-        "SELECT sent_at FROM mail.vacation_sent WHERE user_id = $1 AND from_email = LOWER($2)",
+async fn last_reply_at(db: &DbPool, user_id: Uuid, from_email: &str) -> Result<Option<DateTime<Utc>>> {
+    let at: Option<DateTime<Utc>> = crate::db::query_scalar(
+        "SELECT sent_at FROM mail.vacation_sent WHERE user_id = $1 AND from_email = $2",
     )
     .bind(user_id)
-    .bind(from_email)
+    .bind(from_email.to_lowercase())
     .fetch_optional(db)
     .await
     .context("Lecture du plafond d'envoi du répondeur")?;
@@ -617,14 +624,19 @@ async fn last_reply_at(db: &PgPool, user_id: Uuid, from_email: &str) -> Result<O
 }
 
 /// Records that we just auto-replied to `from_email`, resetting its interval.
-async fn record_reply(db: &PgPool, user_id: Uuid, from_email: &str) -> Result<()> {
-    sqlx::query(
+async fn record_reply(db: &DbPool, user_id: Uuid, from_email: &str) -> Result<()> {
+    let upsert = db.backend().upsert(
+        "mail.vacation_sent",
+        &["user_id", "from_email"],
+        &[Assign::Incoming("sent_at")],
+    );
+    crate::db::query(format!(
         "INSERT INTO mail.vacation_sent (user_id, from_email, sent_at)
-         VALUES ($1, LOWER($2), NOW())
-         ON CONFLICT (user_id, from_email) DO UPDATE SET sent_at = NOW()",
-    )
+         VALUES ($1, $2, $3){upsert}"
+    ))
     .bind(user_id)
-    .bind(from_email)
+    .bind(from_email.to_lowercase())
+    .bind(Utc::now())
     .execute(db)
     .await
     .context("Enregistrement de l'envoi du répondeur")?;

@@ -32,6 +32,9 @@ pub const MAX_FETCH_GROUP_BYTES: usize = 64 * 1024 * 1024;
 type TlsSession   = Session<TlsStream<TcpStream>>;
 type PlainSession = Session<TcpStream>;
 
+// One session per sync run, held for its duration: the size difference between
+// the TLS and plain variants costs nothing worth a heap indirection.
+#[allow(clippy::large_enum_variant)]
 pub enum ImapSession {
     Tls(TlsSession),
     Plain(PlainSession),

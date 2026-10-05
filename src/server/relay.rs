@@ -11,7 +11,7 @@
 //! decrypt the password with the module's `MailCrypto`, and hand the worker a
 //! ready-to-use target — or `None`, meaning "deliver direct-to-MX as before".
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 
 use crate::services::crypto::MailCrypto;
 
@@ -83,8 +83,8 @@ struct RelayRow {
 /// yields a target with an EMPTY password rather than no target: the connection
 /// is still attempted, AUTH then fails, and the message is deferred — visible in
 /// the log, never bounced, and self-heals once the key is fixed.
-pub async fn fetch(db: &PgPool, crypto: Option<&MailCrypto>) -> Option<RelayTarget> {
-    let row: Option<RelayRow> = match sqlx::query_as(
+pub async fn fetch(db: &DbPool, crypto: Option<&MailCrypto>) -> Option<RelayTarget> {
+    let row: Option<RelayRow> = match crate::db::query_as(
         "SELECT enabled, host, port, security, username, password_enc, password_nonce \
          FROM mail.outbound_relay WHERE id = TRUE",
     )

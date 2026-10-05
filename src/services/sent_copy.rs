@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use base64::Engine;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::models::{EmailAccount, SendMailDto};
@@ -17,7 +17,7 @@ use crate::models::{EmailAccount, SendMailDto};
 /// synced messages. Returns the thread id the copy was filed under, so the
 /// caller can attach the composer's labels to it.
 pub async fn store_sent_copy(
-    db: &PgPool,
+    db: &DbPool,
     account: &EmailAccount,
     dto: &SendMailDto,
     body_html: &str,
@@ -64,7 +64,7 @@ pub async fn store_sent_copy(
     let mut reply_thread: Option<Uuid> = None;
     let mut in_reply_to: Option<String> = None;
     if let Some(reply_id) = dto.reply_to_id {
-        if let Some((tid, mid)) = sqlx::query_as::<_, (Uuid, Option<String>)>(
+        if let Some((tid, mid)) = crate::db::query_as::<(Uuid, Option<String>)>(
             "SELECT thread_id, message_id FROM mail.messages WHERE id = $1 AND user_id = $2",
         )
         .bind(reply_id)
@@ -77,13 +77,14 @@ pub async fn store_sent_copy(
         }
     }
 
+    let now = chrono::Utc::now();
     let mut tx = db.begin().await?;
 
     let thread_id: Uuid = if let Some(tid) = reply_thread {
-        sqlx::query(
+        crate::db::query(
             r#"UPDATE mail.threads
                SET message_count   = message_count + 1,
-                   last_message_at = NOW(),
+                   last_message_at = $6,
                    snippet         = $2,
                    has_attachments = has_attachments OR $3,
                    last_sender_name  = $4,
@@ -95,16 +96,17 @@ pub async fn store_sent_copy(
         .bind(has_attachments)
         .bind(&account.name)
         .bind(&account.email_address)
-        .execute(&mut *tx)
+        .bind(now)
+        .execute(&mut tx)
         .await?;
         tid
     } else {
-        sqlx::query_scalar::<_, Uuid>(
+        let tid = kubuno_db::new_id();
+        crate::db::query(
             r#"INSERT INTO mail.threads
-               (account_id, user_id, subject, message_count, unread_count, has_attachments,
+               (id, account_id, user_id, subject, message_count, unread_count, has_attachments,
                 snippet, last_sender_name, last_sender_email, last_message_at)
-               VALUES ($1, $2, $3, 1, 0, $4, $5, $6, $7, NOW())
-               RETURNING id"#,
+               VALUES ($9, $1, $2, $3, 1, 0, $4, $5, $6, $7, $8)"#,
         )
         .bind(account.id)
         .bind(account.user_id)
@@ -113,17 +115,20 @@ pub async fn store_sent_copy(
         .bind(&snippet)
         .bind(&account.name)
         .bind(&account.email_address)
-        .fetch_one(&mut *tx)
-        .await?
+        .bind(now)
+        .bind(tid)
+        .execute(&mut tx)
+        .await?;
+        tid
     };
 
-    sqlx::query(
+    crate::db::query(
         r#"INSERT INTO mail.messages
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
             from_name, from_email, to_addresses, cc_addresses, bcc_addresses,
             subject, body_text, body_html, attachments, is_read, folder, sent_at, received_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULL, 'Sent',
-                   $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE, 'sent', NOW(), NOW())"#,
+           VALUES ($15, $1, $2, $3, $4, $5, NULL, 'Sent',
+                   $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE, 'sent', $16, $16)"#,
     )
     .bind(thread_id)
     .bind(account.id)
@@ -139,7 +144,9 @@ pub async fn store_sent_copy(
     .bind(&body_text)
     .bind(body_html)
     .bind(serde_json::Value::Array(attachments_meta))
-    .execute(&mut *tx)
+    .bind(kubuno_db::new_id())
+    .bind(now)
+    .execute(&mut tx)
     .await?;
 
     tx.commit().await?;

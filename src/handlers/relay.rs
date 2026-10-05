@@ -54,7 +54,7 @@ pub async fn get_relay(
 /// row, but a defensive default keeps the read total on a database that somehow
 /// lost it.
 async fn read_relay(state: &AppState) -> Result<RelayView, MailError> {
-    let view = sqlx::query_as::<_, RelayView>(
+    let view = crate::db::query_as::<RelayView>(
         "SELECT enabled, host, port, security, username, \
                 (password_enc IS NOT NULL AND password_nonce IS NOT NULL) AS has_password \
          FROM mail.outbound_relay WHERE id = TRUE",
@@ -134,7 +134,12 @@ pub async fn put_relay(
     // The singleton is seeded by the migration; ensure it exists all the same so
     // the UPDATE below (which, in the Keep case, never touches the secret
     // columns) always lands on a row.
-    sqlx::query("INSERT INTO mail.outbound_relay (id, enabled) VALUES (TRUE, FALSE) ON CONFLICT (id) DO NOTHING")
+    let backend = state.db.backend();
+    crate::db::query(format!(
+        "INSERT {}INTO mail.outbound_relay (id, enabled) VALUES (TRUE, FALSE){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["id"])
+    ))
         .execute(&state.db)
         .await
         .map_err(|e| {
@@ -146,23 +151,24 @@ pub async fn put_relay(
     // stays a plain UPDATE that leaves the secret alone.
     let mut sql = String::from(
         "UPDATE mail.outbound_relay \
-         SET enabled = $1, host = $2, port = $3, security = $4, username = $5, updated_at = NOW()",
+         SET enabled = $1, host = $2, port = $3, security = $4, username = $5, updated_at = $6",
     );
     match &change {
         PasswordChange::Keep => {}
         PasswordChange::Clear => sql.push_str(", password_enc = NULL, password_nonce = NULL"),
-        PasswordChange::Set(_, _) => sql.push_str(", password_enc = $6, password_nonce = $7"),
+        PasswordChange::Set(_, _) => sql.push_str(", password_enc = $7, password_nonce = $8"),
     }
     sql.push_str(" WHERE id = TRUE");
 
     // Audited: `sql` is assembled from the literals just above — the branch is
     // chosen by `change`, never by caller text — and every value is bound.
-    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql))
+    let mut query = crate::db::query(sqlx::AssertSqlSafe(sql))
         .bind(dto.enabled)
         .bind(&host)
         .bind(port)
         .bind(security.as_str())
-        .bind(&username);
+        .bind(&username)
+        .bind(chrono::Utc::now());
     if let PasswordChange::Set(enc, nonce) = &change {
         query = query.bind(enc).bind(nonce);
     }

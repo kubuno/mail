@@ -45,7 +45,7 @@ pub async fn invite_reply(
         .ok_or_else(|| MailError::Validation("Réponse d'invitation invalide".into()))?;
 
     // Load just what we need: the message's account, subject and structured data.
-    let row = sqlx::query_as::<_, (Uuid, String, Option<serde_json::Value>)>(
+    let row = crate::db::query_as::<(Uuid, String, Option<serde_json::Value>)>(
         "SELECT account_id, subject, structured_data FROM mail.messages \
          WHERE id = $1 AND user_id = $2",
     )
@@ -78,7 +78,7 @@ pub async fn invite_reply(
 
     // Always remember the choice, even when no organizer address is available to
     // reply to (some invites omit a usable ORGANIZER mailto).
-    sqlx::query("UPDATE mail.messages SET invite_response = $1 WHERE id = $2 AND user_id = $3")
+    crate::db::query("UPDATE mail.messages SET invite_response = $1 WHERE id = $2 AND user_id = $3")
         .bind(rsvp.as_db())
         .bind(msg_id)
         .bind(user.id)
@@ -90,7 +90,7 @@ pub async fn invite_reply(
     };
 
     // Our own address is the ATTENDEE and the From of the reply.
-    let account = sqlx::query_as::<_, EmailAccount>(
+    let account = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,

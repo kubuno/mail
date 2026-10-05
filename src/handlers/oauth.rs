@@ -92,7 +92,9 @@ fn redirect_uri(state: &AppState, headers: &HeaderMap, provider: Provider) -> St
 }
 
 async fn purge_stale_states(state: &AppState) {
-    let _ = sqlx::query("DELETE FROM mail.oauth_states WHERE created_at < NOW() - INTERVAL '10 minutes'")
+    let cutoff = chrono::Utc::now() - chrono::Duration::minutes(10);
+    let _ = crate::db::query("DELETE FROM mail.oauth_states WHERE created_at < $1")
+        .bind(cutoff)
         .execute(&state.db)
         .await;
 }
@@ -124,7 +126,7 @@ pub async fn start(
     // The exact redirect URI must be reused for the code exchange at callback
     // time (providers reject any mismatch), so it travels with the state.
     let redirect = redirect_uri(&state, &headers, provider);
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO mail.oauth_states (state, user_id, provider, redirect_uri) VALUES ($1, $2, $3, $4)",
     )
     .bind(&csrf)
@@ -210,12 +212,26 @@ pub async fn callback(
     let Some(csrf) = q.state.filter(|s| !s.is_empty()) else {
         return Ok(settings_redirect(provider, "error", Some("state")));
     };
-    let row: Option<(Uuid, String, Option<String>)> = sqlx::query_as(
-        "DELETE FROM mail.oauth_states WHERE state = $1 RETURNING user_id, provider, redirect_uri",
+    // Single use: read the state, then consume it. Only the request whose
+    // DELETE actually removed the row may proceed, so two concurrent callbacks
+    // carrying the same state cannot both succeed (portable stand-in for
+    // `DELETE ... RETURNING`, which MySQL lacks).
+    let mut row: Option<(Uuid, String, Option<String>)> = crate::db::query_as(
+        "SELECT user_id, provider, redirect_uri FROM mail.oauth_states WHERE state = $1",
     )
     .bind(&csrf)
     .fetch_optional(&state.db)
     .await?;
+    if row.is_some() {
+        let consumed = crate::db::query("DELETE FROM mail.oauth_states WHERE state = $1")
+            .bind(&csrf)
+            .execute(&state.db)
+            .await?
+            .rows_affected();
+        if consumed == 0 {
+            row = None;
+        }
+    }
     let (owner, stored_redirect) = match row {
         Some((uid, prov, redirect))
             if prov == provider.as_str() && user.as_ref().is_none_or(|u| u.id == uid) =>
@@ -285,18 +301,18 @@ async fn upsert_oauth_account(
 
     let mut tx = state.db.begin().await?;
 
-    let existing: Option<Uuid> = sqlx::query_scalar(
+    let existing: Option<Uuid> = crate::db::query_scalar(
         "SELECT id FROM mail.accounts WHERE user_id = $1 AND LOWER(email_address) = LOWER($2) LIMIT 1",
     )
     .bind(user_id)
     .bind(email)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut tx)
     .await?;
 
     if let Some(account_id) = existing {
         // Conversion to OAuth: keep the synced content (same mailbox), switch
         // the servers to the provider presets and store the tokens.
-        sqlx::query(
+        crate::db::query(
             r#"UPDATE mail.accounts SET
                    auth_kind = $1,
                    imap_host = $2, imap_port = $3, imap_security = $4, imap_username = $5,
@@ -321,22 +337,22 @@ async fn upsert_oauth_account(
         .bind(access_nonce.as_slice())
         .bind(tokens.expires_at)
         .bind(account_id)
-        .execute(&mut *tx)
+        .execute(&mut tx)
         .await?;
     } else {
         // Fresh account. The NOT NULL password columns hold an encrypted empty
         // string — never used for oauth_* auth kinds.
         let (empty_enc, empty_nonce)   = crypto.encrypt("")?;
         let (empty_enc2, empty_nonce2) = crypto.encrypt("")?;
-        let has_accounts: bool = sqlx::query_scalar(
+        let has_accounts: bool = crate::db::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM mail.accounts WHERE user_id = $1)",
         )
         .bind(user_id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut tx)
         .await?;
 
         let id = Uuid::new_v4();
-        sqlx::query(
+        crate::db::query(
             r#"INSERT INTO mail.accounts
                (id, user_id, name, email_address, incoming_protocol,
                 imap_host, imap_port, imap_security, imap_username, imap_password, imap_password_nonce,
@@ -368,7 +384,7 @@ async fn upsert_oauth_account(
         .bind(access_enc.as_slice())
         .bind(access_nonce.as_slice())
         .bind(tokens.expires_at)
-        .execute(&mut *tx)
+        .execute(&mut tx)
         .await?;
 
         // Same system labels as password-account creation.
@@ -379,14 +395,15 @@ async fn upsert_oauth_account(
             ("Spam",               "Junk"),
             ("Corbeille",          "Trash"),
         ] {
-            sqlx::query(
-                "INSERT INTO mail.labels (account_id, user_id, name, imap_folder, is_system) VALUES ($1,$2,$3,$4,TRUE)",
+            crate::db::query(
+                "INSERT INTO mail.labels (id, account_id, user_id, name, imap_folder, is_system) VALUES ($1,$2,$3,$4,$5,TRUE)",
             )
+            .bind(kubuno_db::new_id())
             .bind(id)
             .bind(user_id)
             .bind(name)
             .bind(folder)
-            .execute(&mut *tx)
+            .execute(&mut tx)
             .await?;
         }
     }

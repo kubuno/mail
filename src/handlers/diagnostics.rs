@@ -43,7 +43,7 @@ pub async fn report(
 
     // Public halves only. The private key is not selected, so it cannot leak
     // through this route by a later careless edit of the struct.
-    let keys = sqlx::query_as::<_, (String, String, String, String, bool)>(
+    let keys = crate::db::query_as::<(String, String, String, String, bool)>(
         "SELECT domain, selector, algorithm, public_key, is_active \
          FROM mail.dkim_keys_all ORDER BY domain, is_active DESC",
     )
@@ -66,7 +66,7 @@ pub async fn report(
     // Whether an outbound relay is active decides the SPF the setup offers: with
     // a smarthost in front, mail leaves from the relay's IP, so `ip4:<own-ip>`
     // would be wrong. Only the flag is read — never the credentials.
-    let relay_enabled = sqlx::query_as::<_, (bool,)>(
+    let relay_enabled = crate::db::query_as::<(bool,)>(
         "SELECT enabled FROM mail.outbound_relay WHERE id = TRUE",
     )
     .fetch_optional(&state.db)

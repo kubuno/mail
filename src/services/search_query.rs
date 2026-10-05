@@ -9,12 +9,12 @@
 //! `deliveredto:`, `category:`, `rfc822msgid:`, negation `-`, `OR` / `{ }`,
 //! exact phrases `" "`, grouping `( )` and exact word `+word`.
 //!
-//! The compiler emits parameterized SQL fragments through sqlx's `QueryBuilder`
+//! The compiler emits parameterized SQL fragments through kubuno-db's `DbQueryBuilder`
 //! (never string interpolation) against the `mail.threads t` / `mail.messages m`
 //! join used by `list_threads`.
 
-use chrono::NaiveDate;
-use sqlx::{Postgres, QueryBuilder};
+use chrono::{Duration, NaiveDate, Utc};
+use kubuno_db::{Backend, DbQueryBuilder};
 use uuid::Uuid;
 
 // ── AST ───────────────────────────────────────────────────────────────────────
@@ -448,13 +448,21 @@ fn node_has_in(n: &Node) -> bool {
 }
 
 // ── SQL compiler ──────────────────────────────────────────────────────────────
+//
+// Every fragment is spelled for the builder's engine (`qb.backend()`); every
+// user value is a bind. PostgreSQL keeps its original spelling (`unaccent`,
+// `ILIKE`, POSIX regexes, `jsonb_array_elements`); MySQL/MariaDB and SQLite get
+// the closest faithful equivalent, noted where it is weaker.
 
-/// Escapes SQL LIKE wildcards and wraps in `%…%` for a "contains" match.
+/// Escapes SQL LIKE wildcards and wraps in `%…%` for a "contains" match. The
+/// escape character is the backslash (the default on PostgreSQL and MySQL;
+/// SQLite is told so explicitly, see [`push_ci_like`]).
 fn like(term: &str) -> String {
     format!("%{}%", term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"))
 }
 
-/// Escapes a literal for safe inclusion inside a bound POSIX regex.
+/// Escapes a literal for safe inclusion inside a bound regex (POSIX on
+/// PostgreSQL, ICU on MySQL, PCRE on MariaDB — the same metacharacters).
 fn regex_escape(term: &str) -> String {
     let mut out = String::with_capacity(term.len() * 2);
     for c in term.chars() {
@@ -468,7 +476,7 @@ fn regex_escape(term: &str) -> String {
 
 /// Pushes the WHERE fragment for `node` onto `qb`. The caller is responsible
 /// for the surrounding `AND`. `user_id` feeds the `from:me` / `to:me` subquery.
-pub fn push_sql(qb: &mut QueryBuilder<Postgres>, node: &Node, user_id: Uuid) {
+pub fn push_sql(qb: &mut DbQueryBuilder, node: &Node, user_id: Uuid) {
     match node {
         Node::And(items) => {
             qb.push("(");
@@ -498,31 +506,73 @@ pub fn push_sql(qb: &mut QueryBuilder<Postgres>, node: &Node, user_id: Uuid) {
     }
 }
 
-/// `m.<col> ILIKE unaccent($term)` — accent- and case-insensitive contains.
+/// Accent- and case-insensitive match of `col` against the bound `pattern`
+/// (see `crate::db::ci_like` for what each engine folds).
 ///
-/// `col` lands in the SQL text, so it is `&'static str`: only a literal written
-/// here can ever be a column expression, while the searched term is bound.
-fn push_ilike(qb: &mut QueryBuilder<Postgres>, col: &'static str, term: &str) {
-    qb.push("unaccent(")
-        .push(col)
-        .push(") ILIKE unaccent(")
-        .push_bind(like(term))
-        .push(")");
+/// `col` lands in the SQL text, so callers only ever pass a literal written in
+/// this file; the searched value is always bound.
+fn push_ci_like(qb: &mut DbQueryBuilder, col: &str, pattern: String) {
+    let backend = qb.backend();
+    let n = qb.bind_only(pattern);
+    qb.push(crate::db::ci_like(backend, col, n));
+    if backend == Backend::Sqlite {
+        // SQLite's LIKE has no default escape character.
+        qb.push(" ESCAPE '\\'");
+    }
+}
+
+/// `m.<col> contains term`, accent- and case-insensitive.
+fn push_ilike(qb: &mut DbQueryBuilder, col: &str, term: &str) {
+    push_ci_like(qb, col, like(term));
+}
+
+/// `(col LIKE p1 OR col LIKE p2 …)`, case-insensitive. Used for the fixed
+/// pattern sets that replace PostgreSQL regexes; the patterns are constants of
+/// this file, still bound rather than spliced.
+fn push_any_like(qb: &mut DbQueryBuilder, col: &str, patterns: &[&'static str]) {
+    let backend = qb.backend();
+    qb.push("(");
+    for (i, p) in patterns.iter().enumerate() {
+        if i > 0 {
+            qb.push(" OR ");
+        }
+        let n = qb.bind_only(*p);
+        qb.push(crate::db::ilike(backend, col, n));
+    }
+    qb.push(")");
+}
+
+/// A JSON address column (`[{name, email}]`) as searchable text.
+fn json_text(backend: Backend, col: &'static str) -> String {
+    match backend {
+        Backend::Postgres => format!("{col}::text"),
+        Backend::MySql => format!("CAST({col} AS CHAR)"),
+        Backend::Sqlite => col.to_string(),
+    }
 }
 
 /// Subquery matching any of the user's own account addresses (`from:me`).
 ///
-/// `col_expr` is spliced into the SQL text, hence `&'static str`: the compiler
-/// refuses anything but a literal written here.
-fn push_me_subquery(qb: &mut QueryBuilder<Postgres>, col_expr: &'static str, user_id: Uuid) {
+/// `col_expr` is spliced into the SQL text: only literals written here.
+fn push_me_subquery(qb: &mut DbQueryBuilder, col_expr: &str, user_id: Uuid) {
+    let cond = match qb.backend() {
+        Backend::Postgres => format!("{col_expr} ILIKE '%' || acc.email_address || '%'"),
+        // An explicit collation makes the comparison case-insensitive whatever
+        // the operand's own (binary) collation is.
+        Backend::MySql => format!(
+            "{col_expr} COLLATE utf8mb4_unicode_ci LIKE CONCAT('%', acc.email_address, '%')"
+        ),
+        Backend::Sqlite => format!("{col_expr} LIKE '%' || acc.email_address || '%'"),
+    };
     qb.push("EXISTS (SELECT 1 FROM mail.accounts acc WHERE acc.user_id = ")
         .push_bind(user_id)
         .push(" AND ")
-        .push(col_expr)
-        .push(" ILIKE '%' || acc.email_address || '%')");
+        .push(cond)
+        .push(")");
 }
 
-fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
+fn push_crit(qb: &mut DbQueryBuilder, c: &Crit, user_id: Uuid) {
+    let backend = qb.backend();
     match c {
         Crit::Noop => {
             qb.push("TRUE");
@@ -540,10 +590,30 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
         }
         Crit::ExactWord(w) => {
             // Word-boundary, case-insensitive, accent-sensitive (Gmail's `+`).
-            let pat = format!("\\m{}\\M", regex_escape(w));
-            qb.push("(m.subject ~* ").push_bind(pat.clone());
-            qb.push(" OR COALESCE(m.body_text,'') ~* ").push_bind(pat);
-            qb.push(")");
+            match backend {
+                Backend::Postgres => {
+                    let pat = format!("\\m{}\\M", regex_escape(w));
+                    qb.push("(m.subject ~* ").push_bind(pat.clone());
+                    qb.push(" OR COALESCE(m.body_text,'') ~* ").push_bind(pat);
+                    qb.push(")");
+                }
+                Backend::MySql => {
+                    // ICU (MySQL) and PCRE (MariaDB) both read `(?i)` and `\b`.
+                    let pat = format!("(?i)\\b{}\\b", regex_escape(w));
+                    qb.push("(m.subject REGEXP ").push_bind(pat.clone());
+                    qb.push(" OR COALESCE(m.body_text,'') REGEXP ").push_bind(pat);
+                    qb.push(")");
+                }
+                Backend::Sqlite => {
+                    // SQLite ships no REGEXP implementation: degrade to a
+                    // case-insensitive substring match (no word boundary).
+                    qb.push("(");
+                    push_any_like_owned(qb, "m.subject", like(w));
+                    qb.push(" OR ");
+                    push_any_like_owned(qb, "COALESCE(m.body_text,'')", like(w));
+                    qb.push(")");
+                }
+            }
         }
         Crit::Phrase(p) => {
             qb.push("(");
@@ -563,27 +633,9 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
                 qb.push(")");
             }
         }
-        Crit::To(v) => {
-            if v.eq_ignore_ascii_case("me") {
-                push_me_subquery(qb, "m.to_addresses::text", user_id);
-            } else {
-                push_ilike(qb, "m.to_addresses::text", v);
-            }
-        }
-        Crit::Cc(v) => {
-            if v.eq_ignore_ascii_case("me") {
-                push_me_subquery(qb, "m.cc_addresses::text", user_id);
-            } else {
-                push_ilike(qb, "m.cc_addresses::text", v);
-            }
-        }
-        Crit::Bcc(v) => {
-            if v.eq_ignore_ascii_case("me") {
-                push_me_subquery(qb, "m.bcc_addresses::text", user_id);
-            } else {
-                push_ilike(qb, "m.bcc_addresses::text", v);
-            }
-        }
+        Crit::To(v) => push_address_crit(qb, "m.to_addresses", v, user_id),
+        Crit::Cc(v) => push_address_crit(qb, "m.cc_addresses", v, user_id),
+        Crit::Bcc(v) => push_address_crit(qb, "m.bcc_addresses", v, user_id),
         Crit::Subject(v) => push_ilike(qb, "m.subject", v),
         Crit::In(place) => match place.as_str() {
             "anywhere" | "all" => {
@@ -593,7 +645,7 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
                 qb.push("m.folder = ").push_bind(place.clone());
             }
             "snoozed" => {
-                qb.push("t.snoozed_until > NOW()");
+                qb.push("t.snoozed_until > ").push_bind(Utc::now());
             }
             "starred" => {
                 qb.push("t.is_starred = TRUE");
@@ -628,7 +680,7 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
                 qb.push("t.is_important = FALSE");
             }
             "snoozed" => {
-                qb.push("t.snoozed_until > NOW()");
+                qb.push("t.snoozed_until > ").push_bind(Utc::now());
             }
             "muted" => {
                 qb.push("t.is_muted = TRUE");
@@ -650,15 +702,19 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
             qb.push(
                 "EXISTS (SELECT 1 FROM mail.thread_labels tl \
                  JOIN mail.labels l ON l.id = tl.label_id \
-                 WHERE tl.thread_id = t.id AND (unaccent(l.name) ILIKE unaccent(",
-            )
-            .push_bind(name.clone())
-            .push(") OR unaccent(l.name) ILIKE unaccent(")
-            .push_bind(name.replace(['-', '_'], " "))
-            .push(")))");
+                 WHERE tl.thread_id = t.id AND (",
+            );
+            push_ci_like(qb, "l.name", name.clone());
+            qb.push(" OR ");
+            push_ci_like(qb, "l.name", name.replace(['-', '_'], " "));
+            qb.push("))");
         }
         Crit::HasAttachment => {
-            qb.push("jsonb_array_length(m.attachments) > 0");
+            qb.push(match backend {
+                Backend::Postgres => "jsonb_array_length(m.attachments) > 0",
+                Backend::MySql => "JSON_LENGTH(m.attachments) > 0",
+                Backend::Sqlite => "json_array_length(m.attachments) > 0",
+            });
         }
         Crit::HasUserLabels => {
             qb.push("EXISTS (SELECT 1 FROM mail.thread_labels tl WHERE tl.thread_id = t.id)");
@@ -667,22 +723,42 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
             qb.push("NOT EXISTS (SELECT 1 FROM mail.thread_labels tl WHERE tl.thread_id = t.id)");
         }
         Crit::HasLink(kind) => {
-            let pat = match kind.as_str() {
-                "drive" => r"(drive\.google\.com|/files/|/api/v1/files/)",
-                "document" => r"(docs\.google\.com/document|/office/documents/)",
-                "spreadsheet" => r"(docs\.google\.com/spreadsheets|/office/spreadsheets/)",
-                "presentation" => r"(docs\.google\.com/presentation|/office/presentations/)",
-                _ => r"(youtube\.com/(watch|shorts|embed)|youtu\.be/)",
+            // Literal substrings, equivalent to the former alternation regexes.
+            let pats: &[&'static str] = match kind.as_str() {
+                "drive" => &["%drive.google.com%", "%/files/%", "%/api/v1/files/%"],
+                "document" => &["%docs.google.com/document%", "%/office/documents/%"],
+                "spreadsheet" => &["%docs.google.com/spreadsheets%", "%/office/spreadsheets/%"],
+                "presentation" => &["%docs.google.com/presentation%", "%/office/presentations/%"],
+                _ => &[
+                    "%youtube.com/watch%",
+                    "%youtube.com/shorts%",
+                    "%youtube.com/embed%",
+                    "%youtu.be/%",
+                ],
             };
-            qb.push("COALESCE(m.body_html, m.body_text, '') ~* ").push_bind(pat);
+            push_any_like(qb, "COALESCE(m.body_html, m.body_text, '')", pats);
         }
         Crit::Filename(v) => {
-            qb.push(
-                "EXISTS (SELECT 1 FROM jsonb_array_elements(m.attachments) a \
-                 WHERE unaccent(COALESCE(a->>'name','')) ILIKE unaccent(",
-            )
-            .push_bind(like(v))
-            .push("))");
+            match backend {
+                Backend::Postgres => {
+                    qb.push(
+                        "EXISTS (SELECT 1 FROM jsonb_array_elements(m.attachments) a WHERE ",
+                    );
+                    push_ilike(qb, "COALESCE(a->>'name','')", v);
+                }
+                Backend::MySql => {
+                    qb.push(
+                        "EXISTS (SELECT 1 FROM JSON_TABLE(m.attachments, '$[*]' \
+                         COLUMNS (name VARCHAR(1024) PATH '$.name')) a WHERE ",
+                    );
+                    push_ilike(qb, "CONVERT(COALESCE(a.name,'') USING utf8mb4)", v);
+                }
+                Backend::Sqlite => {
+                    qb.push("EXISTS (SELECT 1 FROM json_each(m.attachments) a WHERE ");
+                    push_ilike(qb, "COALESCE(json_extract(a.value,'$.name'),'')", v);
+                }
+            }
+            qb.push(")");
         }
         Crit::After(d) => {
             qb.push("m.received_at >= ").push_bind(*d);
@@ -691,10 +767,12 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
             qb.push("m.received_at < ").push_bind(*d);
         }
         Crit::OlderThanDays(days) => {
-            qb.push("m.received_at < NOW() - make_interval(days => ").push_bind(*days).push(")");
+            let cutoff = Utc::now() - Duration::days(i64::from(*days));
+            qb.push("m.received_at < ").push_bind(cutoff);
         }
         Crit::NewerThanDays(days) => {
-            qb.push("m.received_at > NOW() - make_interval(days => ").push_bind(*days).push(")");
+            let cutoff = Utc::now() - Duration::days(i64::from(*days));
+            qb.push("m.received_at > ").push_bind(cutoff);
         }
         Crit::LargerBytes(b) => {
             push_size_expr(qb);
@@ -705,68 +783,133 @@ fn push_crit(qb: &mut QueryBuilder<Postgres>, c: &Crit, user_id: Uuid) {
             qb.push(" < ").push_bind(*b);
         }
         Crit::List(v) => {
+            let to = json_text(backend, "m.to_addresses");
             qb.push("(");
             push_ilike(qb, "COALESCE(m.list_unsubscribe,'')", v);
             qb.push(" OR ");
             push_ilike(qb, "m.from_email", v);
             qb.push(" OR ");
-            push_ilike(qb, "m.to_addresses::text", v);
+            push_ilike(qb, &to, v);
             qb.push(")");
         }
         Crit::DeliveredTo(v) => {
+            let to = json_text(backend, "m.to_addresses");
+            let cc = json_text(backend, "m.cc_addresses");
+            let bcc = json_text(backend, "m.bcc_addresses");
             qb.push("(");
-            push_ilike(qb, "m.to_addresses::text", v);
+            push_ilike(qb, &to, v);
             qb.push(" OR ");
-            push_ilike(qb, "m.cc_addresses::text", v);
+            push_ilike(qb, &cc, v);
             qb.push(" OR ");
-            push_ilike(qb, "m.bcc_addresses::text", v);
+            push_ilike(qb, &bcc, v);
             qb.push(")");
         }
         Crit::Category(cat) => push_category(qb, cat),
         Crit::Rfc822MsgId(v) => {
             let clean = v.trim_matches(|c| c == '<' || c == '>').to_string();
-            qb.push("TRIM(BOTH '<>' FROM COALESCE(m.message_id,'')) = ").push_bind(clean);
+            qb.push(match backend {
+                Backend::Postgres => "TRIM(BOTH '<>' FROM COALESCE(m.message_id,'')) = ",
+                // MySQL's TRIM removes a whole substring, not a character set.
+                Backend::MySql => {
+                    "TRIM(BOTH '>' FROM TRIM(BOTH '<' FROM COALESCE(m.message_id,''))) = "
+                }
+                Backend::Sqlite => "trim(COALESCE(m.message_id,''), '<>') = ",
+            })
+            .push_bind(clean);
         }
     }
 }
 
-/// Approximate message size: body HTML + body text + declared attachment sizes.
-fn push_size_expr(qb: &mut QueryBuilder<Postgres>) {
-    qb.push(
-        "(octet_length(COALESCE(m.body_html,'')) + octet_length(COALESCE(m.body_text,'')) \
-         + COALESCE((SELECT SUM(COALESCE((a->>'size')::BIGINT, 0)) \
-                     FROM jsonb_array_elements(m.attachments) a), 0))",
-    );
+/// `to:` / `cc:` / `bcc:` over a JSON address column.
+fn push_address_crit(qb: &mut DbQueryBuilder, col: &'static str, v: &str, user_id: Uuid) {
+    let text = json_text(qb.backend(), col);
+    if v.eq_ignore_ascii_case("me") {
+        push_me_subquery(qb, &text, user_id);
+    } else {
+        push_ilike(qb, &text, v);
+    }
 }
 
-// Same sender-based heuristics as the inbox tabs in the frontend (threadTab).
-const CAT_SOCIAL: &str =
-    r"twitter|facebook|linkedin|instagram|tiktok|youtube|pinterest|snapchat|meta\.com|x\.com";
-const CAT_NOTIF: &str = r"notification|alert|update|security|account|billing";
-const CAT_PROMO: &str =
-    r"no.?reply|newsletter|noreply|promo|marketing|info@|hello@|contact@|deals?@|offers?@";
+/// A single case-insensitive (not accent-folding) LIKE against an owned,
+/// already-escaped pattern — the SQLite fallback for `+word`.
+fn push_any_like_owned(qb: &mut DbQueryBuilder, col: &str, pattern: String) {
+    let backend = qb.backend();
+    let n = qb.bind_only(pattern);
+    qb.push(crate::db::ilike(backend, col, n));
+    if backend == Backend::Sqlite {
+        qb.push(" ESCAPE '\\'");
+    }
+}
 
-fn push_category(qb: &mut QueryBuilder<Postgres>, cat: &str) {
+/// Approximate message size: body HTML + body text + declared attachment sizes.
+fn push_size_expr(qb: &mut DbQueryBuilder) {
+    qb.push(match qb.backend() {
+        Backend::Postgres => {
+            "(octet_length(COALESCE(m.body_html,'')) + octet_length(COALESCE(m.body_text,'')) \
+             + COALESCE((SELECT SUM(COALESCE((a->>'size')::BIGINT, 0)) \
+                         FROM jsonb_array_elements(m.attachments) a), 0))"
+        }
+        Backend::MySql => {
+            "(OCTET_LENGTH(COALESCE(m.body_html,'')) + OCTET_LENGTH(COALESCE(m.body_text,'')) \
+             + COALESCE((SELECT SUM(COALESCE(a.size, 0)) \
+                         FROM JSON_TABLE(m.attachments, '$[*]' \
+                              COLUMNS (size BIGINT PATH '$.size')) a), 0))"
+        }
+        Backend::Sqlite => {
+            "(length(CAST(COALESCE(m.body_html,'') AS BLOB)) \
+             + length(CAST(COALESCE(m.body_text,'') AS BLOB)) \
+             + COALESCE((SELECT SUM(COALESCE(CAST(json_extract(a.value,'$.size') AS INTEGER), 0)) \
+                         FROM json_each(m.attachments) a), 0))"
+        }
+    });
+}
+
+// Same sender-based heuristics as the inbox tabs in the frontend (threadTab),
+// as LIKE patterns equivalent to the original regexes
+//   social: twitter|facebook|linkedin|instagram|tiktok|youtube|pinterest|snapchat|meta\.com|x\.com
+//   notif:  notification|alert|update|security|account|billing
+//   promo:  no.?reply|newsletter|noreply|promo|marketing|info@|hello@|contact@|deals?@|offers?@
+// (`no.?reply` = `noreply` or `no_reply`, `_` being LIKE's one-character wildcard).
+const CAT_SOCIAL: &[&str] = &[
+    "%twitter%", "%facebook%", "%linkedin%", "%instagram%", "%tiktok%", "%youtube%",
+    "%pinterest%", "%snapchat%", "%meta.com%", "%x.com%",
+];
+const CAT_NOTIF: &[&str] =
+    &["%notification%", "%alert%", "%update%", "%security%", "%account%", "%billing%"];
+const CAT_PROMO: &[&str] = &[
+    "%noreply%", "%no_reply%", "%newsletter%", "%promo%", "%marketing%", "%info@%", "%hello@%",
+    "%contact@%", "%deal@%", "%deals@%", "%offer@%", "%offers@%",
+];
+
+fn push_category(qb: &mut DbQueryBuilder, cat: &str) {
     // Classification order mirrors the frontend: social > notifications > promotions.
     match cat {
         "social" | "reseaux" | "réseaux" => {
-            qb.push("m.from_email ~* ").push_bind(CAT_SOCIAL);
+            push_any_like(qb, "m.from_email", CAT_SOCIAL);
         }
         "notifications" | "updates" | "notification" => {
-            qb.push("(m.from_email ~* ").push_bind(CAT_NOTIF);
-            qb.push(" AND m.from_email !~* ").push_bind(CAT_SOCIAL);
+            qb.push("(");
+            push_any_like(qb, "m.from_email", CAT_NOTIF);
+            qb.push(" AND NOT ");
+            push_any_like(qb, "m.from_email", CAT_SOCIAL);
             qb.push(")");
         }
         "promotions" | "promos" | "promotion" => {
-            qb.push("(m.from_email ~* ").push_bind(CAT_PROMO);
-            qb.push(" AND m.from_email !~* ").push_bind(CAT_SOCIAL);
-            qb.push(" AND m.from_email !~* ").push_bind(CAT_NOTIF);
+            qb.push("(");
+            push_any_like(qb, "m.from_email", CAT_PROMO);
+            qb.push(" AND NOT ");
+            push_any_like(qb, "m.from_email", CAT_SOCIAL);
+            qb.push(" AND NOT ");
+            push_any_like(qb, "m.from_email", CAT_NOTIF);
             qb.push(")");
         }
         "primary" | "main" | "principale" => {
-            qb.push("(m.from_email !~* ").push_bind(CAT_SOCIAL);
-            qb.push(" AND m.from_email !~* ").push_bind(CAT_NOTIF);
-            qb.push(" AND m.from_email !~* ").push_bind(CAT_PROMO);
+            qb.push("(NOT ");
+            push_any_like(qb, "m.from_email", CAT_SOCIAL);
+            qb.push(" AND NOT ");
+            push_any_like(qb, "m.from_email", CAT_NOTIF);
+            qb.push(" AND NOT ");
+            push_any_like(qb, "m.from_email", CAT_PROMO);
             qb.push(")");
         }
         _ => {

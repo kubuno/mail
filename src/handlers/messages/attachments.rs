@@ -51,7 +51,7 @@ pub async fn download_attachment(
     headers: HeaderMap,
     Path((msg_id, index)): Path<(Uuid, usize)>,
 ) -> Result<Response<Body>, MailError> {
-    let row = sqlx::query_as::<_, (serde_json::Value,)>(
+    let row = crate::db::query_as::<(serde_json::Value,)>(
         "SELECT attachments FROM mail.messages WHERE id = $1 AND user_id = $2",
     )
     .bind(msg_id)

@@ -17,7 +17,7 @@ use crate::{
 /// for ordinary mail, whose `pgp_raw` is NULL.
 pub async fn decode_pgp_in_place(state: &AppState, user_id: Uuid, msg: &mut EmailMessage) {
     // Preserved raw MIME? Only PGP messages have it; everything else exits here.
-    let raw: Option<Vec<u8>> = sqlx::query_scalar::<_, Option<Vec<u8>>>(
+    let raw: Option<Vec<u8>> = crate::db::query_scalar::<Option<Vec<u8>>>(
         "SELECT pgp_raw FROM mail.messages WHERE id = $1",
     )
     .bind(msg.id)
@@ -38,7 +38,7 @@ pub async fn decode_pgp_in_place(state: &AppState, user_id: Uuid, msg: &mut Emai
 
     // Every one of the reader's secret keys — the message may be encrypted to any
     // of them; decryption tries each until one opens it.
-    let key_rows = sqlx::query_as::<_, (Vec<u8>, Vec<u8>)>(
+    let key_rows = crate::db::query_as::<(Vec<u8>, Vec<u8>)>(
         "SELECT private_key, private_key_nonce FROM mail.pgp_keys WHERE user_id = $1 ORDER BY is_default DESC, created_at",
     )
     .bind(user_id)
@@ -51,7 +51,7 @@ pub async fn decode_pgp_in_place(state: &AppState, user_id: Uuid, msg: &mut Emai
         .collect();
 
     // The sender's public key (for signature verification), by their From address.
-    let sender_public: Option<String> = sqlx::query_scalar(
+    let sender_public: Option<String> = crate::db::query_scalar(
         "SELECT public_key FROM mail.pgp_contacts WHERE user_id = $1 AND lower(email) = lower($2) LIMIT 1",
     )
     .bind(user_id)
@@ -106,7 +106,7 @@ pub(super) async fn resolve_pgp(
     let crypto = MailCrypto::new(&state.settings.mail.encryption_key).map_err(|_| MailError::Crypto)?;
 
     // The sender's own key: prefer one whose address matches the From, then default.
-    let own = sqlx::query_as::<_, (Vec<u8>, Vec<u8>, String)>(
+    let own = crate::db::query_as::<(Vec<u8>, Vec<u8>, String)>(
         r#"SELECT private_key, private_key_nonce, public_key
            FROM mail.pgp_keys WHERE user_id = $1
            ORDER BY (lower(email) = lower($2)) DESC, is_default DESC, created_at
@@ -139,7 +139,7 @@ pub(super) async fn resolve_pgp(
 
         let wkd_http = reqwest::Client::new();
         for email in &recipients {
-            let key: Option<String> = sqlx::query_scalar(
+            let key: Option<String> = crate::db::query_scalar(
                 "SELECT public_key FROM mail.pgp_contacts WHERE user_id = $1 AND lower(email) = lower($2) LIMIT 1",
             )
             .bind(user_id)
@@ -191,19 +191,28 @@ async fn store_discovered_contact(
     fingerprint: &str,
     source: &str,
 ) {
-    let res = sqlx::query(
-        r#"INSERT INTO mail.pgp_contacts (user_id, email, fingerprint, public_key, source)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (user_id, lower(email))
-           DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
-                         public_key  = EXCLUDED.public_key,
-                         source      = EXCLUDED.source"#,
-    )
+    // Keyed on (user_id, lower(email)): PostgreSQL/SQLite name that expression
+    // index as the conflict target; MySQL fires on its unique key over the
+    // lowered-email generated column.
+    let conflict = match state.db.backend() {
+        kubuno_db::Backend::MySql => " ON DUPLICATE KEY UPDATE \
+             fingerprint = VALUES(fingerprint), public_key = VALUES(public_key), \
+             source = VALUES(source)",
+        _ => " ON CONFLICT (user_id, lower(email)) \
+             DO UPDATE SET fingerprint = excluded.fingerprint, \
+                           public_key  = excluded.public_key, \
+                           source      = excluded.source",
+    };
+    let res = crate::db::query(format!(
+        "INSERT INTO mail.pgp_contacts (id, user_id, email, fingerprint, public_key, source)
+           VALUES ($6, $1, $2, $3, $4, $5){conflict}"
+    ))
     .bind(user_id)
     .bind(email.to_lowercase())
     .bind(fingerprint)
     .bind(public_armored)
     .bind(source)
+    .bind(kubuno_db::new_id())
     .execute(&state.db)
     .await;
     if let Err(e) = res {
@@ -222,7 +231,7 @@ pub(crate) async fn sender_autocrypt_key(
     // Query the local key FIRST: the common sender holds none, and this avoids an
     // internal HTTP round-trip (server_config) on every send. Only a sender who
     // actually has a key pays the switch check.
-    let key: String = sqlx::query_scalar(
+    let key: String = crate::db::query_scalar(
         r#"SELECT public_key FROM mail.pgp_keys WHERE user_id = $1
            ORDER BY (lower(email) = lower($2)) DESC, is_default DESC, created_at
            LIMIT 1"#,

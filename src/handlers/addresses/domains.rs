@@ -29,6 +29,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use kubuno_db::dialect::Assign;
 
 use super::{db_error, local_domains, normalize_domain, require_admin, server_config};
 use crate::{
@@ -114,7 +115,7 @@ pub async fn list_domains(
     let cfg = server_config(&state).await?;
     let served = cfg.domains.clone();
 
-    let policies: Vec<PolicyRow> = sqlx::query_as(
+    let policies: Vec<PolicyRow> = crate::db::query_as(
         "SELECT domain, default_quota_bytes, max_mailboxes, comment, created_at, updated_at \
          FROM mail.domain_policies",
     )
@@ -123,25 +124,34 @@ pub async fn list_domains(
     .map_err(db_error("liste des politiques de domaine"))?;
 
     let mailbox_counts: Vec<(String, i64)> =
-        sqlx::query_as("SELECT domain, COUNT(*) FROM mail.mailboxes GROUP BY domain")
+        crate::db::query_as(format!(
+            "SELECT domain, {} FROM mail.mailboxes GROUP BY domain",
+            state.db.backend().count_bigint("*")
+        ))
             .fetch_all(&state.db)
             .await
             .map_err(db_error("comptage des boîtes par domaine"))?;
 
     let alias_counts: Vec<(String, i64)> =
-        sqlx::query_as("SELECT domain, COUNT(*) FROM mail.aliases GROUP BY domain")
+        crate::db::query_as(format!(
+            "SELECT domain, {} FROM mail.aliases GROUP BY domain",
+            state.db.backend().count_bigint("*")
+        ))
             .fetch_all(&state.db)
             .await
             .map_err(db_error("comptage des alias par domaine"))?;
 
     let list_counts: Vec<(String, i64)> =
-        sqlx::query_as("SELECT domain, COUNT(*) FROM mail.mailing_lists GROUP BY domain")
+        crate::db::query_as(format!(
+            "SELECT domain, {} FROM mail.mailing_lists GROUP BY domain",
+            state.db.backend().count_bigint("*")
+        ))
             .fetch_all(&state.db)
             .await
             .map_err(db_error("comptage des listes par domaine"))?;
 
     let catch_alls: Vec<(String, Uuid)> =
-        sqlx::query_as("SELECT domain, id FROM mail.aliases WHERE is_catch_all")
+        crate::db::query_as("SELECT domain, id FROM mail.aliases WHERE is_catch_all")
             .fetch_all(&state.db)
             .await
             .map_err(db_error("attrape-tout par domaine"))?;
@@ -240,15 +250,18 @@ pub async fn upsert_domain_policy(
         ));
     }
 
-    let row: PolicyRow = sqlx::query_as(
-        r#"INSERT INTO mail.domain_policies (domain, default_quota_bytes, max_mailboxes, comment)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (domain) DO UPDATE
-             SET default_quota_bytes = EXCLUDED.default_quota_bytes,
-                 max_mailboxes       = EXCLUDED.max_mailboxes,
-                 comment             = EXCLUDED.comment
-           RETURNING domain, default_quota_bytes, max_mailboxes, comment, created_at, updated_at"#,
-    )
+    let upsert = state.db.backend().upsert(
+        "mail.domain_policies",
+        &["domain"],
+        &[
+            Assign::Incoming("default_quota_bytes"),
+            Assign::Incoming("max_mailboxes"),
+            Assign::Incoming("comment"),
+        ],
+    );
+    crate::db::query(format!(
+        "INSERT INTO mail.domain_policies (domain, default_quota_bytes, max_mailboxes, comment) \n         VALUES ($1, $2, $3, $4){upsert}"
+    ))
     .bind(&domain)
     .bind(quota)
     .bind(max_mailboxes)
@@ -258,9 +271,17 @@ pub async fn upsert_domain_policy(
             .map(str::trim)
             .filter(|s| !s.is_empty()),
     )
-    .fetch_one(&state.db)
+    .execute(&state.db)
     .await
     .map_err(db_error("enregistrement d'une politique de domaine"))?;
+    // Re-read rather than `RETURNING`, which MySQL does not have.
+    let row: PolicyRow = crate::db::query_as(
+        "SELECT domain, default_quota_bytes, max_mailboxes, comment, created_at, updated_at \n         FROM mail.domain_policies WHERE domain = $1",
+    )
+    .bind(&domain)
+    .fetch_one(&state.db)
+    .await
+    .map_err(db_error("relecture d'une politique de domaine"))?;
 
     // Best effort: an unreachable core must not fail a write that is already
     // committed, so the warning is simply omitted rather than invented.
@@ -299,7 +320,7 @@ pub async fn delete_domain_policy(
     require_admin(&user)?;
 
     let domain = normalize_domain(&raw_domain)?;
-    let deleted = sqlx::query("DELETE FROM mail.domain_policies WHERE domain = $1")
+    let deleted = crate::db::query("DELETE FROM mail.domain_policies WHERE domain = $1")
         .bind(&domain)
         .execute(&state.db)
         .await

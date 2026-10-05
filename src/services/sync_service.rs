@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use mail_parser::{HeaderValue, MessageParser, MimeHeaders};
 use serde_json::json;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCrypto, mail_cfg: &MailSettings, core_cfg: &CoreSettings) -> Result<()> {
+pub async fn sync_account(db: &DbPool, account: &EmailAccount, crypto: &MailCrypto, mail_cfg: &MailSettings, core_cfg: &CoreSettings) -> Result<()> {
     // A local account has no external server to poll: the instance itself
     // delivers into it. Attempting an IMAP connection to its empty host would
     // only log errors in a loop. The worker's selection already excludes these;
@@ -29,7 +29,7 @@ pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCryp
         let token = crate::services::oauth::valid_access_token(db, crypto, mail_cfg, account.id).await?;
         imap_service::ImapAuth::Xoauth2(token)
     } else {
-        let (imap_pass_enc, imap_nonce): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        let (imap_pass_enc, imap_nonce): (Vec<u8>, Vec<u8>) = crate::db::query_as(
             "SELECT imap_password, imap_password_nonce FROM mail.accounts WHERE id = $1"
         )
         .bind(account.id)
@@ -92,7 +92,7 @@ pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCryp
                 error = %e,
                 "Sync dossier échoué"
             );
-            let _ = sqlx::query(
+            let _ = crate::db::query(
                 "UPDATE mail.folder_sync SET last_error = $1 WHERE account_id = $2 AND imap_folder = $3",
             )
             .bind(e.to_string())
@@ -105,7 +105,7 @@ pub async fn sync_account(db: &PgPool, account: &EmailAccount, crypto: &MailCryp
 
     imap_service::logout(session).await;
 
-    sqlx::query("UPDATE mail.accounts SET last_sync_at = $1, last_error = NULL WHERE id = $2")
+    crate::db::query("UPDATE mail.accounts SET last_sync_at = $1, last_error = NULL WHERE id = $2")
         .bind(Utc::now())
         .bind(account.id)
         .execute(db)
@@ -142,7 +142,7 @@ fn fallback_mailboxes() -> Vec<imap_service::MailboxInfo> {
 /// any single run holding more than one batch in memory.
 #[allow(clippy::too_many_arguments)]
 async fn sync_folder(
-    db: &PgPool,
+    db: &DbPool,
     account: &EmailAccount,
     session: &mut imap_service::ImapSession,
     mailbox: &imap_service::MailboxInfo,
@@ -163,7 +163,7 @@ async fn sync_folder(
     // are touched — a message the classifier or a filter moved elsewhere keeps
     // where it was put.
     if folder_name != "custom" {
-        match sqlx::query(
+        match crate::db::query(
             "UPDATE mail.messages SET folder = $3 \
              WHERE account_id = $1 AND imap_folder = $2 AND folder = 'custom'",
         )
@@ -182,7 +182,7 @@ async fn sync_folder(
         }
     }
 
-    let state: Option<(Option<i64>, Option<i64>, bool)> = sqlx::query_as(
+    let state: Option<(Option<i64>, Option<i64>, bool)> = crate::db::query_as(
         "SELECT uid_low, uid_high, backfill_done FROM mail.folder_sync \
          WHERE account_id = $1 AND imap_folder = $2",
     )
@@ -270,7 +270,7 @@ async fn sync_folder(
 /// we will never accept would stall the mailbox forever.
 #[allow(clippy::too_many_arguments)]
 async fn store_batch(
-    db: &PgPool,
+    db: &DbPool,
     account: &EmailAccount,
     session: &mut imap_service::ImapSession,
     uids: &[u32],
@@ -325,7 +325,7 @@ async fn store_batch(
 /// survive a run that is cut short.
 #[allow(clippy::too_many_arguments)]
 async fn save_folder_state(
-    db: &PgPool,
+    db: &DbPool,
     account_id: Uuid,
     imap_folder: &str,
     folder: &str,
@@ -334,19 +334,36 @@ async fn save_folder_state(
     backfill_done: bool,
     stored: usize,
 ) {
-    if let Err(e) = sqlx::query(
-        r#"INSERT INTO mail.folder_sync
+    use kubuno_db::dialect::Assign;
+    // The cursors only ever widen: the low bound moves down, the high bound up.
+    // Spelled with CASE rather than LEAST/GREATEST, whose NULL handling differs
+    // (PostgreSQL ignores a NULL argument, MySQL and SQLite return NULL).
+    let upsert = db.backend().upsert(
+        "mail.folder_sync",
+        &["account_id", "imap_folder"],
+        &[
+            Assign::Incoming("folder"),
+            Assign::Expr {
+                col: "uid_low",
+                expr: "CASE WHEN {new} IS NULL THEN {cur} \
+                            WHEN {cur} IS NULL OR {new} < {cur} THEN {new} ELSE {cur} END",
+            },
+            Assign::Expr {
+                col: "uid_high",
+                expr: "CASE WHEN {new} IS NULL THEN {cur} \
+                            WHEN {cur} IS NULL OR {new} > {cur} THEN {new} ELSE {cur} END",
+            },
+            Assign::Incoming("backfill_done"),
+            Assign::Expr { col: "messages_synced", expr: "{cur} + {new}" },
+            Assign::Expr { col: "last_error", expr: "NULL" },
+            Assign::Incoming("last_sync_at"),
+        ],
+    );
+    if let Err(e) = crate::db::query(format!(
+        "INSERT INTO mail.folder_sync
              (account_id, imap_folder, folder, uid_low, uid_high, backfill_done, messages_synced, last_error, last_sync_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,NOW())
-           ON CONFLICT (account_id, imap_folder) DO UPDATE SET
-             folder          = EXCLUDED.folder,
-             uid_low         = LEAST(COALESCE(mail.folder_sync.uid_low, EXCLUDED.uid_low), EXCLUDED.uid_low),
-             uid_high        = GREATEST(COALESCE(mail.folder_sync.uid_high, EXCLUDED.uid_high), EXCLUDED.uid_high),
-             backfill_done   = EXCLUDED.backfill_done,
-             messages_synced = mail.folder_sync.messages_synced + EXCLUDED.messages_synced,
-             last_error      = NULL,
-             last_sync_at    = NOW()"#,
-    )
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8){upsert}"
+    ))
     .bind(account_id)
     .bind(imap_folder)
     .bind(folder)
@@ -354,6 +371,7 @@ async fn save_folder_state(
     .bind(uid_high)
     .bind(backfill_done)
     .bind(stored as i32)
+    .bind(Utc::now())
     .execute(db)
     .await
     {
@@ -391,7 +409,7 @@ fn attachment_fits(kept: usize, kept_bytes: usize, next_len: usize) -> bool {
 /// imported mailbox is indistinguishable from a synced one.
 #[allow(clippy::too_many_arguments)] // one message = envelope + flags + placement
 pub(crate) async fn store_message(
-    db: &PgPool,
+    db: &DbPool,
     account: &EmailAccount,
     raw: &[u8],
     uid: u32,
@@ -405,7 +423,7 @@ pub(crate) async fn store_message(
     // which must never re-fire an RSVP for mail received long ago.
     core_cfg: Option<&CoreSettings>,
 ) -> Result<()> {
-    let exists: bool = sqlx::query_scalar(
+    let exists: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM mail.messages WHERE account_id = $1 AND imap_folder = $2 AND imap_uid = $3)"
     )
     .bind(account.id)
@@ -427,13 +445,20 @@ pub(crate) async fn store_message(
     // SMTP send (services::sent_copy) — the server copy would be a duplicate.
     if folder_name == "sent" {
         if let Some(mid) = message_id.as_deref().filter(|s| !s.is_empty()) {
-            let dup: bool = sqlx::query_scalar(
+            // The stored id may or may not carry its angle brackets: compare the
+            // bare form against both spellings (the brackets are stripped in
+            // Rust — `TRIM(BOTH '<>' …)` trims a character SET on PostgreSQL
+            // but a whole STRING on MySQL, and SQLite has no such syntax).
+            let bare = mid.trim_matches(|c| c == '<' || c == '>').to_string();
+            let bracketed = format!("<{bare}>");
+            let dup: bool = crate::db::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM mail.messages \
                  WHERE account_id = $1 AND folder = 'sent' \
-                   AND TRIM(BOTH '<>' FROM COALESCE(message_id,'')) = TRIM(BOTH '<>' FROM $2))",
+                   AND (message_id = $2 OR message_id = $3))",
             )
             .bind(account.id)
-            .bind(mid)
+            .bind(bare)
+            .bind(bracketed)
             .fetch_one(db)
             .await?;
             if dup {
@@ -654,17 +679,19 @@ pub(crate) async fn store_message(
     let pgp_raw: Option<&[u8]> =
         crate::services::pgp_mime::looks_like_pgp(raw).then_some(raw);
 
-    let inserted = sqlx::query(
-        r#"INSERT INTO mail.messages
+    let backend = db.backend();
+    let inserted = crate::db::query(format!(
+        r#"INSERT {}INTO mail.messages
            (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
             from_name, from_email, to_addresses, cc_addresses, attachments,
             subject, body_text, body_html, is_read, folder, sent_at, list_unsubscribe,
             reply_to, mailed_by, signed_by, security, category, is_starred, received_at, pgp_raw,
             structured_data)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                   $21,$22,$23,$24,$25,$26,COALESCE($19, NOW()),$27,$28)
-           ON CONFLICT (account_id, imap_folder, imap_uid) DO NOTHING"#,
-    )
+                   $21,$22,$23,$24,$25,$26,$27,$28,$29){}"#,
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["account_id", "imap_folder", "imap_uid"]),
+    ))
     .bind(msg_id)
     .bind(thread_id)
     .bind(account.id)
@@ -693,6 +720,7 @@ pub(crate) async fn store_message(
     .bind(security)
     .bind(category)
     .bind(flagged)
+    .bind(sent_at.unwrap_or_else(Utc::now))
     .bind(pgp_raw)
     .bind(structured_data)
     .execute(db)
@@ -714,7 +742,7 @@ pub(crate) async fn store_message(
                 }
             }
         }
-        if let Err(e) = sqlx::query("UPDATE mail.threads SET has_attachments = TRUE WHERE id = $1")
+        if let Err(e) = crate::db::query("UPDATE mail.threads SET has_attachments = TRUE WHERE id = $1")
             .bind(thread_id).execute(db).await
         {
             tracing::error!(thread_id = %thread_id, error = %e, "MAJ has_attachments échouée");
@@ -723,13 +751,13 @@ pub(crate) async fn store_message(
 
     // Expéditeur bloqué → spam direct (avant les filtres).
     if inserted.rows_affected() > 0 {
-        let blocked: bool = sqlx::query_scalar(
+        let blocked: bool = crate::db::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM mail.blocked_senders WHERE user_id = $1 AND email = LOWER($2))",
         )
         .bind(account.user_id).bind(&f_from)
         .fetch_one(db).await.unwrap_or(false);
         if blocked {
-            let _ = sqlx::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1").bind(msg_id).execute(db).await;
+            let _ = crate::db::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1").bind(msg_id).execute(db).await;
         }
     }
 
@@ -767,7 +795,7 @@ pub(crate) async fn store_message(
                 db, account.user_id, &f_subject, f_body.as_deref(), &f_from, true, None,
             ).await {
                 Ok(guard) => {
-                    let _ = sqlx::query("UPDATE mail.messages SET spam_trained = $1 WHERE id = $2")
+                    let _ = crate::db::query("UPDATE mail.messages SET spam_trained = $1 WHERE id = $2")
                         .bind(guard).bind(msg_id).execute(db).await;
                 }
                 Err(e) => tracing::warn!(error = %e, "Entraînement spam (dossier IMAP) échoué"),
@@ -775,7 +803,7 @@ pub(crate) async fn store_message(
         } else if folder_name == "inbox" {
             // Le message a pu être déplacé entre-temps (expéditeur bloqué / filtre).
             // On ne score que s'il est TOUJOURS dans la boîte de réception.
-            let still_inbox: bool = sqlx::query_scalar(
+            let still_inbox: bool = crate::db::query_scalar(
                 "SELECT folder = 'inbox' FROM mail.messages WHERE id = $1",
             )
             .bind(msg_id).fetch_one(db).await.unwrap_or(false);
@@ -785,11 +813,11 @@ pub(crate) async fn store_message(
                 ).await {
                     Ok(v) => {
                         if let Some(score) = v.score {
-                            let _ = sqlx::query("UPDATE mail.messages SET spam_score = $1 WHERE id = $2")
+                            let _ = crate::db::query("UPDATE mail.messages SET spam_score = $1 WHERE id = $2")
                                 .bind(score as f32).bind(msg_id).execute(db).await;
                         }
                         if v.move_to_spam {
-                            let _ = sqlx::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1")
+                            let _ = crate::db::query("UPDATE mail.messages SET folder = 'spam' WHERE id = $1")
                                 .bind(msg_id).execute(db).await;
                             tracing::info!(msg = %msg_id, score = ?v.score, "Message déplacé vers spam (bayésien)");
                         }
@@ -806,8 +834,9 @@ pub(crate) async fn store_message(
     // move when this message really is the newest of the thread — otherwise
     // downloading a 2019 message would relabel the conversation with it.
     let msg_at = sent_at.unwrap_or_else(Utc::now);
-    sqlx::query(
-        "UPDATE mail.threads t
+    let newest = crate::db::greatest(db.backend(), &["t.last_message_at", "$6"]);
+    crate::db::query(format!(
+        "UPDATE mail.threads AS t
          SET message_count     = (SELECT COUNT(*) FROM mail.messages m
                                   WHERE m.thread_id = t.id AND m.is_deleted = FALSE),
              unread_count      = (SELECT COUNT(*) FROM mail.messages m
@@ -821,9 +850,9 @@ pub(crate) async fn store_message(
              category          = CASE WHEN t.category_pinned THEN t.category
                                       WHEN $6 >= t.last_message_at THEN $7
                                       ELSE COALESCE(t.category, $7) END,
-             last_message_at   = GREATEST(t.last_message_at, $6)
+             last_message_at   = {newest}
          WHERE t.id = $1",
-    )
+    ))
     .bind(thread_id)
     .bind(snippet)
     .bind(from_name_clone)
@@ -867,7 +896,7 @@ pub(crate) async fn store_message(
 /// out-of-order backfill could refresh an autocrypt-sourced key with an older
 /// message's key. The source gate confines this to keys we already learned
 /// passively; user/WKD keys are unaffected.
-async fn process_autocrypt(db: &PgPool, user_id: Uuid, from_email: &str, headers: Vec<String>) {
+async fn process_autocrypt(db: &DbPool, user_id: Uuid, from_email: &str, headers: Vec<String>) {
     // Exactly one Autocrypt header is honoured; zero or several ⇒ ignore.
     let [value] = headers.as_slice() else { return };
     let Some(header) = crate::services::autocrypt::parse(value) else { return };
@@ -880,19 +909,33 @@ async fn process_autocrypt(db: &PgPool, user_id: Uuid, from_email: &str, headers
     else {
         return;
     };
-    let res = sqlx::query(
-        r#"INSERT INTO mail.pgp_contacts (user_id, email, fingerprint, public_key, source)
-           VALUES ($1, $2, $3, $4, 'autocrypt')
-           ON CONFLICT (user_id, lower(email))
-           DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
-                         public_key  = EXCLUDED.public_key,
-                         source      = 'autocrypt'
-           WHERE mail.pgp_contacts.source IN ('autocrypt', 'attached')"#,
-    )
+    // Upsert keyed on (user_id, lower(email)); a manual/WKD key is never
+    // replaced. PostgreSQL and SQLite take the expression conflict target and a
+    // guarded DO UPDATE; MySQL has neither, so its update branch keeps the
+    // stored values unless the stored source is passive (`source` is assigned
+    // last, so the guards still read the old value).
+    let conflict = match db.backend() {
+        kubuno_db::Backend::MySql => " ON DUPLICATE KEY UPDATE \
+             fingerprint = IF(source IN ('autocrypt', 'attached'), VALUES(fingerprint), fingerprint), \
+             public_key  = IF(source IN ('autocrypt', 'attached'), VALUES(public_key), public_key), \
+             source      = IF(source IN ('autocrypt', 'attached'), 'autocrypt', source)"
+            .to_string(),
+        _ => " ON CONFLICT (user_id, lower(email)) \
+             DO UPDATE SET fingerprint = excluded.fingerprint, \
+                           public_key  = excluded.public_key, \
+                           source      = 'autocrypt' \
+             WHERE mail.pgp_contacts.source IN ('autocrypt', 'attached')"
+            .to_string(),
+    };
+    let res = crate::db::query(format!(
+        "INSERT INTO mail.pgp_contacts (id, user_id, email, fingerprint, public_key, source)
+           VALUES ($5, $1, $2, $3, $4, 'autocrypt'){conflict}"
+    ))
     .bind(user_id)
     .bind(header.addr.to_lowercase())
     .bind(&fingerprint)
     .bind(&armored)
+    .bind(kubuno_db::new_id())
     .execute(db)
     .await;
     if let Err(e) = res {
@@ -902,7 +945,7 @@ async fn process_autocrypt(db: &PgPool, user_id: Uuid, from_email: &str, headers
 
 #[allow(clippy::too_many_arguments)] // threading needs the full envelope context
 async fn find_or_create_thread(
-    db: &PgPool,
+    db: &DbPool,
     account: &EmailAccount,
     subject: &str,
     in_reply_to: Option<&str>,
@@ -919,17 +962,19 @@ async fn find_or_create_thread(
         if !candidates.iter().any(|c| c == r) { candidates.push(r.to_string()) }
     }
     if !candidates.is_empty() {
-        let existing: Option<Uuid> = sqlx::query_scalar(
+        let mut q = crate::db::query_scalar::<Uuid>(format!(
             "SELECT t.id FROM mail.threads t
              JOIN mail.messages m ON m.thread_id = t.id
-             WHERE t.account_id = $1 AND m.message_id = ANY($2)
+             WHERE t.account_id = $1 AND m.message_id IN ({})
              ORDER BY t.last_message_at DESC
-             LIMIT 1"
-        )
-        .bind(account.id)
-        .bind(&candidates)
-        .fetch_optional(db)
-        .await?;
+             LIMIT 1",
+            crate::db::in_list(2, candidates.len()),
+        ))
+        .bind(account.id);
+        for c in &candidates {
+            q = q.bind(c);
+        }
+        let existing: Option<Uuid> = q.fetch_optional(db).await?;
 
         if let Some(id) = existing {
             return Ok(id);
@@ -943,16 +988,17 @@ async fn find_or_create_thread(
     let normalized = normalize_subject(subject);
     let had_prefix = normalized != subject.to_lowercase().trim();
     if had_prefix {
-        let existing: Option<Uuid> = sqlx::query_scalar(
+        let existing: Option<Uuid> = crate::db::query_scalar(
             "SELECT id FROM mail.threads
              WHERE account_id = $1
                AND LOWER(subject) = $2
-               AND last_message_at > NOW() - INTERVAL '30 days'
+               AND last_message_at > $3
              ORDER BY last_message_at DESC
              LIMIT 1"
         )
         .bind(account.id)
         .bind(&normalized)
+        .bind(Utc::now() - chrono::Duration::days(30))
         .fetch_optional(db)
         .await?;
 
@@ -962,7 +1008,7 @@ async fn find_or_create_thread(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO mail.threads (id, account_id, user_id, subject, last_sender_name, last_sender_email, last_message_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7)"
     )
@@ -1008,7 +1054,7 @@ fn addr_list_json(addrs: Option<&mail_parser::Address>) -> serde_json::Value {
 // ── Application des filtres automatiques à un message entrant ─────────────────
 #[allow(clippy::too_many_arguments)]
 async fn apply_filters(
-    db: &PgPool,
+    db: &DbPool,
     user_id: uuid::Uuid,
     account_id: uuid::Uuid,
     thread_id: uuid::Uuid,
@@ -1019,7 +1065,7 @@ async fn apply_filters(
     body: Option<&str>,
     to_blob: &str,
 ) -> Result<()> {
-    let filters = sqlx::query_as::<_, EmailFilter>(
+    let filters = crate::db::query_as::<EmailFilter>(
         r#"SELECT id, user_id, account_id, from_contains, to_contains, subject_contains, query_contains,
                   act_archive, act_mark_read, act_star, act_important, act_trash, act_spam, act_label_id,
                   position, created_at
@@ -1050,30 +1096,35 @@ async fn apply_filters(
         if !m { continue; }
 
         if f.act_star {
-            let _ = sqlx::query("UPDATE mail.threads SET is_starred = TRUE WHERE id = $1").bind(thread_id).execute(db).await;
+            let _ = crate::db::query("UPDATE mail.threads SET is_starred = TRUE WHERE id = $1").bind(thread_id).execute(db).await;
         }
         if f.act_important {
-            let _ = sqlx::query("UPDATE mail.threads SET is_important = TRUE WHERE id = $1").bind(thread_id).execute(db).await;
+            let _ = crate::db::query("UPDATE mail.threads SET is_important = TRUE WHERE id = $1").bind(thread_id).execute(db).await;
         }
         if f.act_mark_read {
-            let _ = sqlx::query("UPDATE mail.messages SET is_read = TRUE WHERE id = $1").bind(msg_id).execute(db).await;
+            let _ = crate::db::query("UPDATE mail.messages SET is_read = TRUE WHERE id = $1").bind(msg_id).execute(db).await;
         }
         let new_folder = if f.act_trash { Some("trash") } else if f.act_spam { Some("spam") } else if f.act_archive { Some("archive") } else { None };
         if let Some(fold) = new_folder {
-            let _ = sqlx::query("UPDATE mail.messages SET folder = $1 WHERE id = $2").bind(fold).bind(msg_id).execute(db).await;
+            let _ = crate::db::query("UPDATE mail.messages SET folder = $1 WHERE id = $2").bind(fold).bind(msg_id).execute(db).await;
         }
         if let Some(lid) = f.act_label_id {
-            let _ = sqlx::query("INSERT INTO mail.thread_labels (thread_id, label_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+            let _ = crate::db::query(format!(
+                "INSERT {}INTO mail.thread_labels (thread_id, label_id) VALUES ($1, $2){}",
+                db.backend().insert_ignore_prefix(),
+                db.backend().on_conflict_do_nothing(&["thread_id", "label_id"]),
+            ))
                 .bind(thread_id).bind(lid).execute(db).await;
         }
     }
 
     // Recalcule les non-lus du fil (un filtre a pu marquer lu).
-    let unread: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mail.messages WHERE thread_id = $1 AND is_read = FALSE AND is_deleted = FALSE",
-    )
+    let unread: i64 = crate::db::query_scalar(format!(
+        "SELECT {} FROM mail.messages WHERE thread_id = $1 AND is_read = FALSE AND is_deleted = FALSE",
+        db.backend().count_bigint("*"),
+    ))
     .bind(thread_id).fetch_one(db).await.unwrap_or(0);
-    let _ = sqlx::query("UPDATE mail.threads SET unread_count = $1 WHERE id = $2")
+    let _ = crate::db::query("UPDATE mail.threads SET unread_count = $1 WHERE id = $2")
         .bind(unread as i32).bind(thread_id).execute(db).await;
     Ok(())
 }

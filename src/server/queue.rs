@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::config::ServerConfig;
@@ -24,6 +24,9 @@ const MAX_BACKOFF_HOURS: i64 = 4;
 /// Bounds on the configured queue lifetime. A message that never expires can
 /// never be reported as undeliverable, and one that expires instantly is
 /// bounced before its first retry — so a mistaken setting is clamped, not obeyed.
+/// The fallback queue lifetime, the column default of migration 000019.
+const DEFAULT_LIFETIME_DAYS: i64 = 5;
+
 const MIN_LIFETIME_HOURS: i64 = 1;
 const MAX_LIFETIME_HOURS: i64 = 720; // 30 days
 
@@ -94,7 +97,7 @@ pub struct Claimed {
 /// `outbound_lifetime_hours` directly.
 #[allow(clippy::too_many_arguments)]
 pub async fn enqueue(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Option<Uuid>,
     account_id: Option<Uuid>,
     envelope_from: &str,
@@ -125,7 +128,7 @@ pub async fn enqueue(
 /// without the column. A lifetime we cannot express falls back to exactly that.
 #[allow(clippy::too_many_arguments)]
 pub async fn enqueue_with_lifetime(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Option<Uuid>,
     account_id: Option<Uuid>,
     envelope_from: &str,
@@ -136,34 +139,28 @@ pub async fn enqueue_with_lifetime(
 ) -> Result<Uuid> {
     let mut tx = db.begin().await.context("Ouverture transaction d'enfilement")?;
 
-    // Two shapes on purpose: omitting the column is what lets the SQL DEFAULT
-    // act as the net. Binding NULL would insert NULL and violate NOT NULL.
-    let expires_at = expiry_from_now(lifetime_hours);
-    let sql = if expires_at.is_some() {
-        r#"INSERT INTO mail.outbound_messages
-             (user_id, account_id, envelope_from, raw, is_dsn, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id"#
-    } else {
-        r#"INSERT INTO mail.outbound_messages
-             (user_id, account_id, envelope_from, raw, is_dsn)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING id"#
-    };
+    // A lifetime we cannot express falls back to the 5 days of the column
+    // default (000019), computed here so the value is the same on every engine.
+    let expires_at = expiry_from_now(lifetime_hours)
+        .unwrap_or_else(|| Utc::now() + chrono::Duration::days(DEFAULT_LIFETIME_DAYS));
 
-    let mut insert = sqlx::query_scalar::<_, Uuid>(sql)
-        .bind(user_id)
-        .bind(account_id)
-        .bind(envelope_from)
-        .bind(raw)
-        .bind(is_dsn);
-    if let Some(at) = expires_at {
-        insert = insert.bind(at);
-    }
-
-    let message_id: Uuid = insert
-        .fetch_one(&mut *tx)
-        .await
+    // The id is generated here: MySQL has no RETURNING.
+    let message_id = kubuno_db::new_id();
+    crate::db::query(
+        r#"INSERT INTO mail.outbound_messages
+             (id, user_id, account_id, envelope_from, raw, is_dsn, created_at, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .bind(account_id)
+    .bind(envelope_from)
+    .bind(raw)
+    .bind(is_dsn)
+    .bind(Utc::now())
+    .bind(expires_at)
+    .execute(&mut tx)
+    .await
         .map_err(|e| {
             tracing::error!(error = %e, "File sortante : insertion du message impossible");
             e
@@ -171,14 +168,17 @@ pub async fn enqueue_with_lifetime(
         .context("Insertion du message sortant")?;
 
     for (recipient, domain) in recipients {
-        sqlx::query(
-            r#"INSERT INTO mail.outbound_recipients (message_id, recipient, domain)
-               VALUES ($1, $2, $3)"#,
+        crate::db::query(
+            r#"INSERT INTO mail.outbound_recipients
+                 (id, message_id, recipient, domain, next_attempt_at, created_at)
+               VALUES ($1, $2, $3, $4, $5, $5)"#,
         )
+        .bind(kubuno_db::new_id())
         .bind(message_id)
         .bind(recipient)
         .bind(domain.to_ascii_lowercase())
-        .execute(&mut *tx)
+        .bind(Utc::now())
+        .execute(&mut tx)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "File sortante : insertion d'un destinataire impossible");
@@ -199,16 +199,18 @@ pub async fn enqueue_with_lifetime(
 /// bound is what actually leaves the instance towards the internet, and a Sent
 /// copy exists for local-only mail too. Delivery reports (`is_dsn`) are excluded
 /// — a bounce is the instance writing, not the user.
-pub async fn recipients_queued_last_24h(db: &PgPool, user_id: Uuid) -> Result<i64> {
-    let count: i64 = sqlx::query_scalar(
-        r#"SELECT COUNT(*)
+pub async fn recipients_queued_last_24h(db: &DbPool, user_id: Uuid) -> Result<i64> {
+    let count: i64 = crate::db::query_scalar(format!(
+        r#"SELECT {}
              FROM mail.outbound_recipients r
              JOIN mail.outbound_messages m ON m.id = r.message_id
             WHERE m.user_id = $1
               AND m.is_dsn = FALSE
-              AND m.created_at > NOW() - INTERVAL '24 hours'"#,
-    )
+              AND m.created_at > $2"#,
+        db.backend().count_bigint("*")
+    ))
     .bind(user_id)
+    .bind(Utc::now() - chrono::Duration::hours(24))
     .fetch_one(db)
     .await
     .map_err(|e| {
@@ -224,59 +226,116 @@ pub async fn recipients_queued_last_24h(db: &PgPool, user_id: Uuid) -> Result<i6
 /// handing the same recipient to two of them; the lease makes a crashed
 /// worker's rows claimable again once it expires (orphan reclaim).
 pub async fn claim_batch(
-    db: &PgPool,
+    db: &DbPool,
     worker_id: Uuid,
     lease: Duration,
     limit: i64,
 ) -> Result<Vec<Claimed>> {
-    let rows = sqlx::query_as::<_, Claimed>(
-        r#"WITH due AS (
-               SELECT r.id
-               FROM mail.outbound_recipients r
-               WHERE r.status IN ('queued', 'deferred')
-                 AND r.next_attempt_at <= NOW()
-                 AND (r.locked_until IS NULL OR r.locked_until < NOW())
-               ORDER BY r.next_attempt_at
-               LIMIT $3
-               FOR UPDATE SKIP LOCKED
-           )
-           UPDATE mail.outbound_recipients r
-           SET status = 'delivering', locked_by = $1, locked_until = NOW() + ($2 || ' seconds')::interval
-           FROM due, mail.outbound_messages m
-           WHERE r.id = due.id AND m.id = r.message_id
-           RETURNING
-               r.id            AS recipient_id,
-               r.message_id    AS message_id,
-               r.recipient     AS recipient,
-               r.domain        AS domain,
-               m.envelope_from AS envelope_from,
-               m.raw           AS raw,
-               r.attempts      AS attempts,
-               m.is_dsn        AS is_dsn,
-               (NOW() >= m.expires_at) AS expired"#,
-    )
-    .bind(worker_id)
-    .bind(lease.as_secs().to_string())
-    .bind(limit)
-    .fetch_all(db)
-    .await
-    .map_err(|e| {
+    // One transaction, one row at a time: lock the next due row (skipping rows
+    // another worker holds, where the engine has SKIP LOCKED), lease it, repeat.
+    // Leasing it immediately takes it out of the `status` filter, so the next
+    // probe finds the next row. Portable where PostgreSQL's single
+    // `WITH due … FOR UPDATE SKIP LOCKED … UPDATE … RETURNING` is not (MySQL has
+    // no UPDATE … RETURNING, SQLite no row locks — its writers are serialised by
+    // the pool's single-writer gate instead).
+    let now = Utc::now();
+    let lease_secs = i64::try_from(lease.as_secs()).unwrap_or(i64::MAX);
+    let locked_until =
+        now + chrono::Duration::try_seconds(lease_secs).unwrap_or_else(|| chrono::Duration::days(1));
+    let probe = format!(
+        r#"SELECT r.id
+             FROM mail.outbound_recipients r
+            WHERE r.status IN ('queued', 'deferred')
+              AND r.next_attempt_at <= $1
+              AND (r.locked_until IS NULL OR r.locked_until < $1)
+            ORDER BY r.next_attempt_at
+            LIMIT 1{}"#,
+        crate::db::for_update_skip_locked(db.backend())
+    );
+
+    let mut tx = db.begin().await.map_err(|e| {
         tracing::error!(error = %e, "File sortante : réclamation impossible");
         e
-    })
-    .context("Réclamation de lot sortant")?;
+    }).context("Réclamation de lot sortant")?;
+    let mut claimed: Vec<Uuid> = Vec::new();
+    while (claimed.len() as i64) < limit {
+        let next: Option<Uuid> = crate::db::query_scalar(&probe)
+            .bind(now)
+            .fetch_optional(&mut tx)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "File sortante : réclamation impossible");
+                e
+            })
+            .context("Réclamation de lot sortant")?;
+        let Some(id) = next else { break };
+        crate::db::query(
+            "UPDATE mail.outbound_recipients \
+                SET status = 'delivering', locked_by = $1, locked_until = $2 \
+              WHERE id = $3",
+        )
+        .bind(worker_id)
+        .bind(locked_until)
+        .bind(id)
+        .execute(&mut tx)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "File sortante : réclamation impossible");
+            e
+        })
+        .context("Réclamation de lot sortant")?;
+        claimed.push(id);
+    }
+    tx.commit().await.context("Validation de la réclamation")?;
+
+    if claimed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // The payloads, read after the commit: the lease (locked_by = this worker)
+    // is what keeps them ours now.
+    let mut q = crate::db::query_as::<Claimed>(format!(
+        r#"SELECT r.id            AS recipient_id,
+                  r.message_id    AS message_id,
+                  r.recipient     AS recipient,
+                  r.domain        AS domain,
+                  m.envelope_from AS envelope_from,
+                  m.raw           AS raw,
+                  r.attempts      AS attempts,
+                  m.is_dsn        AS is_dsn,
+                  (m.expires_at <= $1) AS expired
+             FROM mail.outbound_recipients r
+             JOIN mail.outbound_messages m ON m.id = r.message_id
+            WHERE r.locked_by = $2 AND r.id IN ({})
+            ORDER BY r.next_attempt_at"#,
+        crate::db::in_list(3, claimed.len())
+    ))
+    .bind(now)
+    .bind(worker_id);
+    for id in &claimed {
+        q = q.bind(*id);
+    }
+    let rows = q
+        .fetch_all(db)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "File sortante : lecture du lot réclamé impossible");
+            e
+        })
+        .context("Lecture du lot sortant")?;
 
     Ok(rows)
 }
 
 /// Marks a recipient delivered. Called in response to a 2xx on the final `.`.
-pub async fn mark_sent(db: &PgPool, recipient_id: Uuid) -> Result<()> {
-    sqlx::query(
+pub async fn mark_sent(db: &DbPool, recipient_id: Uuid) -> Result<()> {
+    crate::db::query(
         "UPDATE mail.outbound_recipients
-         SET status = 'sent', delivered_at = NOW(), locked_by = NULL, locked_until = NULL
+         SET status = 'sent', delivered_at = $2, locked_by = NULL, locked_until = NULL
          WHERE id = $1",
     )
     .bind(recipient_id)
+    .bind(Utc::now())
     .execute(db)
     .await
     .map_err(|e| {
@@ -291,7 +350,7 @@ pub async fn mark_sent(db: &PgPool, recipient_id: Uuid) -> Result<()> {
 /// the next attempt out by an exponential backoff bounded by the administrator's
 /// `outbound_min_backoff_secs` / `outbound_max_backoff_hours`.
 pub async fn mark_deferred(
-    db: &PgPool,
+    db: &DbPool,
     recipient_id: Uuid,
     attempts: i32,
     code: u16,
@@ -299,18 +358,18 @@ pub async fn mark_deferred(
     backoff: Backoff,
 ) -> Result<()> {
     let backoff = backoff.delay_secs(attempts);
-    sqlx::query(
+    crate::db::query(
         "UPDATE mail.outbound_recipients
          SET status = 'deferred', attempts = attempts + 1,
              last_code = $2, last_reason = $3,
-             next_attempt_at = NOW() + ($4 || ' seconds')::interval,
+             next_attempt_at = $4,
              locked_by = NULL, locked_until = NULL
          WHERE id = $1",
     )
     .bind(recipient_id)
     .bind(code as i32)
     .bind(reason)
-    .bind(backoff.to_string())
+    .bind(Utc::now() + chrono::Duration::try_seconds(backoff).unwrap_or_else(|| chrono::Duration::days(365)))
     .execute(db)
     .await
     .map_err(|e| {
@@ -323,8 +382,8 @@ pub async fn mark_deferred(
 
 /// Marks a recipient permanently failed (5xx or expired). The worker then emits
 /// a DSN — except for a message that is itself a DSN.
-pub async fn mark_bounced(db: &PgPool, recipient_id: Uuid, code: u16, reason: &str) -> Result<()> {
-    sqlx::query(
+pub async fn mark_bounced(db: &DbPool, recipient_id: Uuid, code: u16, reason: &str) -> Result<()> {
+    crate::db::query(
         "UPDATE mail.outbound_recipients
          SET status = 'bounced', last_code = $2, last_reason = $3,
              locked_by = NULL, locked_until = NULL

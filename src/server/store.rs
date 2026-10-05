@@ -11,7 +11,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 /// One message as the protocols see it.
@@ -57,8 +57,8 @@ pub fn folder_of(mailbox: &str) -> Option<&'static str> {
 
 /// Messages of one folder, oldest first — the order both protocols number
 /// their sequence numbers in.
-pub async fn list(db: &PgPool, user_id: Uuid, folder: &str) -> Result<Vec<StoredMessage>> {
-    sqlx::query_as::<_, StoredMessage>(
+pub async fn list(db: &DbPool, user_id: Uuid, folder: &str) -> Result<Vec<StoredMessage>> {
+    crate::db::query_as::<StoredMessage>(
         r#"SELECT id, local_uid, message_id, from_name, from_email,
                   to_addresses, cc_addresses, subject, body_text, body_html,
                   attachments, is_read, is_starred, folder, sent_at, received_at, modseq
@@ -75,23 +75,23 @@ pub async fn list(db: &PgPool, user_id: Uuid, folder: &str) -> Result<Vec<Stored
 }
 
 /// Marks a message read/unread and keeps its thread's counter in step.
-pub async fn set_read(db: &PgPool, user_id: Uuid, message_id: Uuid, read: bool) -> Result<()> {
+pub async fn set_read(db: &DbPool, user_id: Uuid, message_id: Uuid, read: bool) -> Result<()> {
     let mut tx = db.begin().await.context("Transaction état de lecture")?;
-    sqlx::query("UPDATE mail.messages SET is_read = $1 WHERE id = $2 AND user_id = $3")
+    crate::db::query("UPDATE mail.messages SET is_read = $1 WHERE id = $2 AND user_id = $3")
         .bind(read)
         .bind(message_id)
         .bind(user_id)
-        .execute(&mut *tx)
+        .execute(&mut tx)
         .await
         .context("Mise à jour de l'état de lecture")?;
-    sqlx::query(
-        "UPDATE mail.threads t SET unread_count = (
+    crate::db::query(
+        "UPDATE mail.threads AS t SET unread_count = (
              SELECT COUNT(*) FROM mail.messages m
              WHERE m.thread_id = t.id AND m.is_deleted = FALSE AND m.is_read = FALSE)
          WHERE t.id = (SELECT thread_id FROM mail.messages WHERE id = $1)",
     )
     .bind(message_id)
-    .execute(&mut *tx)
+    .execute(&mut tx)
     .await
     .context("Recalcul des non-lus du fil")?;
     tx.commit().await.context("Validation de l'état de lecture")
@@ -99,8 +99,8 @@ pub async fn set_read(db: &PgPool, user_id: Uuid, message_id: Uuid, read: bool) 
 
 /// Flags a message deleted (what IMAP EXPUNGE and POP3 DELE mean here). The row
 /// is kept: the web UI's trash is the same store.
-pub async fn set_deleted(db: &PgPool, user_id: Uuid, message_id: Uuid) -> Result<()> {
-    sqlx::query(
+pub async fn set_deleted(db: &DbPool, user_id: Uuid, message_id: Uuid) -> Result<()> {
+    crate::db::query(
         "UPDATE mail.messages SET is_deleted = TRUE, folder = 'trash' WHERE id = $1 AND user_id = $2",
     )
     .bind(message_id)
@@ -114,8 +114,8 @@ pub async fn set_deleted(db: &PgPool, user_id: Uuid, message_id: Uuid) -> Result
 /// Moves a message OUT of the inbox into the archive (IMAP "Archive" purge, and
 /// the POP `archive` post-action). Kept out of Trash: archiving is not
 /// deleting, so `is_deleted` stays false and the message remains in "All mail".
-pub async fn archive(db: &PgPool, user_id: Uuid, message_id: Uuid) -> Result<()> {
-    sqlx::query(
+pub async fn archive(db: &DbPool, user_id: Uuid, message_id: Uuid) -> Result<()> {
+    crate::db::query(
         "UPDATE mail.messages SET folder = 'archive', is_deleted = FALSE \
          WHERE id = $1 AND user_id = $2",
     )
@@ -127,8 +127,8 @@ pub async fn archive(db: &PgPool, user_id: Uuid, message_id: Uuid) -> Result<()>
     Ok(())
 }
 
-pub async fn set_starred(db: &PgPool, user_id: Uuid, message_id: Uuid, starred: bool) -> Result<()> {
-    sqlx::query("UPDATE mail.messages SET is_starred = $1 WHERE id = $2 AND user_id = $3")
+pub async fn set_starred(db: &DbPool, user_id: Uuid, message_id: Uuid, starred: bool) -> Result<()> {
+    crate::db::query("UPDATE mail.messages SET is_starred = $1 WHERE id = $2 AND user_id = $3")
         .bind(starred)
         .bind(message_id)
         .bind(user_id)
@@ -141,45 +141,69 @@ pub async fn set_starred(db: &PgPool, user_id: Uuid, message_id: Uuid, starred: 
 /// Moves a message to another folder (IMAP MOVE, RFC 6851). The message keeps its
 /// `local_uid` — which is globally unique — so the UID reported in the
 /// destination is unchanged. Returns that UID, for the MOVE/UIDPLUS response.
-pub async fn move_to(db: &PgPool, user_id: Uuid, message_id: Uuid, folder: &str) -> Result<Option<i64>> {
-    let uid: Option<i64> = sqlx::query_scalar(
+pub async fn move_to(db: &DbPool, user_id: Uuid, message_id: Uuid, folder: &str) -> Result<Option<i64>> {
+    let moved = crate::db::query(
         "UPDATE mail.messages SET folder = $3, is_deleted = FALSE \
-         WHERE id = $1 AND user_id = $2 RETURNING local_uid",
+         WHERE id = $1 AND user_id = $2",
     )
     .bind(message_id)
     .bind(user_id)
     .bind(folder)
-    .fetch_optional(db)
+    .execute(db)
     .await
     .context("Déplacement du message")?;
-    Ok(uid)
+    if moved.rows_affected() == 0 {
+        return Ok(None);
+    }
+    // Read back rather than `RETURNING`: MySQL has none.
+    let uid: Option<Option<i64>> = crate::db::query_scalar(
+        "SELECT local_uid FROM mail.messages WHERE id = $1 AND user_id = $2",
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .fetch_optional(db)
+    .await
+    .context("Lecture de l'UID déplacé")?;
+    Ok(uid.flatten())
 }
 
 /// Copies a message into another folder (IMAP COPY). A new row is inserted with a
 /// fresh `local_uid` (the destination's new UID, returned for COPYUID). The copy
 /// shares the same thread and attachment metadata; attachment files are not
 /// duplicated on disk (the storage_path still points at the originals).
-pub async fn copy_to(db: &PgPool, user_id: Uuid, message_id: Uuid, folder: &str) -> Result<Option<i64>> {
-    let uid: Option<i64> = sqlx::query_scalar(
+pub async fn copy_to(db: &DbPool, user_id: Uuid, message_id: Uuid, folder: &str) -> Result<Option<i64>> {
+    // The key is generated here (MySQL/SQLite have no UUID default and MySQL no
+    // RETURNING); the new `local_uid` is assigned by the database and read back.
+    let new_id = kubuno_db::new_id();
+    let copied = crate::db::query(
         r#"INSERT INTO mail.messages
-             (thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
+             (id, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
               from_name, from_email, to_addresses, cc_addresses, bcc_addresses, reply_to,
               subject, body_text, body_html, attachments, is_read, is_starred, is_deleted,
               folder, label_ids, sent_at, received_at, category)
-           SELECT thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
+           SELECT $4, thread_id, account_id, user_id, message_id, in_reply_to, imap_uid, imap_folder,
               from_name, from_email, to_addresses, cc_addresses, bcc_addresses, reply_to,
               subject, body_text, body_html, attachments, is_read, is_starred, FALSE,
               $3, label_ids, sent_at, received_at, category
-           FROM mail.messages WHERE id = $1 AND user_id = $2
-           RETURNING local_uid"#,
+           FROM mail.messages WHERE id = $1 AND user_id = $2"#,
     )
     .bind(message_id)
     .bind(user_id)
     .bind(folder)
-    .fetch_optional(db)
+    .bind(new_id)
+    .execute(db)
     .await
     .context("Copie du message")?;
-    Ok(uid)
+    if copied.rows_affected() == 0 {
+        return Ok(None);
+    }
+    let uid: Option<Option<i64>> =
+        crate::db::query_scalar("SELECT local_uid FROM mail.messages WHERE id = $1")
+            .bind(new_id)
+            .fetch_optional(db)
+            .await
+            .context("Lecture de l'UID copié")?;
+    Ok(uid.flatten())
 }
 
 // ── CONDSTORE / QRESYNC (RFC 7162) ───────────────────────────────────────────
@@ -190,15 +214,16 @@ pub async fn copy_to(db: &PgPool, user_id: Uuid, message_id: Uuid, folder: &str)
 /// as it left, and a reconnecting client must be told about it. Never zero for a
 /// folder that has ever changed; a folder that never changed reports the RFC's
 /// floor of 1.
-pub async fn highest_modseq(db: &PgPool, user_id: Uuid, folder: &str) -> Result<i64> {
-    let value: i64 = sqlx::query_scalar(
-        r#"SELECT GREATEST(
+pub async fn highest_modseq(db: &DbPool, user_id: Uuid, folder: &str) -> Result<i64> {
+    let value: i64 = crate::db::query_scalar(format!(
+        r#"SELECT {}(
                     COALESCE((SELECT MAX(modseq) FROM mail.messages
                               WHERE user_id = $1 AND folder = $2 AND local_uid IS NOT NULL), 0),
                     COALESCE((SELECT MAX(modseq) FROM mail.message_tombstones
                               WHERE user_id = $1 AND folder = $2), 0)
                   )"#,
-    )
+        if db.backend() == kubuno_db::Backend::Sqlite { "MAX" } else { "GREATEST" },
+    ))
     .bind(user_id)
     .bind(folder)
     .fetch_one(db)
@@ -213,12 +238,12 @@ pub async fn highest_modseq(db: &PgPool, user_id: Uuid, folder: &str) -> Result<
 /// Read straight from the tombstones the database records on every move/delete,
 /// oldest UID first.
 pub async fn vanished_since(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     folder: &str,
     modseq: i64,
 ) -> Result<Vec<i64>> {
-    let uids: Vec<i64> = sqlx::query_scalar(
+    let uids: Vec<i64> = crate::db::query_scalar(
         r#"SELECT local_uid FROM mail.message_tombstones
            WHERE user_id = $1 AND folder = $2 AND modseq > $3
            ORDER BY local_uid"#,
@@ -244,7 +269,7 @@ pub async fn vanished_since(
 /// the thread it belongs to. `\Seen` / `\Flagged` from the command map onto
 /// `is_read` / `is_starred`.
 pub async fn append(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     folder: &str,
     raw: &[u8],
@@ -256,7 +281,7 @@ pub async fn append(
     // Every message row hangs off an account (NOT NULL). A mailbox that a client
     // can log into may still have no account configured, in which case there is
     // nowhere to file the upload — surfaced to the client as a plain failure.
-    let account_id: Uuid = sqlx::query_scalar(
+    let account_id: Uuid = crate::db::query_scalar(
         "SELECT id FROM mail.accounts WHERE user_id = $1 ORDER BY is_default DESC, created_at ASC LIMIT 1",
     )
     .bind(user_id)
@@ -292,30 +317,36 @@ pub async fn append(
 
     // A minimal thread of its own: APPEND is a deposit (draft / Sent copy), not a
     // reply that must join an existing conversation.
-    let thread_id: Uuid = sqlx::query_scalar(
+    let now = Utc::now();
+    let thread_id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.threads
-             (account_id, user_id, subject, message_count, unread_count, last_message_at)
-           VALUES ($1, $2, $3, 1, $4, NOW())
-           RETURNING id"#,
+             (id, account_id, user_id, subject, message_count, unread_count, last_message_at)
+           VALUES ($1, $2, $3, $4, 1, $5, $6)"#,
     )
+    .bind(thread_id)
     .bind(account_id)
     .bind(user_id)
     .bind(&subject)
     .bind(i32::from(!seen))
-    .fetch_one(&mut *tx)
+    .bind(now)
+    .execute(&mut tx)
     .await
     .context("Création du fil pour APPEND")?;
 
-    // local_uid and modseq are filled by their sequence / trigger defaults.
-    let local_uid: i64 = sqlx::query_scalar(
+    // local_uid and modseq are filled by the database (sequence default /
+    // trigger), then read back inside the transaction: neither MySQL (no
+    // RETURNING) nor SQLite (RETURNING does not see an AFTER trigger's write)
+    // can return them from the INSERT itself.
+    let message_row_id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.messages
-             (thread_id, account_id, user_id, message_id, imap_uid, imap_folder,
+             (id, thread_id, account_id, user_id, message_id, imap_uid, imap_folder,
               from_name, from_email, to_addresses, cc_addresses,
               subject, body_text, body_html, is_read, is_starred, folder, sent_at, received_at)
-           VALUES ($1, $2, $3, $4, NULL, $5,
+           VALUES ($16, $1, $2, $3, $4, NULL, $5,
                    $6, $7, $8, $9,
-                   $10, $11, $12, $13, $14, $5, $15, COALESCE($15, NOW()))
-           RETURNING local_uid"#,
+                   $10, $11, $12, $13, $14, $5, $15, $17)"#,
     )
     .bind(thread_id)
     .bind(account_id)
@@ -332,9 +363,19 @@ pub async fn append(
     .bind(seen)
     .bind(flagged)
     .bind(sent_at)
-    .fetch_one(&mut *tx)
+    .bind(message_row_id)
+    .bind(sent_at.unwrap_or(now))
+    .execute(&mut tx)
     .await
     .context("Insertion du message APPEND")?;
+    let local_uid: i64 = crate::db::query_scalar::<Option<i64>>(
+        "SELECT local_uid FROM mail.messages WHERE id = $1",
+    )
+    .bind(message_row_id)
+    .fetch_one(&mut tx)
+    .await
+    .context("Lecture de l'UID APPEND")?
+    .ok_or_else(|| anyhow::anyhow!("UID APPEND non attribué"))?;
 
     tx.commit().await.context("Validation de l'APPEND")?;
     Ok(local_uid)

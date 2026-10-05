@@ -16,11 +16,11 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::{
-    db_error, local_domains, parse_address, parse_destinations, require_address_free, require_admin,
+    db_error, json_as_text, like_escape, local_domains, parse_address, parse_destinations, require_address_free, require_admin,
     require_local_domain, translate_conflict, ListQuery,
 };
 use crate::{errors::MailError, middleware::AuthUser, state::AppState};
@@ -33,6 +33,8 @@ pub struct AliasRow {
     pub id: Uuid,
     pub address: String,
     pub domain: String,
+    /// A JSON array of addresses on every engine.
+    #[sqlx(json)]
     pub destinations: Vec<String>,
     pub is_catch_all: bool,
     pub is_active: bool,
@@ -95,19 +97,27 @@ pub async fn list_aliases(
     let domain = q.domain_filter();
     let pattern = q.pattern();
 
-    let filter = r#"
-        WHERE ($1::text IS NULL OR domain = $1)
-          AND ($2::boolean IS NULL OR is_active = $2)
-          AND ($3::text IS NULL
-               OR address LIKE $3 ESCAPE '\'
-               OR LOWER(COALESCE(comment, '')) LIKE $3 ESCAPE '\'
-               OR EXISTS (SELECT 1 FROM unnest(destinations) d WHERE LOWER(d) LIKE $3 ESCAPE '\'))
-    "#;
+    let backend = state.db.backend();
+    let esc = like_escape(backend);
+    // The destinations are a JSON array: searched through its serialised text,
+    // which holds every destination verbatim (they are stored lowercased).
+    let dest_text = json_as_text(backend, "destinations");
+    let filter = format!(
+        r#"
+        WHERE ($1 IS NULL OR domain = $1)
+          AND ($2 IS NULL OR is_active = $2)
+          AND ($3 IS NULL
+               OR address LIKE $3{esc}
+               OR LOWER(COALESCE(comment, '')) LIKE $3{esc}
+               OR LOWER({dest_text}) LIKE $3{esc})
+    "#
+    );
 
     // Audited: `filter` above is a literal; the domain, the active flag and
     // the search pattern are bound parameters.
-    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT COUNT(*) FROM mail.aliases {filter}"
+    let total: i64 = crate::db::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT {} FROM mail.aliases {filter}",
+        backend.count_bigint("*")
     )))
         .bind(&domain)
         .bind(q.active)
@@ -120,7 +130,7 @@ pub async fn list_aliases(
     // delivery, and the one an operator most often means to check.
     // Audited: the only interpolations are the `COLUMNS` constant and the
     // `filter` literal above; every caller value is a bound parameter.
-    let rows = sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
+    let rows = crate::db::query_as::<AliasRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.aliases {filter} \
          ORDER BY domain, is_catch_all DESC, address LIMIT $4 OFFSET $5"
     )))
@@ -180,22 +190,25 @@ pub async fn create_alias(
 
     require_address_free(&state.db, &parsed.address, None).await?;
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound.
+    let id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.aliases
-             (address, domain, destinations, is_catch_all, is_active, comment)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING {COLUMNS}"#
-    )))
+             (id, address, domain, destinations, is_catch_all, is_active, comment)
+           VALUES ($7, $1, $2, $3, $4, $5, $6)"#,
+    )
     .bind(&parsed.address)
     .bind(&parsed.domain)
     .bind(&destinations)
     .bind(parsed.is_catch_all)
     .bind(dto.is_active.unwrap_or(true))
     .bind(clean_text(dto.comment.as_deref()))
-    .fetch_one(&state.db)
+    .bind(id)
+    .execute(&state.db)
     .await
     .map_err(|e| translate_conflict(e, &parsed.address, &parsed.domain, "création d'un alias"))?;
+    // Re-read rather than `RETURNING`, which MySQL does not have.
+    let row = fetch_one(&state.db, id).await?;
 
     Ok(Json(decorate(row, Some(&served))))
 }
@@ -233,19 +246,18 @@ pub async fn update_alias(
     };
     reject_catch_all_self_loop(&address, is_catch_all, &destinations)?;
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound.
+    let updated = crate::db::query(
         r#"UPDATE mail.aliases SET
              address      = $2,
              domain       = $3,
              is_catch_all = $4,
              destinations = $5,
              is_active    = COALESCE($6, is_active),
-             comment      = CASE WHEN $7::text IS NULL THEN comment
+             comment      = CASE WHEN $7 IS NULL THEN comment
                                  WHEN $7 = '' THEN NULL ELSE $7 END
-           WHERE id = $1
-           RETURNING {COLUMNS}"#
-    )))
+           WHERE id = $1"#,
+    )
     .bind(id)
     .bind(&address)
     .bind(&domain)
@@ -253,9 +265,13 @@ pub async fn update_alias(
     .bind(&destinations)
     .bind(dto.is_active)
     .bind(dto.comment.as_deref().map(str::trim))
-    .fetch_one(&state.db)
+    .execute(&state.db)
     .await
     .map_err(|e| translate_conflict(e, &address, &domain, "mise à jour d'un alias"))?;
+    if updated.rows_affected() == 0 {
+        return Err(MailError::NotFound(format!("Alias {id}")));
+    }
+    let row = fetch_one(&state.db, id).await?;
 
     Ok(Json(decorate(row, Some(&served))))
 }
@@ -271,7 +287,7 @@ pub async fn delete_alias(
     require_admin(&user)?;
 
     let row = fetch_one(&state.db, id).await?;
-    let deleted = sqlx::query("DELETE FROM mail.aliases WHERE id = $1")
+    let deleted = crate::db::query("DELETE FROM mail.aliases WHERE id = $1")
         .bind(id)
         .execute(&state.db)
         .await
@@ -293,9 +309,9 @@ pub async fn delete_alias(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async fn fetch_one(db: &PgPool, id: Uuid) -> Result<AliasRow, MailError> {
+async fn fetch_one(db: &DbPool, id: Uuid) -> Result<AliasRow, MailError> {
     // Audited: `COLUMNS` is a constant; every caller value is bound.
-    sqlx::query_as::<_, AliasRow>(sqlx::AssertSqlSafe(format!(
+    crate::db::query_as::<AliasRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.aliases WHERE id = $1"
     )))
         .bind(id)

@@ -20,7 +20,7 @@ pub async fn list_accounts(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let accounts = sqlx::query_as::<_, EmailAccount>(
+    let accounts = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
@@ -64,14 +64,14 @@ pub async fn create_account(
     let mut tx = state.db.begin().await?;
 
     if is_default {
-        sqlx::query("UPDATE mail.accounts SET is_default = FALSE WHERE user_id = $1")
+        crate::db::query("UPDATE mail.accounts SET is_default = FALSE WHERE user_id = $1")
             .bind(user.id)
-            .execute(&mut *tx)
+            .execute(&mut tx)
             .await?;
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         r#"INSERT INTO mail.accounts
            (id, user_id, name, email_address, incoming_protocol,
             imap_host, imap_port, imap_security, imap_username, imap_password, imap_password_nonce,
@@ -97,7 +97,7 @@ pub async fn create_account(
     .bind(smtp_enc.as_slice())
     .bind(smtp_nonce.as_slice())
     .bind(is_default)
-    .execute(&mut *tx)
+    .execute(&mut tx)
     .await?;
 
     // Créer les labels système
@@ -108,14 +108,16 @@ pub async fn create_account(
         ("Spam",               "Junk"),
         ("Corbeille",          "Trash"),
     ] {
-        sqlx::query(
-            "INSERT INTO mail.labels (account_id, user_id, name, imap_folder, is_system) VALUES ($1,$2,$3,$4,TRUE)"
+        // The id is generated here: MySQL and SQLite have no UUID column default.
+        crate::db::query(
+            "INSERT INTO mail.labels (id, account_id, user_id, name, imap_folder, is_system) VALUES ($1,$2,$3,$4,$5,TRUE)"
         )
+        .bind(kubuno_db::new_id())
         .bind(id)
         .bind(user.id)
         .bind(name)
         .bind(folder)
-        .execute(&mut *tx)
+        .execute(&mut tx)
         .await?;
     }
 
@@ -128,7 +130,7 @@ pub async fn get_account(
     user: AuthUser,
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<EmailAccount>, MailError> {
-    let account = sqlx::query_as::<_, EmailAccount>(
+    let account = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,
@@ -153,7 +155,7 @@ pub async fn test_existing_account(
     Json(dto): Json<TestConnectionDto>,
 ) -> Result<Json<serde_json::Value>, MailError> {
     // Charger les credentials chiffrés depuis la DB
-    let row = sqlx::query(
+    let row = crate::db::query(
         r#"SELECT incoming_protocol, auth_kind,
                   imap_host, imap_port, imap_security, imap_username,
                   imap_password, imap_password_nonce,
@@ -170,7 +172,6 @@ pub async fn test_existing_account(
     let crypto = MailCrypto::new(&state.settings.mail.encryption_key)
         .map_err(|_| MailError::Crypto)?;
 
-    use sqlx::Row;
     let auth_kind: String = row.try_get("auth_kind").unwrap_or_else(|_| "password".into());
     let imap_enc:   Vec<u8> = row.try_get("imap_password").map_err(anyhow::Error::from)?;
     let imap_nonce: Vec<u8> = row.try_get("imap_password_nonce").map_err(anyhow::Error::from)?;
@@ -192,18 +193,18 @@ pub async fn test_existing_account(
     // les mots de passe viennent de la DB si le formulaire les a laissés vides
     let effective = TestConnectionDto {
         incoming_protocol: if dto.incoming_protocol.is_none() {
-            row.try_get::<String,_>("incoming_protocol").ok()
+            row.try_get::<String>("incoming_protocol").ok()
         } else {
             dto.incoming_protocol
         },
         imap_host:     if dto.imap_host.is_empty()     { row.try_get("imap_host").map_err(anyhow::Error::from)? } else { dto.imap_host },
-        imap_port:     if dto.imap_port.is_none()      { row.try_get::<i32,_>("imap_port").ok() } else { dto.imap_port },
-        imap_security: if dto.imap_security.is_none()  { row.try_get::<String,_>("imap_security").ok() } else { dto.imap_security },
+        imap_port:     if dto.imap_port.is_none()      { row.try_get::<i32>("imap_port").ok() } else { dto.imap_port },
+        imap_security: if dto.imap_security.is_none()  { row.try_get::<String>("imap_security").ok() } else { dto.imap_security },
         imap_username: if dto.imap_username.is_empty() { row.try_get("imap_username").map_err(anyhow::Error::from)? } else { dto.imap_username },
         imap_password: if dto.imap_password.is_empty() { imap_pass } else { dto.imap_password },
         smtp_host:     if dto.smtp_host.is_empty()     { row.try_get("smtp_host").map_err(anyhow::Error::from)? } else { dto.smtp_host },
-        smtp_port:     if dto.smtp_port.is_none()      { row.try_get::<i32,_>("smtp_port").ok() } else { dto.smtp_port },
-        smtp_security: if dto.smtp_security.is_none()  { row.try_get::<String,_>("smtp_security").ok() } else { dto.smtp_security },
+        smtp_port:     if dto.smtp_port.is_none()      { row.try_get::<i32>("smtp_port").ok() } else { dto.smtp_port },
+        smtp_security: if dto.smtp_security.is_none()  { row.try_get::<String>("smtp_security").ok() } else { dto.smtp_security },
         smtp_username: if dto.smtp_username.is_empty() { row.try_get("smtp_username").map_err(anyhow::Error::from)? } else { dto.smtp_username },
         smtp_password: if dto.smtp_password.is_empty() { smtp_pass } else { dto.smtp_password },
     };
@@ -231,7 +232,7 @@ pub async fn update_account(
     Path(account_id): Path<Uuid>,
     Json(dto): Json<UpdateAccountDto>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let exists: bool = sqlx::query_scalar::<_, bool>(
+    let exists: bool = crate::db::query_scalar::<bool>(
         "SELECT EXISTS(SELECT 1 FROM mail.accounts WHERE id = $1 AND user_id = $2)"
     )
     .bind(account_id)
@@ -260,7 +261,7 @@ pub async fn update_account(
     // mot de passe). Si oui, les messages déjà synchronisés proviennent potentiellement
     // d'une AUTRE boîte → on les purge et on relance un sync complet (cf. plus bas).
     let (cur_host, cur_port, cur_user, cur_pass_enc, cur_pass_nonce):
-        (String, i32, String, Vec<u8>, Vec<u8>) = sqlx::query_as(
+        (String, i32, String, Vec<u8>, Vec<u8>) = crate::db::query_as(
         "SELECT imap_host, imap_port, imap_username, imap_password, imap_password_nonce \
          FROM mail.accounts WHERE id = $1",
     )
@@ -284,8 +285,8 @@ pub async fn update_account(
     macro_rules! update_field {
         ($col:literal, $val:expr) => {
             if let Some(v) = $val {
-                sqlx::query(concat!("UPDATE mail.accounts SET ", $col, " = $1 WHERE id = $2"))
-                    .bind(v).bind(account_id).execute(&mut *tx).await?;
+                crate::db::query(concat!("UPDATE mail.accounts SET ", $col, " = $1 WHERE id = $2"))
+                    .bind(v).bind(account_id).execute(&mut tx).await?;
             }
         };
     }
@@ -303,20 +304,20 @@ pub async fn update_account(
     update_field!("smtp_username", dto.smtp_username.as_deref());
 
     if let Some((enc, nonce)) = &imap_pass_enc {
-        sqlx::query("UPDATE mail.accounts SET imap_password = $1, imap_password_nonce = $2 WHERE id = $3")
-            .bind(enc.as_slice()).bind(nonce.as_slice()).bind(account_id).execute(&mut *tx).await?;
+        crate::db::query("UPDATE mail.accounts SET imap_password = $1, imap_password_nonce = $2 WHERE id = $3")
+            .bind(enc.as_slice()).bind(nonce.as_slice()).bind(account_id).execute(&mut tx).await?;
     }
     if let Some((enc, nonce)) = &smtp_pass_enc {
-        sqlx::query("UPDATE mail.accounts SET smtp_password = $1, smtp_password_nonce = $2 WHERE id = $3")
-            .bind(enc.as_slice()).bind(nonce.as_slice()).bind(account_id).execute(&mut *tx).await?;
+        crate::db::query("UPDATE mail.accounts SET smtp_password = $1, smtp_password_nonce = $2 WHERE id = $3")
+            .bind(enc.as_slice()).bind(nonce.as_slice()).bind(account_id).execute(&mut tx).await?;
     }
 
     if let Some(default) = dto.is_default {
-        sqlx::query("UPDATE mail.accounts SET is_default = FALSE WHERE user_id = $1")
-            .bind(user.id).execute(&mut *tx).await?;
+        crate::db::query("UPDATE mail.accounts SET is_default = FALSE WHERE user_id = $1")
+            .bind(user.id).execute(&mut tx).await?;
         if default {
-            sqlx::query("UPDATE mail.accounts SET is_default = TRUE WHERE id = $1")
-                .bind(account_id).execute(&mut *tx).await?;
+            crate::db::query("UPDATE mail.accounts SET is_default = TRUE WHERE id = $1")
+                .bind(account_id).execute(&mut tx).await?;
         }
     }
 
@@ -325,12 +326,12 @@ pub async fn update_account(
     // (drafts) sont conservés (leur message_id passe à NULL). last_sync_at remis à NULL
     // pour que le worker refasse un sync complet depuis la nouvelle boîte.
     if creds_changed {
-        sqlx::query("DELETE FROM mail.messages WHERE account_id = $1")
-            .bind(account_id).execute(&mut *tx).await?;
-        sqlx::query("DELETE FROM mail.threads WHERE account_id = $1")
-            .bind(account_id).execute(&mut *tx).await?;
-        sqlx::query("UPDATE mail.accounts SET last_sync_at = NULL, last_error = NULL WHERE id = $1")
-            .bind(account_id).execute(&mut *tx).await?;
+        crate::db::query("DELETE FROM mail.messages WHERE account_id = $1")
+            .bind(account_id).execute(&mut tx).await?;
+        crate::db::query("DELETE FROM mail.threads WHERE account_id = $1")
+            .bind(account_id).execute(&mut tx).await?;
+        crate::db::query("UPDATE mail.accounts SET last_sync_at = NULL, last_error = NULL WHERE id = $1")
+            .bind(account_id).execute(&mut tx).await?;
     }
 
     tx.commit().await?;
@@ -345,7 +346,7 @@ pub async fn delete_account(
     user: AuthUser,
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let result = sqlx::query("DELETE FROM mail.accounts WHERE id = $1 AND user_id = $2")
+    let result = crate::db::query("DELETE FROM mail.accounts WHERE id = $1 AND user_id = $2")
         .bind(account_id)
         .bind(user.id)
         .execute(&state.db)
@@ -546,7 +547,7 @@ pub async fn trigger_sync(
     user: AuthUser,
     Path(account_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let account = sqlx::query_as::<_, EmailAccount>(
+    let account = crate::db::query_as::<EmailAccount>(
         r#"SELECT id, user_id, name, email_address, kind, mailbox_id,
                   incoming_protocol,
                   imap_host, imap_port, imap_security, imap_username,

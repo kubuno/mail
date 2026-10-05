@@ -29,7 +29,7 @@ pub async fn get_message(
     let acting_id = crate::services::delegation::resolve_acting_user(&state.db, &user, q.on_behalf_of).await?;
     let user = AuthUser { id: acting_id, ..user };
 
-    let msg = sqlx::query_as::<_, EmailMessage>(
+    let msg = crate::db::query_as::<EmailMessage>(
         r#"SELECT id, thread_id, account_id, user_id, message_id, in_reply_to,
                   imap_uid, imap_folder, from_name, from_email,
                   to_addresses, cc_addresses, bcc_addresses, reply_to,
@@ -51,13 +51,13 @@ pub async fn get_message(
     decode_pgp_in_place(&state, user.id, &mut msg).await;
 
     if q.mark_read.unwrap_or(true) && !msg.is_read {
-        let _ = sqlx::query("UPDATE mail.messages SET is_read = TRUE WHERE id = $1")
+        let _ = crate::db::query("UPDATE mail.messages SET is_read = TRUE WHERE id = $1")
             .bind(msg_id)
             .execute(&state.db)
             .await;
 
-        let _ = sqlx::query(
-            "UPDATE mail.threads SET unread_count = GREATEST(0, unread_count - 1) WHERE id = $1"
+        let _ = crate::db::query(
+            "UPDATE mail.threads SET unread_count = CASE WHEN unread_count > 0 THEN unread_count - 1 ELSE 0 END WHERE id = $1"
         )
         .bind(msg.thread_id)
         .execute(&state.db)

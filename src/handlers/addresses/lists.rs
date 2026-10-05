@@ -17,11 +17,11 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Postgres, Transaction};
+use kubuno_db::{DbPool, DbTx};
 use uuid::Uuid;
 
 use super::{
-    db_error, local_domains, parse_address, parse_address_set, parse_destinations,
+    db_error, like_escape, local_domains, parse_address, parse_address_set, parse_destinations,
     require_address_free, require_admin, require_local_domain, translate_conflict, ListQuery,
     MAX_DESTINATIONS,
 };
@@ -41,6 +41,8 @@ pub struct ListRow {
     pub name: String,
     /// `anyone` | `members` | `internal` | `allowed`.
     pub post_policy: String,
+    /// A JSON array of addresses on every engine.
+    #[sqlx(json)]
     pub allowed_senders: Vec<String>,
     pub is_active: bool,
     pub comment: Option<String>,
@@ -111,19 +113,24 @@ pub async fn list_mailing_lists(
     let domain = q.domain_filter();
     let pattern = q.pattern();
 
-    let filter = r#"
-        WHERE ($1::text IS NULL OR domain = $1)
-          AND ($2::boolean IS NULL OR is_active = $2)
-          AND ($3::text IS NULL
-               OR address LIKE $3 ESCAPE '\'
-               OR LOWER(name) LIKE $3 ESCAPE '\'
-               OR LOWER(COALESCE(comment, '')) LIKE $3 ESCAPE '\')
-    "#;
+    let backend = state.db.backend();
+    let esc = like_escape(backend);
+    let filter = format!(
+        r#"
+        WHERE ($1 IS NULL OR domain = $1)
+          AND ($2 IS NULL OR is_active = $2)
+          AND ($3 IS NULL
+               OR address LIKE $3{esc}
+               OR LOWER(name) LIKE $3{esc}
+               OR LOWER(COALESCE(comment, '')) LIKE $3{esc})
+    "#
+    );
 
     // Audited: `filter` above is a literal; the domain, the active flag and
     // the search pattern are bound parameters.
-    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT COUNT(*) FROM mail.mailing_lists {filter}"
+    let total: i64 = crate::db::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT {} FROM mail.mailing_lists {filter}",
+        backend.count_bigint("*")
     )))
         .bind(&domain)
         .bind(q.active)
@@ -134,7 +141,7 @@ pub async fn list_mailing_lists(
 
     // Audited: the only interpolations are the `COLUMNS` constant and the
     // `filter` literal above; every caller value is a bound parameter.
-    let rows = sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
+    let rows = crate::db::query_as::<ListRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailing_lists {filter} ORDER BY address LIMIT $4 OFFSET $5"
     )))
     .bind(&domain)
@@ -148,14 +155,21 @@ pub async fn list_mailing_lists(
 
     // One query for every membership on the page rather than one per row.
     let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
-    let memberships: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT list_id, address FROM mail.mailing_list_members \
-         WHERE list_id = ANY($1) ORDER BY address",
-    )
-    .bind(&ids)
-    .fetch_all(&state.db)
-    .await
-    .map_err(db_error("membres des listes"))?;
+    let memberships: Vec<(Uuid, String)> = if ids.is_empty() {
+        Vec::new()
+    } else {
+        let mut q = crate::db::query_as(format!(
+            "SELECT list_id, address FROM mail.mailing_list_members \
+             WHERE list_id IN ({}) ORDER BY address",
+            crate::db::in_list(1, ids.len())
+        ));
+        for id in &ids {
+            q = q.bind(*id);
+        }
+        q.fetch_all(&state.db)
+            .await
+            .map_err(db_error("membres des listes"))?
+    };
 
     let served = local_domains(&state).await.ok();
     let items = rows
@@ -224,13 +238,15 @@ pub async fn create_mailing_list(
         .await
         .map_err(db_error("création d'une liste : ouverture de transaction"))?;
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound; the id is generated here (no RETURNING on
+    // MySQL) and the row re-read inside the transaction.
+    let id = kubuno_db::new_id();
+    crate::db::query(
         r#"INSERT INTO mail.mailing_lists
-             (address, domain, name, post_policy, allowed_senders, is_active, comment)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING {COLUMNS}"#
-    )))
+             (id, address, domain, name, post_policy, allowed_senders, is_active, comment)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+    )
+    .bind(id)
     .bind(&parsed.address)
     .bind(&parsed.domain)
     .bind(&name)
@@ -238,9 +254,10 @@ pub async fn create_mailing_list(
     .bind(&allowed)
     .bind(dto.is_active.unwrap_or(true))
     .bind(clean_text(dto.comment.as_deref()))
-    .fetch_one(&mut *tx)
+    .execute(&mut tx)
     .await
     .map_err(|e| translate_conflict(e, &parsed.address, &parsed.domain, "création d'une liste"))?;
+    let row = fetch_one_in(&mut tx, id).await?;
 
     replace_members(&mut tx, row.id, &members).await?;
 
@@ -307,8 +324,8 @@ pub async fn update_mailing_list(
         .await
         .map_err(db_error("mise à jour d'une liste : ouverture de transaction"))?;
 
-    // Audited: `COLUMNS` is a constant; every caller value is bound.
-    let row = sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
+    // Every caller value is bound; the row is re-read in the transaction.
+    let updated = crate::db::query(
         r#"UPDATE mail.mailing_lists SET
              address         = $2,
              domain          = $3,
@@ -316,11 +333,10 @@ pub async fn update_mailing_list(
              post_policy     = $5,
              allowed_senders = $6,
              is_active       = COALESCE($7, is_active),
-             comment         = CASE WHEN $8::text IS NULL THEN comment
+             comment         = CASE WHEN $8 IS NULL THEN comment
                                     WHEN $8 = '' THEN NULL ELSE $8 END
-           WHERE id = $1
-           RETURNING {COLUMNS}"#
-    )))
+           WHERE id = $1"#,
+    )
     .bind(id)
     .bind(&address)
     .bind(&domain)
@@ -329,9 +345,13 @@ pub async fn update_mailing_list(
     .bind(&allowed)
     .bind(dto.is_active)
     .bind(dto.comment.as_deref().map(str::trim))
-    .fetch_one(&mut *tx)
+    .execute(&mut tx)
     .await
     .map_err(|e| translate_conflict(e, &address, &domain, "mise à jour d'une liste"))?;
+    if updated.rows_affected() == 0 {
+        return Err(MailError::NotFound(format!("Liste {id}")));
+    }
+    let row = fetch_one_in(&mut tx, id).await?;
 
     replace_members(&mut tx, id, &members).await?;
 
@@ -354,7 +374,7 @@ pub async fn delete_mailing_list(
     let row = fetch_one(&state.db, id).await?;
     let members = fetch_members(&state.db, id).await?;
 
-    let deleted = sqlx::query("DELETE FROM mail.mailing_lists WHERE id = $1")
+    let deleted = crate::db::query("DELETE FROM mail.mailing_lists WHERE id = $1")
         .bind(id)
         .execute(&state.db)
         .await
@@ -461,13 +481,13 @@ async fn commit_members(
 /// rather than a diff: the set is small, and one statement pair is easier to
 /// reason about than three.
 async fn replace_members(
-    tx: &mut Transaction<'_, Postgres>,
+    tx: &mut DbTx,
     list_id: Uuid,
     members: &[String],
 ) -> Result<(), MailError> {
-    sqlx::query("DELETE FROM mail.mailing_list_members WHERE list_id = $1")
+    crate::db::query("DELETE FROM mail.mailing_list_members WHERE list_id = $1")
         .bind(list_id)
-        .execute(&mut **tx)
+        .execute(&mut *tx)
         .await
         .map_err(db_error("remplacement des membres : purge"))?;
 
@@ -475,14 +495,19 @@ async fn replace_members(
         return Ok(());
     }
 
-    sqlx::query(
-        "INSERT INTO mail.mailing_list_members (list_id, address) \
-         SELECT $1, address FROM unnest($2::text[]) AS address \
-         ON CONFLICT (list_id, address) DO NOTHING",
-    )
-    .bind(list_id)
-    .bind(members)
-    .execute(&mut **tx)
+    // The set is already deduplicated (`parse_members`) and the old rows were
+    // just purged, so one multi-row INSERT: `($1, $2), ($3, $4), …`.
+    let values = (0..members.len())
+        .map(|i| format!("(${}, ${})", 2 * i + 1, 2 * i + 2))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut q = crate::db::query(format!(
+        "INSERT INTO mail.mailing_list_members (list_id, address) VALUES {values}"
+    ));
+    for m in members {
+        q = q.bind(list_id).bind(m);
+    }
+    q.execute(&mut *tx)
     .await
     .map_err(db_error("remplacement des membres : insertion"))?;
 
@@ -491,9 +516,9 @@ async fn replace_members(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async fn fetch_one(db: &PgPool, id: Uuid) -> Result<ListRow, MailError> {
+async fn fetch_one(db: &DbPool, id: Uuid) -> Result<ListRow, MailError> {
     // Audited: `COLUMNS` is a constant; every caller value is bound.
-    sqlx::query_as::<_, ListRow>(sqlx::AssertSqlSafe(format!(
+    crate::db::query_as::<ListRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM mail.mailing_lists WHERE id = $1"
     )))
         .bind(id)
@@ -503,8 +528,20 @@ async fn fetch_one(db: &PgPool, id: Uuid) -> Result<ListRow, MailError> {
         .ok_or_else(|| MailError::NotFound(format!("Liste {id}")))
 }
 
-async fn fetch_members(db: &PgPool, id: Uuid) -> Result<Vec<String>, MailError> {
-    sqlx::query_scalar(
+/// [`fetch_one`] inside an open transaction (sees its uncommitted writes).
+async fn fetch_one_in(tx: &mut DbTx, id: Uuid) -> Result<ListRow, MailError> {
+    crate::db::query_as::<ListRow>(format!(
+        "SELECT {COLUMNS} FROM mail.mailing_lists WHERE id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(tx)
+    .await
+    .map_err(db_error("lecture d'une liste"))?
+    .ok_or_else(|| MailError::NotFound(format!("Liste {id}")))
+}
+
+async fn fetch_members(db: &DbPool, id: Uuid) -> Result<Vec<String>, MailError> {
+    crate::db::query_scalar(
         "SELECT address FROM mail.mailing_list_members WHERE list_id = $1 ORDER BY address",
     )
     .bind(id)

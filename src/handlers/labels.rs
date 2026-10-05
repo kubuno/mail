@@ -15,7 +15,7 @@ pub async fn list_labels(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let labels = sqlx::query_as::<_, Label>(
+    let labels = crate::db::query_as::<Label>(
         "SELECT id, account_id, user_id, name, color, imap_folder, is_system, position, created_at,
                 list_visibility, message_list_visibility
          FROM mail.labels WHERE user_id = $1 ORDER BY is_system DESC, position, name",
@@ -36,7 +36,7 @@ pub async fn create_label(
         return Err(MailError::Validation("Nom requis".into()));
     }
 
-    let account_exists: bool = sqlx::query_scalar::<_, bool>(
+    let account_exists: bool = crate::db::query_scalar::<bool>(
         "SELECT EXISTS(SELECT 1 FROM mail.accounts WHERE id = $1 AND user_id = $2)"
     )
     .bind(dto.account_id)
@@ -49,7 +49,7 @@ pub async fn create_label(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO mail.labels (id, account_id, user_id, name, color) VALUES ($1,$2,$3,$4,$5)"
     )
     .bind(id)
@@ -60,7 +60,7 @@ pub async fn create_label(
     .execute(&state.db)
     .await
     .map_err(|e| {
-        if e.to_string().contains("unique") {
+        if crate::db::is_unique_violation(&e) {
             MailError::Conflict(format!("Label '{}' existe déjà", dto.name))
         } else {
             MailError::Database(e)
@@ -93,7 +93,7 @@ pub async fn update_label(
         }
     }
 
-    let is_system: Option<bool> = sqlx::query_scalar(
+    let is_system: Option<bool> = crate::db::query_scalar(
         "SELECT is_system FROM mail.labels WHERE id = $1 AND user_id = $2",
     )
     .bind(label_id)
@@ -119,7 +119,7 @@ pub async fn update_label(
 
     // COALESCE keeps untouched columns; `color` uses its own flag so an
     // explicit null clears it.
-    sqlx::query(
+    crate::db::query(
         "UPDATE mail.labels SET
             name                    = COALESCE($3, name),
             color                   = CASE WHEN $4 THEN $5 ELSE color END,
@@ -153,7 +153,7 @@ pub async fn delete_label(
     user: AuthUser,
     Path(label_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let is_system: Option<bool> = sqlx::query_scalar(
+    let is_system: Option<bool> = crate::db::query_scalar(
         "SELECT is_system FROM mail.labels WHERE id = $1 AND user_id = $2"
     )
     .bind(label_id)
@@ -167,7 +167,7 @@ pub async fn delete_label(
         Some(false) => {}
     }
 
-    sqlx::query("DELETE FROM mail.labels WHERE id = $1")
+    crate::db::query("DELETE FROM mail.labels WHERE id = $1")
         .bind(label_id)
         .execute(&state.db)
         .await?;
@@ -180,7 +180,7 @@ pub async fn add_thread_label(
     user: AuthUser,
     Path((thread_id, label_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let exists: bool = sqlx::query_scalar::<_, bool>(
+    let exists: bool = crate::db::query_scalar::<bool>(
         "SELECT EXISTS(SELECT 1 FROM mail.threads WHERE id = $1 AND user_id = $2)"
     )
     .bind(thread_id)
@@ -192,9 +192,12 @@ pub async fn add_thread_label(
         return Err(MailError::NotFound(format!("Thread {thread_id}")));
     }
 
-    sqlx::query(
-        "INSERT INTO mail.thread_labels (thread_id, label_id) VALUES ($1,$2) ON CONFLICT DO NOTHING"
-    )
+    let backend = state.db.backend();
+    crate::db::query(format!(
+        "INSERT {}INTO mail.thread_labels (thread_id, label_id) VALUES ($1,$2){}",
+        backend.insert_ignore_prefix(),
+        backend.on_conflict_do_nothing(&["thread_id", "label_id"]),
+    ))
     .bind(thread_id)
     .bind(label_id)
     .execute(&state.db)
@@ -211,7 +214,7 @@ pub async fn remove_thread_label(
     user: AuthUser,
     Path((thread_id, label_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, MailError> {
-    let exists: bool = sqlx::query_scalar::<_, bool>(
+    let exists: bool = crate::db::query_scalar::<bool>(
         "SELECT EXISTS(SELECT 1 FROM mail.threads WHERE id = $1 AND user_id = $2)"
     )
     .bind(thread_id)
@@ -223,7 +226,7 @@ pub async fn remove_thread_label(
         return Err(MailError::NotFound(format!("Thread {thread_id}")));
     }
 
-    sqlx::query("DELETE FROM mail.thread_labels WHERE thread_id = $1 AND label_id = $2")
+    crate::db::query("DELETE FROM mail.thread_labels WHERE thread_id = $1 AND label_id = $2")
         .bind(thread_id)
         .bind(label_id)
         .execute(&state.db)

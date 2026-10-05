@@ -129,7 +129,7 @@ async fn send_invitation(state: &AppState, invite: &CalendarInvite) -> Result<()
 
     // Resolve the organizer's default sending account: prefer a local mailbox of
     // this instance, then the account flagged default, then any active one.
-    let account_id: Option<Uuid> = sqlx::query_scalar(
+    let account_id: Option<Uuid> = crate::db::query_scalar(
         "SELECT id FROM mail.accounts
          WHERE user_id = $1
          ORDER BY (kind = 'local') DESC, is_default DESC, is_active DESC, created_at ASC

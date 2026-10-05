@@ -8,7 +8,8 @@
 
 use std::collections::HashSet;
 
-use sqlx::PgPool;
+use kubuno_db::dialect::Assign;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 /// Tokens shorter/longer than these bounds carry little signal and are dropped.
@@ -64,9 +65,13 @@ pub fn tokenize(subject: &str, body: Option<&str>, from_email: &str) -> HashSet<
     set
 }
 
+/// Tokens per statement when writing or reading the token table: keeps every
+/// statement well under the bind-parameter ceilings of all three engines.
+const TOKEN_CHUNK: usize = 200;
+
 /// Add the token set to the corpus under the given class.
 pub async fn train(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     tokens: &HashSet<String>,
     is_spam: bool,
@@ -76,36 +81,55 @@ pub async fn train(
     }
     let (s_inc, h_inc): (i32, i32) = if is_spam { (1, 0) } else { (0, 1) };
     let toks: Vec<String> = tokens.iter().cloned().collect();
+    let backend = db.backend();
 
     let mut tx = db.begin().await?;
 
-    // Batch upsert all tokens of the message in one statement via UNNEST.
-    sqlx::query(
-        r#"INSERT INTO mail.spam_tokens (user_id, token, spam_count, ham_count)
-           SELECT $1, t, $3, $4 FROM UNNEST($2::text[]) AS t
-           ON CONFLICT (user_id, token) DO UPDATE
-             SET spam_count = mail.spam_tokens.spam_count + EXCLUDED.spam_count,
-                 ham_count  = mail.spam_tokens.ham_count  + EXCLUDED.ham_count"#,
-    )
-    .bind(user_id)
-    .bind(&toks)
-    .bind(s_inc)
-    .bind(h_inc)
-    .execute(&mut *tx)
-    .await?;
+    // Batch upsert the tokens, one multi-row VALUES statement per chunk (the
+    // portable form of the former `UNNEST($2::text[])`).
+    let token_upsert = backend.upsert(
+        "mail.spam_tokens",
+        &["user_id", "token"],
+        &[
+            Assign::Expr { col: "spam_count", expr: "{cur} + {new}" },
+            Assign::Expr { col: "ham_count", expr: "{cur} + {new}" },
+        ],
+    );
+    for chunk in toks.chunks(TOKEN_CHUNK) {
+        let values = (0..chunk.len())
+            .map(|i| {
+                let b = i * 4;
+                format!("(${}, ${}, ${}, ${})", b + 1, b + 2, b + 3, b + 4)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut q = crate::db::query(format!(
+            "INSERT INTO mail.spam_tokens (user_id, token, spam_count, ham_count) VALUES {values}{token_upsert}"
+        ));
+        for tok in chunk {
+            q = q.bind(user_id).bind(tok).bind(s_inc).bind(h_inc);
+        }
+        q.execute(&mut tx).await?;
+    }
 
-    sqlx::query(
-        r#"INSERT INTO mail.spam_stats (user_id, spam_messages, ham_messages)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (user_id) DO UPDATE
-             SET spam_messages = mail.spam_stats.spam_messages + $2,
-                 ham_messages  = mail.spam_stats.ham_messages  + $3,
-                 updated_at    = NOW()"#,
-    )
+    let stats_upsert = backend.upsert(
+        "mail.spam_stats",
+        &["user_id"],
+        &[
+            Assign::Expr { col: "spam_messages", expr: "{cur} + {new}" },
+            Assign::Expr { col: "ham_messages", expr: "{cur} + {new}" },
+            Assign::Incoming("updated_at"),
+        ],
+    );
+    crate::db::query(format!(
+        "INSERT INTO mail.spam_stats (user_id, spam_messages, ham_messages, updated_at) \
+         VALUES ($1, $2, $3, $4){stats_upsert}"
+    ))
     .bind(user_id)
     .bind(s_inc)
     .bind(h_inc)
-    .execute(&mut *tx)
+    .bind(chrono::Utc::now())
+    .execute(&mut tx)
     .await?;
 
     tx.commit().await?;
@@ -115,7 +139,7 @@ pub async fn train(
 /// Remove the token set from the corpus under the given class (floored at 0).
 /// Used when a message is re-classified to undo its previous contribution.
 pub async fn untrain(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     tokens: &HashSet<String>,
     was_spam: bool,
@@ -125,33 +149,39 @@ pub async fn untrain(
     }
     let (s_dec, h_dec): (i32, i32) = if was_spam { (1, 0) } else { (0, 1) };
     let toks: Vec<String> = tokens.iter().cloned().collect();
+    let backend = db.backend();
 
     let mut tx = db.begin().await?;
 
-    sqlx::query(
-        r#"UPDATE mail.spam_tokens
-           SET spam_count = GREATEST(0, spam_count - $3),
-               ham_count  = GREATEST(0, ham_count  - $4)
-           WHERE user_id = $1 AND token = ANY($2)"#,
-    )
-    .bind(user_id)
-    .bind(&toks)
-    .bind(s_dec)
-    .bind(h_dec)
-    .execute(&mut *tx)
-    .await?;
+    let spam_floor = crate::db::greatest(backend, &["0", "spam_count - $1"]);
+    let ham_floor = crate::db::greatest(backend, &["0", "ham_count - $2"]);
+    for chunk in toks.chunks(TOKEN_CHUNK) {
+        let mut q = crate::db::query(format!(
+            "UPDATE mail.spam_tokens SET spam_count = {spam_floor}, ham_count = {ham_floor} \
+             WHERE user_id = $3 AND token IN ({})",
+            crate::db::in_list(4, chunk.len())
+        ))
+        .bind(s_dec)
+        .bind(h_dec)
+        .bind(user_id);
+        for tok in chunk {
+            q = q.bind(tok);
+        }
+        q.execute(&mut tx).await?;
+    }
 
-    sqlx::query(
-        r#"UPDATE mail.spam_stats
-           SET spam_messages = GREATEST(0, spam_messages - $2),
-               ham_messages  = GREATEST(0, ham_messages  - $3),
-               updated_at    = NOW()
-           WHERE user_id = $1"#,
-    )
-    .bind(user_id)
+    crate::db::query(format!(
+        "UPDATE mail.spam_stats \
+         SET spam_messages = {}, ham_messages = {}, updated_at = $3 \
+         WHERE user_id = $4",
+        crate::db::greatest(backend, &["0", "spam_messages - $1"]),
+        crate::db::greatest(backend, &["0", "ham_messages - $2"]),
+    ))
     .bind(s_dec)
     .bind(h_dec)
-    .execute(&mut *tx)
+    .bind(chrono::Utc::now())
+    .bind(user_id)
+    .execute(&mut tx)
     .await?;
 
     tx.commit().await?;
@@ -164,7 +194,7 @@ pub async fn untrain(
 /// Some(1=spam)). Returns the new guard value to persist on the message row.
 /// Re-classifying first undoes the previous contribution, so counts never drift.
 pub async fn learn_message(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     subject: &str,
     body: Option<&str>,
@@ -189,11 +219,11 @@ pub async fn learn_message(
 /// Returns `None` when the model is too small to be trusted (so callers fall
 /// back to "not spam" rather than acting on noise).
 pub async fn score(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     tokens: &HashSet<String>,
 ) -> anyhow::Result<Option<f64>> {
-    let stats: Option<(i32, i32)> = sqlx::query_as(
+    let stats: Option<(i32, i32)> = crate::db::query_as(
         "SELECT spam_messages, ham_messages FROM mail.spam_stats WHERE user_id = $1",
     )
     .bind(user_id)
@@ -212,13 +242,19 @@ pub async fn score(
     }
 
     let toks: Vec<String> = tokens.iter().cloned().collect();
-    let rows: Vec<(String, i32, i32)> = sqlx::query_as(
-        "SELECT token, spam_count, ham_count FROM mail.spam_tokens WHERE user_id = $1 AND token = ANY($2)",
-    )
-    .bind(user_id)
-    .bind(&toks)
-    .fetch_all(db)
-    .await?;
+    let mut rows: Vec<(String, i32, i32)> = Vec::new();
+    for chunk in toks.chunks(TOKEN_CHUNK) {
+        let mut q = crate::db::query_as::<(String, i32, i32)>(format!(
+            "SELECT token, spam_count, ham_count FROM mail.spam_tokens \
+             WHERE user_id = $1 AND token IN ({})",
+            crate::db::in_list(2, chunk.len())
+        ))
+        .bind(user_id);
+        for tok in chunk {
+            q = q.bind(tok);
+        }
+        rows.extend(q.fetch_all(db).await?);
+    }
 
     let mut probs: Vec<f64> = Vec::with_capacity(rows.len());
     for (_tok, sc, hc) in &rows {
@@ -282,13 +318,13 @@ pub struct Verdict {
 /// Score an incoming message and decide whether to move it to spam, honouring
 /// the user's `auto_classify` flag and `threshold`.
 pub async fn classify_incoming(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     subject: &str,
     body: Option<&str>,
     from_email: &str,
 ) -> anyhow::Result<Verdict> {
-    let settings: Option<(bool, f32)> = sqlx::query_as(
+    let settings: Option<(bool, f32)> = crate::db::query_as(
         "SELECT auto_classify, threshold FROM mail.spam_stats WHERE user_id = $1",
     )
     .bind(user_id)

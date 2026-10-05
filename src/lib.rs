@@ -4,6 +4,7 @@
 pub const SCHEMA: &str = "mail";
 
 pub mod config;
+pub mod db;
 pub mod errors;
 pub mod events;
 pub mod handlers;
@@ -14,5 +15,4 @@ pub mod router;
 pub mod server;
 pub mod services;
 pub mod state;
-pub mod sync;
 pub mod workers;

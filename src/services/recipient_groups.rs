@@ -15,7 +15,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use crate::services::send_as::{is_valid_email, normalize_email};
@@ -119,8 +119,8 @@ fn to_public(r: Row) -> RecipientGroup {
 // ── Database access (always scoped by user_id) ──────────────────────────────
 
 /// Every group of `user_id`, alphabetical by name (case-insensitive).
-pub async fn list(db: &PgPool, user_id: Uuid) -> Result<Vec<RecipientGroup>> {
-    let rows: Vec<Row> = sqlx::query_as(
+pub async fn list(db: &DbPool, user_id: Uuid) -> Result<Vec<RecipientGroup>> {
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT id, name, members, created_at, updated_at
          FROM mail.recipient_groups
          WHERE user_id = $1
@@ -137,21 +137,26 @@ pub async fn list(db: &PgPool, user_id: Uuid) -> Result<Vec<RecipientGroup>> {
 /// `exclude_id`, when set, is skipped — used on rename so a row does not clash
 /// with itself.
 pub async fn name_taken(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     name: &str,
     exclude_id: Option<Uuid>,
 ) -> Result<bool> {
-    let taken: bool = sqlx::query_scalar(
+    // The optional exclusion is spelled in Rust rather than as a typed-NULL
+    // test on a bound parameter (`$3::uuid IS NULL`), which is PostgreSQL-only.
+    let exclude = if exclude_id.is_some() { " AND id <> $3" } else { "" };
+    let mut q = crate::db::query_scalar::<bool>(format!(
         "SELECT EXISTS(
              SELECT 1 FROM mail.recipient_groups
-             WHERE user_id = $1 AND lower(name) = lower($2)
-               AND ($3::uuid IS NULL OR id <> $3)
-         )",
-    )
+             WHERE user_id = $1 AND lower(name) = lower($2){exclude}
+         )"
+    ))
     .bind(user_id)
-    .bind(name)
-    .bind(exclude_id)
+    .bind(name);
+    if let Some(ex) = exclude_id {
+        q = q.bind(ex);
+    }
+    let taken: bool = q
     .fetch_one(db)
     .await
     .context("Vérification d'un nom de groupe existant")?;
@@ -161,61 +166,85 @@ pub async fn name_taken(
 /// Inserts a new group with its (already normalized) members, returning the
 /// public row.
 pub async fn insert(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     name: &str,
     members: &[Member],
 ) -> Result<RecipientGroup> {
-    let row: Row = sqlx::query_as(
-        "INSERT INTO mail.recipient_groups (user_id, name, members)
-         VALUES ($1, $2, $3)
-         RETURNING id, name, members, created_at, updated_at",
+    // Id generated here, row read back by it (no UUID default / RETURNING on MySQL).
+    let id = kubuno_db::new_id();
+    crate::db::query(
+        "INSERT INTO mail.recipient_groups (id, user_id, name, members)
+         VALUES ($1, $2, $3, $4)",
     )
+    .bind(id)
     .bind(user_id)
     .bind(name)
     .bind(sqlx::types::Json(members))
-    .fetch_one(db)
+    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Insertion d'un groupe de destinataires échouée");
         e
     })
     .context("Insertion d'un groupe de destinataires")?;
+    let row = fetch_row(db, user_id, id)
+        .await?
+        .context("Groupe de destinataires introuvable après insertion")?;
     Ok(to_public(row))
 }
 
 /// Updates a group's name/members, scoped to its owner. Returns the updated
 /// public row, or `None` when the id is not this user's.
 pub async fn update(
-    db: &PgPool,
+    db: &DbPool,
     user_id: Uuid,
     id: Uuid,
     name: &str,
     members: &[Member],
 ) -> Result<Option<RecipientGroup>> {
-    let row: Option<Row> = sqlx::query_as(
+    let done = crate::db::query(
         "UPDATE mail.recipient_groups
          SET name = $3, members = $4
-         WHERE id = $1 AND user_id = $2
-         RETURNING id, name, members, created_at, updated_at",
+         WHERE id = $1 AND user_id = $2",
     )
     .bind(id)
     .bind(user_id)
     .bind(name)
     .bind(sqlx::types::Json(members))
-    .fetch_optional(db)
+    .execute(db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Mise à jour d'un groupe de destinataires échouée");
         e
     })
     .context("Mise à jour d'un groupe de destinataires")?;
-    Ok(row.map(to_public))
+    if done.rows_affected() == 0 {
+        return Ok(None);
+    }
+    Ok(fetch_row(db, user_id, id).await?.map(to_public))
+}
+
+/// One group of `user_id` by id (the portable stand-in for `RETURNING`).
+async fn fetch_row(db: &DbPool, user_id: Uuid, id: Uuid) -> Result<Option<Row>> {
+    crate::db::query_as(
+        "SELECT id, name, members, created_at, updated_at
+         FROM mail.recipient_groups WHERE id = $1 AND user_id = $2",
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Relecture d'un groupe de destinataires échouée");
+        e
+    })
+    .context("Relecture d'un groupe de destinataires")
 }
 
 /// Deletes a group; returns how many rows went (0 = not this user's).
-pub async fn delete(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<u64> {
-    let res = sqlx::query("DELETE FROM mail.recipient_groups WHERE id = $1 AND user_id = $2")
+pub async fn delete(db: &DbPool, user_id: Uuid, id: Uuid) -> Result<u64> {
+    let res = crate::db::query("DELETE FROM mail.recipient_groups WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user_id)
         .execute(db)

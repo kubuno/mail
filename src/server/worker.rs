@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use kubuno_db::DbPool;
 use uuid::Uuid;
 
 use super::{
@@ -43,7 +43,7 @@ const DKIM_REQUIRED_CODE: u16 = 451;
 
 /// Runs forever. Delivery only happens when the administrator has enabled
 /// outbound in the console; otherwise the loop idles (mail stays queued).
-pub async fn run(db: PgPool, settings: Settings, http: reqwest::Client) {
+pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
     let worker_id = Uuid::new_v4();
     // The DKIM signing key is decrypted with the module's crypto; a bad key just
     // means outbound mail goes unsigned (logged), never that the worker stops.
@@ -74,7 +74,7 @@ pub async fn run(db: PgPool, settings: Settings, http: reqwest::Client) {
 }
 
 async fn process_cycle(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     crypto: Option<&MailCrypto>,
     relay: Option<&RelayTarget>,
@@ -90,7 +90,7 @@ async fn process_cycle(
 /// One recipient: attempt delivery and record the outcome. An expired message
 /// is bounced even on a temporary failure — we do not retry forever.
 async fn deliver_one(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     crypto: Option<&MailCrypto>,
     relay: Option<&RelayTarget>,
@@ -152,7 +152,7 @@ async fn deliver_one(
 /// not leave unsigned, since unsigned mail is refused outright by the large
 /// providers past a few thousand messages a day.
 async fn prepare(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     crypto: Option<&MailCrypto>,
     c: &Claimed,
@@ -195,7 +195,7 @@ async fn prepare(
 /// A temporary failure: retry later, unless the message has outlived the
 /// configured queue lifetime, in which case we give up and report it.
 async fn defer_or_bounce(
-    db: &PgPool,
+    db: &DbPool,
     cfg: &ServerConfig,
     c: &Claimed,
     code: u16,
@@ -219,7 +219,7 @@ async fn defer_or_bounce(
 /// Marks the recipient bounced and queues a DSN back to the sender — unless the
 /// failed message is itself a DSN or has the null return path, in which case the
 /// notice is dropped (RFC 3464: no DSN of a DSN, no infinite bounce loop).
-async fn bounce(db: &PgPool, cfg: &ServerConfig, c: &Claimed, code: u16, reason: &str) -> anyhow::Result<()> {
+async fn bounce(db: &DbPool, cfg: &ServerConfig, c: &Claimed, code: u16, reason: &str) -> anyhow::Result<()> {
     queue::mark_bounced(db, c.recipient_id, code, reason).await?;
 
     if c.is_dsn || c.envelope_from.trim().is_empty() {
