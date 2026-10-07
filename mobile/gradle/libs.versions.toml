@@ -1,0 +1,111 @@
+[versions]
+# Shared Kubuno mobile libraries (core/mobile), published as com.kubuno.mobile:*.
+kubunoMobile = "0.1.0"
+agp = "8.12.0"
+kotlin = "2.2.20"
+ksp = "2.2.20-2.0.2"
+hilt = "2.57"
+hiltAndroidX = "1.2.0"
+composeBom = "2025.06.01"
+activityCompose = "1.10.1"
+navigationCompose = "2.9.1"
+lifecycle = "2.9.1"
+coreKtx = "1.16.0"
+appcompat = "1.7.1"
+room = "2.7.2"
+work = "2.10.2"
+datastore = "1.1.7"
+okhttp = "5.1.0"
+retrofit = "3.0.0"
+kotlinxSerialization = "1.9.0"
+coroutines = "1.10.2"
+coil = "3.2.0"
+unifiedpush = "3.3.3"
+media3 = "1.4.1"
+maplibre = "11.8.0"
+maplibreAnnotation = "3.0.2"
+webrtc = "150.7871.01"
+junit = "4.13.2"
+
+[libraries]
+kubuno-core-api = { group = "com.kubuno.mobile", name = "core-api", version.ref = "kubunoMobile" }
+kubuno-core-account = { group = "com.kubuno.mobile", name = "core-account", version.ref = "kubunoMobile" }
+kubuno-core-ui = { group = "com.kubuno.mobile", name = "core-ui", version.ref = "kubunoMobile" }
+kubuno-core-viewer = { group = "com.kubuno.mobile", name = "core-viewer", version.ref = "kubunoMobile" }
+kubuno-core-vectors = { group = "com.kubuno.mobile", name = "core-vectors", version.ref = "kubunoMobile" }
+
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material-icons = { group = "androidx.compose.material", name = "material-icons-extended" }
+
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
+
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltAndroidX" }
+androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltAndroidX" }
+androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltAndroidX" }
+
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+retrofit-kotlinx-serialization = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
+
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+coil-svg = { group = "io.coil-kt.coil3", name = "coil-svg", version.ref = "coil" }
+media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
+
+# UnifiedPush connector: the only push transport in v1 (no FCM). The app talks to
+# whichever distributor (ntfy, NextPush…) the user has installed.
+unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpush" }
+
+# MapLibre Native Android: libre (BSD-2) vector map renderer, the open fork of
+# Mapbox GL Native. Drives the maps app; the annotation plugin manages
+# markers/lines/fills as managed symbols instead of raw style layers.
+maplibre-android-sdk = { group = "org.maplibre.gl", name = "android-sdk", version.ref = "maplibre" }
+maplibre-annotation = { group = "org.maplibre.gl", name = "android-plugin-annotation-v9", version.ref = "maplibreAnnotation" }
+
+# WebRTC for audio and video calls. The community Maven Central build of the
+# upstream WebRTC stack (BSD-3), not a proprietary SDK.
+#
+# KEEP THIS CLOSE TO CURRENT. The peer on the other end of a call is a browser
+# that updates itself; a pinned old stack eventually cannot complete a DTLS
+# handshake with it. M125 failed against a modern Chrome with a fatal
+# "illegal parameter" alert on the ServerHello.
+webrtc = { group = "io.github.webrtc-sdk", name = "android", version.ref = "webrtc" }
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

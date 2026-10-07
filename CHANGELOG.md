@@ -10,6 +10,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 ## [Unreleased]
 
 ### Added
+- **Mobile app**: the Kubuno Mail Android app now lives in this repository under `mobile/` (moved from the `kubuno/mobile` repository with its history). It builds on its own against the shared Kubuno mobile libraries published from the core (`com.kubuno.mobile:*`), and a `mobile-v<version>` tag releases its APK (workflow `mobile.yml`).
 
 - **Mail now runs on MySQL 8.4, MariaDB 12.3 and SQLite as well as PostgreSQL.** The same binary connects to
   whichever database engine the administrator chose for the instance: mailboxes, aliases, distribution lists,
