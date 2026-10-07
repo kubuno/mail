@@ -410,7 +410,7 @@ mod tests {
     /// administrator missing a page rather than by a build: the manifest is
     /// data, and nothing else type-checks it.
     fn manifest() -> Manifest {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("module.toml");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../module.toml");
         let content = std::fs::read_to_string(&path).expect("module.toml lisible");
         toml::from_str::<Manifest>(&content).expect("module.toml valide")
     }

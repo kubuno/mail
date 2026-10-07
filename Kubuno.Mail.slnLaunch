@@ -3,11 +3,11 @@
     "Name": "Mail (Kubuno Core + browser)",
     "Projects": [
       {
-        "Path": "Kubuno.Mail.Server.rsproj",
+        "Path": "server\\Kubuno.Mail.Server.rsproj",
         "Action": "Start"
       },
       {
-        "Path": "frontend\\Kubuno.Mail.Web.esproj",
+        "Path": "web\\Kubuno.Mail.Web.esproj",
         "Action": "Start"
       }
     ]

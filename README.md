@@ -50,8 +50,9 @@ core (kubuno/core)  ──proxy──►  kubuno-mail (this repo, :3111)
        └─ serves /modules/mail/entry.js (React frontend, loaded at runtime)
 ```
 
-- **Backend** — `src/`: Axum + SQLx (PostgreSQL, schema `mail`); migrations in `migrations/`.
-- **Frontend** — `frontend/`: a React bundle built to `entry.js`, consuming `@kubuno/sdk`, `@kubuno/ui` and `@kubuno/drive` from npm (provided by the host at runtime via the import map).
+- **Server** — `server/`: Axum + SQLx (PostgreSQL, schema `mail`); migrations in `server/migrations/`.
+- **Web** — `web/`: a React bundle built to `entry.js`, consuming `@kubuno/sdk`, `@kubuno/ui` and `@kubuno/drive` from npm (provided by the host at runtime via the import map).
+- **Mobile** — `mobile/`: the mobile apps (see `mobile/README.md`).
 
 ## 📥 Install
 
@@ -79,8 +80,8 @@ A `.kbpkg` is attached to every tagged [GitHub Release](https://github.com/kubun
 **Requirements:** Rust ≥ 1.82, Node.js ≥ 24, PostgreSQL 16.
 
 ```bash
-cargo build --release                      # → target/release/kubuno-mail
-cd frontend && npm ci && npm run build      # → dist/{entry.js, entry.css}
+cd server && cargo build --release         # → server/target/release/kubuno-mail
+cd web && npm ci && npm run build           # → web/dist/{entry.js, entry.css}
 bash build_kbpkg.sh                         # → dist/mail-<version>-<os>-<arch>.kbpkg
 ```
 
