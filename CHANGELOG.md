@@ -20,6 +20,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **Android: the Kubuno logo is the current mark.** The app's `ic_kubuno_logo` drawable (the Kubuno mark in
+  the drawer and the notification icon) shows the six aperture blades around the cube instead of
+  the old "K" monogram, still as a single-colour vector tinted by the app.
+
 - **The repository is organised by platform.** The server (its sources, migrations, tests and configuration
   example) moves to `server/` and the web frontend to `web/`, with their history. The `.kbpkg` is unchanged
   (same files, same contents); the build script, the CI workflows, the Makefile and the Visual Studio solution
