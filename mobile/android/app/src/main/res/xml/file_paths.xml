@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloaded attachments live here and are shared read-only when opened. -->
+    <cache-path name="attachments" path="attachments/" />
+</paths>

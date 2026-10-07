@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon is the module's published web mark, verbatim:
+     core/frontend/public/mail-logo.png, the exact file the web WaffleMenu shows
+     for this app. It is the coloured hexagon glyph on a transparent ground,
+     inset into the adaptive-icon safe zone over a white background — the same
+     treatment the photos app uses. Copying the published PNG keeps the Android
+     icon identical to the web instead of a hand-traced approximation that lost
+     the hexagon. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/mail_logo"
+    android:inset="18%" />

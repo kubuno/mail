@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The full mail-logo.png (brand-blue hexagon + white envelope) is the
+         adaptive foreground, so the background is plain white behind its
+         transparent corners — the launcher's mask does the rest. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
