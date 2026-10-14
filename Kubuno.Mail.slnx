@@ -12,6 +12,10 @@
       <Platform Project="AnyCPU" />
       <Build />
     </Project>
+    <Project Path="web/src/admin/Kubuno.Mail.Admin.esproj">
+      <Platform Project="AnyCPU" />
+      <Build />
+    </Project>
   </Folder>
   <Folder Name="/Mobile/">
     <File Path="mobile/README.md" />

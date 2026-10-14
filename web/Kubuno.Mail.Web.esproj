@@ -9,6 +9,8 @@
     <KubunoModuleId>mail</KubunoModuleId>
     <!-- F5: a watching vite build straight into the dev core's copy of this module, and Edge on the module with the script debugger. -->
     <LaunchJsonFolder>.kubuno</LaunchJsonFolder>
+    <!-- The admin console UI is shown by its own project (Kubuno.Mail.Admin). -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);src\admin\**</DefaultItemExcludes>
   </PropertyGroup>
 
 </Project>
