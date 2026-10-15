@@ -1,14 +1,13 @@
 name: mobile
 
-# The mobile app of this module (mobile/, Gradle root; mobile/README.md).
-# Builds and tests it on every change under mobile/. A tag mobile-v<versionName>
-# builds the release APK and attaches it to a GitHub Release; the module's own v*
-# tags keep releasing the server package.
+# The mobile app of this module (mobile/, a Cargo workspace; mobile/README.md): the portable app
+# (mobile/common), the Android APK entry point (mobile/android) and the iOS entry point (mobile/ios).
+# Tests the app and builds the APK on every change under mobile/. A tag mobile-v<version> builds the
+# release APK and attaches it to a GitHub Release; the module's own v* tags keep releasing the server package.
 #
-# The shared libraries (com.kubuno.mobile:*) are published to the private Kubuno
-# Maven registry, out of reach of GitHub runners: CI checks the core out at the tag
-# mobile-v<kubunoMobile> pinned in gradle/libs.versions.toml and substitutes them
-# from source (composite build) - the same version, built from its tag.
+# The shared mobile renderer and shells live in the core repository (core/mobile) and are referenced by path
+# (../../core/mobile) until core publishes a mobile tag: CI checks both repositories out side by side.
+# The iOS app is built on a Mac (not in this workflow).
 on:
   push:
     branches: [main]
@@ -18,9 +17,13 @@ on:
     paths: ["mobile/**", ".github/workflows/mobile.yml"]
   workflow_dispatch:
 
+env:
+  # The core revision the mobile app is built against (pin a tag once core publishes one).
+  KUBUNO_CORE_REF: main
+
 defaults:
   run:
-    working-directory: mobile
+    working-directory: mail/mobile
 
 jobs:
   build:
@@ -30,62 +33,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          path: mail
           fetch-depth: 0
 
-      - name: Pinned version of the shared libraries
-        id: libs
-        run: echo "version=$(sed -n 's/^kubunoMobile *= *"\(.*\)"/\1/p' gradle/libs.versions.toml)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out the shared libraries (core, tag mobile-v${{ steps.libs.outputs.version }})
+      - name: Check out the shared mobile renderer and shells (core)
         uses: actions/checkout@v4
         with:
           repository: kubuno/core
-          ref: mobile-v${{ steps.libs.outputs.version }}
-          path: _core
-          sparse-checkout: mobile
+          ref: ${{ env.KUBUNO_CORE_REF }}
+          path: core
+          # mobile/ and the .kbview grammar it parses with (desktop/common/kubuno-desktop-views-syntax, whose
+          # workspace manifest is desktop/Cargo.toml).
+          sparse-checkout: |
+            mobile
+            desktop
 
-      - uses: actions/setup-java@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: gradle/actions/setup-gradle@v4
+          targets: aarch64-linux-android,x86_64-linux-android
 
       - name: The tag matches the app version
         if: startsWith(github.ref, 'refs/tags/mobile-v')
         run: |
           want="${GITHUB_REF_NAME#mobile-v}"
-          have="$(sed -n 's/^ *versionName *= *"\(.*\)"/\1/p' android/app/build.gradle.kts)"
-          [ "$want" = "$have" ] || { echo "tag $GITHUB_REF_NAME but versionName=$have"; exit 1; }
+          have="$(sed -n '/\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)".*/\1/p' Cargo.toml)"
+          [ "$want" = "$have" ] || { echo "tag $GITHUB_REF_NAME but the workspace version is $have"; exit 1; }
 
-      - name: Unit tests
-        run: ./gradlew test
-        env:
-          KUBUNO_CORE_MOBILE: ${{ github.workspace }}/_core/mobile
+      - name: Tests (the portable app)
+        run: cargo test -p kubuno-mail-mobile-common
 
-      - name: Assemble the debug APK
-        run: ./gradlew assembleDebug
+      - name: Install cargo-apk
+        run: cargo install cargo-apk --locked
+
+      - name: Build the debug APK
+        working-directory: mail/mobile/android/kubuno-mail-mobile-android
         env:
-          KUBUNO_CORE_MOBILE: ${{ github.workspace }}/_core/mobile
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: cargo apk build --target aarch64-linux-android --target x86_64-linux-android
 
       - uses: actions/upload-artifact@v4
         with:
           name: kubuno-mail-android-debug
-          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          path: mail/mobile/target/debug/apk/*.apk
 
-      - name: Assemble the release APK (unsigned)
+      - name: Build the release APK
         if: startsWith(github.ref, 'refs/tags/mobile-v')
-        run: |
-          ./gradlew :app:assembleRelease
-          cd android/app/build/outputs/apk/release
-          for f in *.apk; do mv "$f" "kubuno-mail-android-${GITHUB_REF_NAME#mobile-v}-${f#app-}"; done
+        working-directory: mail/mobile/android/kubuno-mail-mobile-android
         env:
-          KUBUNO_CORE_MOBILE: ${{ github.workspace }}/_core/mobile
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: |
+          cargo apk build --release --target aarch64-linux-android --target x86_64-linux-android
+          cd ../../target/release/apk
+          for f in *.apk; do mv "$f" "kubuno-mail-android-${GITHUB_REF_NAME#mobile-v}.apk"; done
 
       - name: Create the GitHub release
         if: startsWith(github.ref, 'refs/tags/mobile-v')
         uses: softprops/action-gh-release@v2
         with:
           name: "Kubuno Mail ${{ github.ref_name }}"
-          files: mobile/android/app/build/outputs/apk/release/*.apk
+          files: mail/mobile/target/release/apk/*.apk
           generate_release_notes: true

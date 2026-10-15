@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mail · Settings — converted from SettingsScreen.kt (MailSettingsScreen). A minimal screen: the account, a
+  shortcut to device accounts, and the app version. Shared vocabulary, light theme, logical px. Root is a Panel.
+-->
+<Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"
+       Layout="Dock" BackColor="#FFFFFF">
+
+  <Stack Dock="Top">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Gap="8" Height="56" Padding="8, 0, 12, 0" BackColor="#FFFFFF">
+      <IconButton Icon="ArrowLeft" Diameter="40" IconSize="22" IconColor="#5F6368"/>
+      <Label Stack.Fill="true" Text="Paramètres" Role="Subtitle" FontWeight="SemiBold" ForeColor="#202124"/>
+    </Stack>
+    <Separator/>
+  </Stack>
+
+  <ScrollArea Dock="Fill">
+    <Stack Gap="0" Padding="0, 8, 0, 24">
+
+      <Label Text="COMPTE" Role="Meta" FontWeight="SemiBold" ForeColor="#1A73E8" Padding="16, 8, 16, 4"/>
+
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10">
+        <Avatar DisplayName="Camille Martin" AvatarSize="40" Tint="Accent"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Label Text="Camille Martin" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="camille@kubuno.com · mail.kubuno.com" Role="Meta" ForeColor="#80868B" Overflow="Ellipsis"/>
+        </Stack>
+      </Stack>
+      <Separator/>
+
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 12, 16, 12">
+        <Icon Name="UserCog" Size="22" ForeColor="#5F6368"/>
+        <Label Stack.Fill="true" Text="Gérer les comptes sur cet appareil" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+        <Icon Name="ChevronRight" Size="18" ForeColor="#5F6368"/>
+      </Stack>
+      <Separator/>
+
+      <Label Text="Kubuno Mail 1.4.0" Role="Meta" ForeColor="#80868B" Padding="16, 16, 16, 0"/>
+
+    </Stack>
+  </ScrollArea>
+
+</Panel>

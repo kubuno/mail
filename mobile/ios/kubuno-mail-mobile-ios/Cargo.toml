@@ -1,0 +1,18 @@
+[package]
+name        = "kubuno-mail-mobile-ios"
+description = "Kubuno Mail for iOS: the app's entry point, handing the app (../../common) to the shared Kubuno iOS shell (winit + wgpu over Metal, core repository). Built and packaged into a .app on a Mac."
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+publish              = false
+
+[[bin]]
+name = "kubuno-mail"
+path = "src/main.rs"
+
+[dependencies]
+# The app itself: its screens.
+kubuno-mail-mobile-common = { workspace = true }
+# The shared iOS shell (window, Metal surface, font, safe area, render loop) as a library.
+kubuno-mobile-shell-ios   = { workspace = true }

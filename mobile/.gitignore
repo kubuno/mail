@@ -1,15 +1,5 @@
-*.iml
-.gradle/
-.kotlin/
-/local.properties
+/target/
 .idea/
 .DS_Store
-build/
-/captures
-.externalNativeBuild
-.cxx
 *.keystore
 !debug.keystore
-hs_err_pid*.log
-replay_pid*.log
-

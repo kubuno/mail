@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mail · Inbox — converted from mail/mobile .../ui/InboxScreen.kt (+ MailApp shell). The folder's thread list
+  with the top app bar (menu, search, bell, settings, account) and the bottom nav (4 folders). Rows inlined
+  (ThreadRow): sender avatar + sender/date + subject + snippet + star; the first thread is unread (bold).
+  Shared vocabulary, light theme, logical px (~390 wide). Screen root is a Panel.
+-->
+<Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"
+       Layout="Dock" BackColor="#FFFFFF">
+
+  <Stack Dock="Top">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Gap="2" Height="56" Padding="6, 0, 10, 0" BackColor="#FFFFFF">
+      <IconButton Icon="Menu" Diameter="40" IconSize="22" IconColor="#5F6368"/>
+      <Label Stack.Fill="true" Text="Boîte de réception" Role="Subtitle" FontWeight="SemiBold" ForeColor="#202124" Overflow="Ellipsis" Padding="6, 0, 0, 0"/>
+      <IconButton Icon="Search" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <IconButton Icon="Bell" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <IconButton Icon="Settings" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <Avatar DisplayName="Camille Martin" AvatarSize="32" Tint="Accent"/>
+    </Stack>
+    <Separator/>
+  </Stack>
+
+  <Stack Dock="Bottom">
+    <Separator/>
+    <Stack Direction="LeftToRight" CrossAlign="Center" Height="60" BackColor="#FFFFFF">
+      <Stack Stack.Fill="true" CrossAlign="Center" Gap="2" Padding="8, 6, 8, 6">
+        <Icon Name="Inbox" Size="22" ForeColor="#1A73E8"/>
+        <Label Text="Réception" Role="Caption" FontWeight="SemiBold" ForeColor="#1A73E8"/>
+      </Stack>
+      <Stack Stack.Fill="true" CrossAlign="Center" Gap="2" Padding="8, 6, 8, 6">
+        <Icon Name="Star" Size="22" ForeColor="#5F6368"/>
+        <Label Text="Suivis" Role="Caption" ForeColor="#5F6368"/>
+      </Stack>
+      <Stack Stack.Fill="true" CrossAlign="Center" Gap="2" Padding="8, 6, 8, 6">
+        <Icon Name="Send" Size="22" ForeColor="#5F6368"/>
+        <Label Text="Envoyés" Role="Caption" ForeColor="#5F6368"/>
+      </Stack>
+      <Stack Stack.Fill="true" CrossAlign="Center" Gap="2" Padding="8, 6, 8, 6">
+        <Icon Name="FilePen" Size="22" ForeColor="#5F6368"/>
+        <Label Text="Brouillons" Role="Caption" ForeColor="#5F6368"/>
+      </Stack>
+    </Stack>
+  </Stack>
+
+  <ScrollArea Dock="Fill">
+    <Stack Gap="0" Padding="0, 0, 0, 12">
+
+      <!-- Unread -->
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10" BackColor="#FFFFFF">
+        <Avatar DisplayName="Alice Nguyen" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Stack Direction="LeftToRight" CrossAlign="Center">
+            <Label Stack.Fill="true" Text="Alice Nguyen" Role="Body" FontWeight="SemiBold" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="09:42" Role="Meta" FontWeight="SemiBold" ForeColor="#1A73E8"/>
+          </Stack>
+          <Label Text="Rapport trimestriel à valider" Role="Body" FontWeight="SemiBold" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Bonjour Camille, peux-tu relire le rapport avant la réunion de…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+        <Icon Name="Star" Size="22" ForeColor="#F9AB00"/>
+      </Stack>
+      <Separator/>
+
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10" BackColor="#FFFFFF">
+        <Avatar DisplayName="Marc Dupont" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Stack Direction="LeftToRight" CrossAlign="Center">
+            <Label Stack.Fill="true" Text="Marc Dupont" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="08:17" Role="Meta" ForeColor="#5F6368"/>
+          </Stack>
+          <Label Text="Re: Planning de la semaine" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Parfait, c'est noté pour mardi. Je m'occupe de réserver la…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+        <Icon Name="Star" Size="22" ForeColor="#BDC1C6"/>
+      </Stack>
+      <Separator/>
+
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10" BackColor="#FFFFFF">
+        <Avatar DisplayName="Service Comptabilité" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Stack Direction="LeftToRight" CrossAlign="Center">
+            <Label Stack.Fill="true" Text="Service Comptabilité" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="hier" Role="Meta" ForeColor="#5F6368"/>
+          </Stack>
+          <Label Text="Votre note de frais a été approuvée" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Le remboursement sera effectué sur votre prochain bulletin…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+        <Icon Name="Star" Size="22" ForeColor="#BDC1C6"/>
+      </Stack>
+      <Separator/>
+
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10" BackColor="#FFFFFF">
+        <Avatar DisplayName="Léa Rousseau" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Stack Direction="LeftToRight" CrossAlign="Center">
+            <Label Stack.Fill="true" Text="Léa Rousseau" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="12 oct." Role="Meta" ForeColor="#5F6368"/>
+          </Stack>
+          <Label Text="Photos de l'événement" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Coucou ! Voici le lien vers l'album partagé de vendredi soir…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+        <Icon Name="Star" Size="22" ForeColor="#F9AB00"/>
+      </Stack>
+
+    </Stack>
+  </ScrollArea>
+
+  <!-- Compose FAB -->
+  <Panel Dock="Fill" Layout="Absolute">
+    <Stack CrossAlign="Center" Justify="Center" BackColor="#1A73E8" CornerRadius="16" Elevation="Lg"
+           Width="56" Height="56" X="318" Y="548">
+      <Icon Name="SquarePen" Size="24" ForeColor="#FFFFFF"/>
+    </Stack>
+  </Panel>
+
+</Panel>

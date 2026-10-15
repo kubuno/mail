@@ -1,0 +1,46 @@
+# Kubuno Mail — the mobile app. ONE Cargo workspace for every mobile OS, laid out like the desktop app
+# (../desktop) and independent of the module server's (../server):
+#
+#   common/   the complete app, portable: the .kbview screens (edited in Visual Studio), rendered by the shared
+#             Kubuno mobile renderer.
+#   android/  only what Android does differently: the APK entry point (package `com.kubuno.mail`, launcher icon)
+#             handing the app to the shared Android shell. Built with cargo-apk on a machine with the Android
+#             SDK/NDK (the .142 verification box, CI).
+#   ios/      only what iOS does differently: the entry point handing the app to the shared iOS shell. Built and
+#             packaged into a .app on a Mac.
+#
+# The renderer and the Android / iOS shells are the core repository's (core/mobile), shared by every module's
+# mobile app; this repository holds the Kubuno Mail app only.
+[workspace]
+resolver = "2"
+members  = [
+    "common/kubuno-mail-mobile-common",
+    "android/kubuno-mail-mobile-android",
+    "ios/kubuno-mail-mobile-ios",
+]
+
+[workspace.package]
+version    = "0.1.0"   # the mobile app's own version (tags mobile-v<version>)
+edition    = "2021"
+license    = "AGPL-3.0-or-later"
+repository = "https://github.com/kubuno/mail"
+
+[workspace.dependencies]
+# The portable app.
+kubuno-mail-mobile-common = { path = "common/kubuno-mail-mobile-common" }
+
+# The shared mobile renderer and shells (core repository, core/mobile). Referenced from the sibling core checkout
+# until core publishes a mobile tag; then they move to `git = "https://github.com/kubuno/core", tag = "…"` like the
+# desktop framework. The shells are libraries here (`default-features = false`): this app provides its own entry
+# points instead of the shells' standalone demo.
+kubuno-mobile-render        = { path = "../../core/mobile/common/kubuno-mobile-render" }
+kubuno-mobile-shell-android = { path = "../../core/mobile/android/kubuno-mobile-shell-android", default-features = false }
+kubuno-mobile-shell-ios     = { path = "../../core/mobile/ios/kubuno-mobile-shell-ios", default-features = false }
+
+# Same versions/features as the core mobile workspace (core/mobile/Cargo.toml), so the types match.
+android-activity = { version = "0.6", features = ["native-activity"] }
+tiny-skia        = { version = "0.11", default-features = false, features = ["std", "simd"] }
+
+# The views are rasterised on the CPU: keep it fast even in debug builds (cargo-apk builds the dev profile).
+[profile.dev.package."*"]
+opt-level = 2

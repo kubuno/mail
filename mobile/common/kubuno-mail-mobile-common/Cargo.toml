@@ -1,0 +1,16 @@
+[package]
+name        = "kubuno-mail-mobile-common"
+description = "Kubuno Mail for mobile, the app, portable: its .kbview screens, rendered by the shared Kubuno mobile renderer (core repository) and run by the Android / iOS shells through ../android and ../ios."
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+publish              = false
+
+[dependencies]
+# The shared mobile renderer (core repository, core/mobile): lays out and paints the .kbview screens.
+kubuno-mobile-render = { workspace = true }
+
+[dev-dependencies]
+# The example writes the rendered screens as PNG files (same tiny-skia as the renderer, plus its PNG encoder).
+tiny-skia = { workspace = true, features = ["png-format"] }

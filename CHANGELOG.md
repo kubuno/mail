@@ -20,6 +20,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 ### Changed
 
+- **The mobile app moves to Kubuno views (Rust), laid out like the desktop app.** `mobile/` is now a Cargo
+  workspace: `common/kubuno-mail-mobile-common` (the app's `.kbview` screens, edited in Visual Studio),
+  `android/kubuno-mail-mobile-android` (the APK — package `com.kubuno.mail`, launcher icon = the module's web logo)
+  and `ios/kubuno-mail-mobile-ios`, shown in the Visual Studio solution under `Mobile/Common`, `Mobile/Android` and
+  `Mobile/iOS`. The screens used to live inside the core's mobile renderer; they are now the module's own, rendered
+  and run by the shared Kubuno mobile renderer and Android / iOS shells of the core. The previous Mail
+  Kotlin/Jetpack Compose app is retired from `mobile/` — it stays in the git history as the functional reference for
+  migrating the app's behaviour (data, server calls), which is still to come. The `mobile` workflow builds the new
+  APK with cargo-apk.
 - **Android: the Kubuno logo is the current mark.** The app's `ic_kubuno_logo` drawable (the Kubuno mark in
   the drawer and the notification icon) shows the six aperture blades around the cube instead of
   the old "K" monogram, still as a single-colour vector tinted by the app.

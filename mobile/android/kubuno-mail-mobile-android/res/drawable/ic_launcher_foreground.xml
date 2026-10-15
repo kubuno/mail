@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Kubuno Mail web logo, inset so the adaptive-icon mask never crops it. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/applogo"
+    android:inset="20%" />

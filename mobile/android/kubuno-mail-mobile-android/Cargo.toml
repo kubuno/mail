@@ -1,0 +1,34 @@
+[package]
+name        = "kubuno-mail-mobile-android"
+description = "Kubuno Mail for Android: the APK's entry point, handing the app (../../common) to the shared Kubuno Android shell (a pure-Rust NativeActivity, core repository). Packaged with cargo-apk."
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+publish              = false
+
+# A NativeActivity app: no Java/Kotlin compiled, the whole app is this Rust cdylib.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# The app itself: its screens.
+kubuno-mail-mobile-common   = { workspace = true }
+# The shared Android shell (window, GPU surface, font, touch gestures, render loop) as a library.
+kubuno-mobile-shell-android = { workspace = true }
+android-activity            = { workspace = true }
+
+# cargo-apk packaging: the APK's identity, launcher label and icon (the module's web logo, `res/`).
+[package.metadata.android]
+package = "com.kubuno.mail"
+# The .142 verification box runs an x86_64 emulator; add "aarch64-linux-android" to build for real devices.
+build_targets = ["x86_64-linux-android"]
+resources = "res"
+
+[package.metadata.android.sdk]
+min_sdk_version    = 26
+target_sdk_version = 35
+
+[package.metadata.android.application]
+label = "Kubuno Mail"
+icon  = "@mipmap/ic_launcher"

@@ -1,0 +1,12 @@
+<Project Sdk="Kubuno.Rust.Sdk/1.1.1">
+
+  <!-- Kubuno Mail for iOS: the app's entry point handing it to the shared iOS shell. It belongs to the mobile
+       workspace ..\..\Cargo.toml (mobile/). Built and packaged into a .app on a Mac (iOS SDK); on Windows it only
+       type-checks. This file is yours: it is never overwritten by a later run of the solution generator - edit it
+       freely. -->
+  <PropertyGroup>
+    <CargoPackage>kubuno-mail-mobile-ios</CargoPackage>
+    <CargoBin>kubuno-mail</CargoBin>
+  </PropertyGroup>
+
+</Project>

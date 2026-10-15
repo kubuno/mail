@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mail · Thread reader — converted from ThreadReaderScreen.kt. Action bar (back + reply/archive/delete/unread),
+  the subject, then a stack of message cards (sender avatar + name/email + body + attachment chip). Shared
+  vocabulary, light theme, logical px. Screen root is a Panel.
+-->
+<Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"
+       Layout="Dock" BackColor="#FFFFFF">
+
+  <Stack Dock="Top">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Gap="2" Height="56" Padding="6, 0, 8, 0" BackColor="#FFFFFF">
+      <IconButton Icon="ArrowLeft" Diameter="40" IconSize="22" IconColor="#5F6368"/>
+      <Panel Stack.Fill="true"/>
+      <IconButton Icon="Reply" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <IconButton Icon="Archive" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <IconButton Icon="Trash2" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <IconButton Icon="MailOpen" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+    </Stack>
+    <Separator/>
+  </Stack>
+
+  <ScrollArea Dock="Fill">
+    <Stack Gap="0" Padding="0, 0, 0, 24">
+
+      <Label Text="Rapport trimestriel à valider" Role="Title" FontWeight="SemiBold" ForeColor="#202124"
+             Padding="16, 12, 16, 12" Overflow="Ellipsis"/>
+      <Separator/>
+
+      <!-- Message 1 -->
+      <Stack Gap="0" Padding="16, 16, 16, 16">
+        <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12">
+          <Avatar DisplayName="Alice Nguyen" AvatarSize="40"/>
+          <Stack Stack.Fill="true" Gap="2">
+            <Label Text="Alice Nguyen" Role="Body" FontWeight="SemiBold" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="alice.nguyen@kubuno.com" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+          </Stack>
+          <Label Text="09:42" Role="Meta" ForeColor="#80868B"/>
+        </Stack>
+        <Label Text="Bonjour Camille, peux-tu relire le rapport trimestriel avant la réunion de lundi ? J'ai mis à jour les chiffres du T3 et ajouté une section sur les perspectives. Merci d'avance pour ton retour."
+               Role="Body" ForeColor="#202124" Padding="0, 12, 0, 0"/>
+        <Stack Direction="LeftToRight" CrossAlign="Center" Gap="8" BackColor="#F1F3F4" CornerRadius="8"
+               Padding="12, 8, 12, 8" Margin="0, 12, 0, 0">
+          <Icon Name="Paperclip" Size="18" ForeColor="#5F6368"/>
+          <Stack Stack.Fill="true" Gap="2">
+            <Label Text="Rapport_T3_2026.pdf" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="2,4 Mo" Role="Meta" ForeColor="#5F6368"/>
+          </Stack>
+        </Stack>
+      </Stack>
+      <Separator/>
+
+      <!-- Message 2 -->
+      <Stack Gap="0" Padding="16, 16, 16, 16">
+        <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12">
+          <Avatar DisplayName="Camille Martin" AvatarSize="40" Tint="Accent"/>
+          <Stack Stack.Fill="true" Gap="2">
+            <Label Text="Camille Martin" Role="Body" FontWeight="SemiBold" ForeColor="#202124" Overflow="Ellipsis"/>
+            <Label Text="camille@kubuno.com" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+          </Stack>
+          <Label Text="10:05" Role="Meta" ForeColor="#80868B"/>
+        </Stack>
+        <Label Text="Merci Alice ! Je regarde ça cet après-midi et je te fais un retour avant ce soir. À priori tout me semble bon."
+               Role="Body" ForeColor="#202124" Padding="0, 12, 0, 0"/>
+      </Stack>
+
+    </Stack>
+  </ScrollArea>
+
+</Panel>

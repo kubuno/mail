@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mail · Search — converted from SearchScreen.kt. A search header (back + field) and a results list (SearchRow:
+  avatar + sender + subject + snippet). Shared vocabulary, light theme, logical px. Root is a Panel.
+-->
+<Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"
+       Layout="Dock" BackColor="#FFFFFF">
+
+  <Stack Dock="Top">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Gap="8" Height="56" Padding="8, 0, 12, 0" BackColor="#FFFFFF">
+      <IconButton Icon="ArrowLeft" Diameter="40" IconSize="22" IconColor="#5F6368"/>
+      <SearchField Stack.Fill="true" Placeholder="Rechercher dans les messages" Text="rapport"/>
+    </Stack>
+    <Separator/>
+  </Stack>
+
+  <ScrollArea Dock="Fill">
+    <Stack Gap="0" Padding="0, 4, 0, 24">
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10">
+        <Avatar DisplayName="Alice Nguyen" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Label Text="Alice Nguyen" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Rapport trimestriel à valider" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="peux-tu relire le rapport avant la réunion…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+      </Stack>
+      <Separator/>
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10">
+        <Avatar DisplayName="Service Comptabilité" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Label Text="Service Comptabilité" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Rapport de dépenses mensuel" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="veuillez trouver ci-joint le rapport des frais…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+      </Stack>
+      <Separator/>
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="12" Padding="16, 10, 16, 10">
+        <Avatar DisplayName="Marc Dupont" AvatarSize="40"/>
+        <Stack Stack.Fill="true" Gap="2">
+          <Label Text="Marc Dupont" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="Rapport d'activité 2025" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+          <Label Text="comme convenu voici le rapport annuel complet…" Role="Meta" ForeColor="#5F6368" Overflow="Ellipsis"/>
+        </Stack>
+      </Stack>
+    </Stack>
+  </ScrollArea>
+
+</Panel>

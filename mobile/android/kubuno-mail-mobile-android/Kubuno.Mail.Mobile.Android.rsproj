@@ -1,0 +1,12 @@
+<Project Sdk="Kubuno.Rust.Sdk/1.1.1">
+
+  <!-- Kubuno Mail for Android: the APK's entry point (com.kubuno.mail) handing the app to the shared Android shell. It
+       belongs to the mobile workspace ..\..\Cargo.toml (mobile/). It is a cdylib packaged as an APK with cargo-apk;
+       the Android target is selected at build time (x86_64-linux-android for the emulator, aarch64-linux-android
+       for devices). This file is yours: it is never overwritten by a later run of the solution generator - edit it
+       freely. -->
+  <PropertyGroup>
+    <CargoPackage>kubuno-mail-mobile-android</CargoPackage>
+  </PropertyGroup>
+
+</Project>

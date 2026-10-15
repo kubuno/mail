@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mail · Compose — converted from ComposeScreen.kt. Top bar (close + attach + send), then the recipient,
+  subject and body fields, with an attachment row. Shared vocabulary, light theme, logical px. Root is a Panel.
+-->
+<Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"
+       Layout="Dock" BackColor="#FFFFFF">
+
+  <Stack Dock="Top">
+    <Stack Direction="LeftToRight" CrossAlign="Center" Gap="4" Height="56" Padding="6, 0, 8, 0" BackColor="#FFFFFF">
+      <IconButton Icon="X" Diameter="40" IconSize="22" IconColor="#5F6368"/>
+      <Label Stack.Fill="true" Text="Nouveau message" Role="Subtitle" FontWeight="SemiBold" ForeColor="#202124" Padding="4, 0, 0, 0"/>
+      <IconButton Icon="Paperclip" Diameter="40" IconSize="20" IconColor="#5F6368"/>
+      <IconButton Icon="Send" Diameter="40" IconSize="20" IconColor="#FFFFFF" BackColor="#1A73E8"/>
+    </Stack>
+    <Separator/>
+  </Stack>
+
+  <ScrollArea Dock="Fill">
+    <Stack Gap="12" Padding="16, 16, 16, 24">
+      <TextField Label="À" Text="alice.nguyen@kubuno.com"/>
+      <TextField Label="Objet" Text="Re: Rapport trimestriel à valider"/>
+
+      <!-- Attachment -->
+      <Stack Direction="LeftToRight" CrossAlign="Center" Gap="8" BackColor="#F1F3F4" CornerRadius="8" Padding="12, 8, 12, 8">
+        <Icon Name="Paperclip" Size="18" ForeColor="#5F6368"/>
+        <Label Stack.Fill="true" Text="Annexe_chiffres.xlsx · 96 Ko" Role="Body" ForeColor="#202124" Overflow="Ellipsis"/>
+        <Icon Name="X" Size="18" ForeColor="#5F6368"/>
+      </Stack>
+
+      <TextField Placeholder="Rédigez votre message…" Text="Bonjour Alice, voici mes remarques sur le rapport. Dans l'ensemble c'est très clair, j'ai juste quelques suggestions mineures sur la section des perspectives." Height="200"/>
+    </Stack>
+  </ScrollArea>
+
+</Panel>
