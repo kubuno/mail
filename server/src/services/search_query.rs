@@ -1,6 +1,6 @@
 //! Gmail-style search query language: tokenizer, parser and SQL compiler.
 //!
-//! Supported operators: `in:`, `is:` (incl. `is:subscription` — Gmail's `^sub_m`
+//! Supported operators: `in:`, `is:` (incl. `is:subscription` - Gmail's `^sub_m`
 //! equivalent: the message carries a `List-Unsubscribe` header), `label:`,
 //! `from:`, `to:`, `cc:`, `bcc:`,
 //! `subject:`, `has:attachment|userlabels|nouserlabels|drive|document|spreadsheet|
@@ -31,7 +31,7 @@ pub enum Node {
 pub enum Crit {
     /// Plain word: subject / body / sender.
     Word(String),
-    /// `+word` — exact word (word-boundary match, accent-sensitive).
+    /// `+word` - exact word (word-boundary match, accent-sensitive).
     ExactWord(String),
     /// `"exact phrase"`.
     Phrase(String),
@@ -61,7 +61,7 @@ pub enum Crit {
     DeliveredTo(String),
     Category(String),
     Rfc822MsgId(String),
-    /// Unknown operator / unparsable value — neutral (matches everything).
+    /// Unknown operator / unparsable value - neutral (matches everything).
     Noop,
 }
 
@@ -78,7 +78,7 @@ enum Tok {
     Plus(String),
     Quoted(String),
     Word(String),
-    /// `name:value` — value is raw (may itself be quoted or a `( … )` group).
+    /// `name:value` - value is raw (may itself be quoted or a `( … )` group).
     Op(String, OpVal),
 }
 
@@ -86,7 +86,7 @@ enum Tok {
 enum OpVal {
     Bare(String),
     Quoted(String),
-    /// `subject:(urgent problème)` — every inner word is required.
+    /// `subject:(urgent problème)` - every inner word is required.
     Group(Vec<String>),
 }
 
@@ -145,7 +145,7 @@ fn tokenize(raw: &str) -> Vec<Tok> {
             }
             toks.push(Tok::Plus(chars[start..i].iter().collect()));
         } else {
-            // word — possibly `name:value`
+            // word - possibly `name:value`
             let start = i;
             while i < n && !chars[i].is_whitespace() && !"(){}\"".contains(chars[i]) && chars[i] != ':' {
                 i += 1;
@@ -188,7 +188,7 @@ fn tokenize(raw: &str) -> Vec<Tok> {
                 toks.push(Tok::Or);
             } else if word.eq_ignore_ascii_case("and") {
                 // Explicit AND combinator (Gmail accepts it): juxtaposition is
-                // already an AND, so the keyword is simply skipped — it must
+                // already an AND, so the keyword is simply skipped - it must
                 // NOT fall through and be searched as the literal word "and".
             } else if !word.is_empty() {
                 // Re-attach a lone ':' (e.g. inside URLs) to the word.
@@ -286,7 +286,7 @@ impl Parser {
                 Some(node)
             }
             Tok::LBrace => {
-                // `{a b}` — OR between every item.
+                // `{a b}` - OR between every item.
                 let mut items = Vec::new();
                 while let Some(t) = self.peek() {
                     if *t == Tok::RBrace {
@@ -389,7 +389,7 @@ fn parse_date(v: &str) -> Option<NaiveDate> {
     None
 }
 
-/// `2d`, `3m`, `1y` — also accepts the French `j` (jours) and `a` (années),
+/// `2d`, `3m`, `1y` - also accepts the French `j` (jours) and `a` (années),
 /// plus `w`/`s` for weeks.
 fn parse_period_days(v: &str) -> Option<i32> {
     let v = v.trim().to_lowercase();
@@ -426,7 +426,7 @@ fn parse_size_bytes(v: &str) -> Option<i64> {
 
 pub struct ParsedSearch {
     pub root: Node,
-    /// True when the query names a location explicitly (`in:`) — in that case
+    /// True when the query names a location explicitly (`in:`) - in that case
     /// the default "hide spam & trash" filter is skipped, like Gmail.
     pub has_in: bool,
 }
@@ -462,7 +462,7 @@ fn like(term: &str) -> String {
 }
 
 /// Escapes a literal for safe inclusion inside a bound regex (POSIX on
-/// PostgreSQL, ICU on MySQL, PCRE on MariaDB — the same metacharacters).
+/// PostgreSQL, ICU on MySQL, PCRE on MariaDB - the same metacharacters).
 fn regex_escape(term: &str) -> String {
     let mut out = String::with_capacity(term.len() * 2);
     for c in term.chars() {
@@ -685,7 +685,7 @@ fn push_crit(qb: &mut DbQueryBuilder, c: &Crit, user_id: Uuid) {
             "muted" => {
                 qb.push("t.is_muted = TRUE");
             }
-            // Subscription-type messages — the Kubuno equivalent of Gmail's
+            // Subscription-type messages - the Kubuno equivalent of Gmail's
             // internal `^sub_m` system label: a message that carries a
             // `List-Unsubscribe` header. Used by the "Manage subscriptions"
             // view when clicking a sender (`from:X … is:subscription`).
@@ -831,7 +831,7 @@ fn push_address_crit(qb: &mut DbQueryBuilder, col: &'static str, v: &str, user_i
 }
 
 /// A single case-insensitive (not accent-folding) LIKE against an owned,
-/// already-escaped pattern — the SQLite fallback for `+word`.
+/// already-escaped pattern - the SQLite fallback for `+word`.
 fn push_any_like_owned(qb: &mut DbQueryBuilder, col: &str, pattern: String) {
     let backend = qb.backend();
     let n = qb.bind_only(pattern);
@@ -945,7 +945,7 @@ mod tests {
     }
 
     /// The exact query the "Manage subscriptions" view issues when a sender row
-    /// is clicked — Gmail's `from:X (-label:spam OR label:trash) label:^sub_m`
+    /// is clicked - Gmail's `from:X (-label:spam OR label:trash) label:^sub_m`
     /// transposed to our operators. It must parse as a combined tree and lift
     /// the implicit spam/trash exclusion (the query names locations itself).
     #[test]
@@ -958,12 +958,12 @@ mod tests {
     /// Explicit `AND` is a combinator, not a word to search: inside the group it
     /// joins the two conditions (juxtaposition semantics), and the top-level
     /// `group OR is:subscription` parses as an Or between the group and the
-    /// criterion — with `from:` AND-combined around it.
+    /// criterion - with `from:` AND-combined around it.
     #[test]
     fn explicit_and_keyword() {
         let p = parse("from:a@b.c (-in:spam AND in:trash) OR is:subscription");
         assert!(p.has_in);
-        // 4 criteria: from, -in:spam, in:trash, is:subscription — the AND/OR
+        // 4 criteria: from, -in:spam, in:trash, is:subscription - the AND/OR
         // words themselves must not appear as text criteria.
         assert_eq!(crit_count(&p.root), 4);
         // And the lone keyword is inert: "and" as a WORD is only skipped when

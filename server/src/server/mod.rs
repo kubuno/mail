@@ -1,10 +1,10 @@
-//! The mail services this module OFFERS — SMTP, IMAP and POP3 — as opposed to
+//! The mail services this module OFFERS - SMTP, IMAP and POP3 - as opposed to
 //! the client side, which connects to other people's servers.
 //!
 //! Each protocol is a plain TCP listener. Which ones run, on which ports, is
 //! decided by the administrator in the console (`module.toml`'s `[[settings]]`,
 //! read back through `/internal/modules/settings`), so the supervisor polls
-//! that configuration and starts or stops listeners as it changes — no restart
+//! that configuration and starts or stops listeners as it changes - no restart
 //! needed to turn a service on.
 //!
 //! Nothing listens until an administrator switches it on: a mail server that
@@ -76,8 +76,8 @@ struct Live {
 
 type LiveConfig = Arc<RwLock<Live>>;
 
-/// The part of the configuration a bound socket is *made of*. Everything else —
-/// limits, policies, timeouts, the certificate — is read per connection and
+/// The part of the configuration a bound socket is *made of*. Everything else -
+/// limits, policies, timeouts, the certificate - is read per connection and
 /// therefore needs no rebind.
 ///
 /// Comparing whole `ServerConfig`s to decide this would tear every socket down
@@ -92,7 +92,7 @@ pub struct Incoming {
     pub db:         DbPool,
     pub cfg:        Arc<ServerConfig>,
     pub peer:       String,
-    /// The listener's TLS mode — tells the handler whether to advertise
+    /// The listener's TLS mode - tells the handler whether to advertise
     /// STARTTLS/STLS and whether the connection is already encrypted.
     pub tls_mode:   TlsMode,
     /// SMTP only: submission (auth required) vs reception (MX).
@@ -189,14 +189,14 @@ pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
 }
 
 /// Builds the shared TLS acceptor from the configuration, logging (not failing)
-/// on a bad certificate — a broken cert must not take the whole module down,
+/// on a bad certificate - a broken cert must not take the whole module down,
 /// only the TLS listeners.
 fn build_acceptor(cfg: &ServerConfig) -> Option<Arc<TlsAcceptor>> {
     match tls::build_acceptor(&cfg.tls_cert_path, &cfg.tls_key_path, cfg.tls_min_version) {
         Ok(Some(acc)) => Some(Arc::new(acc)),
         Ok(None) => None,
         Err(e) => {
-            tracing::error!(error = %e, "Certificat TLS illisible — services chiffrés indisponibles");
+            tracing::error!(error = %e, "Certificat TLS illisible - services chiffrés indisponibles");
             None
         }
     }
@@ -276,7 +276,7 @@ async fn start(
 
             // One snapshot per connection: the session keeps a consistent view
             // for its whole life, while the NEXT connection already sees an
-            // administrator's change — no rebind, no cut session. Read BEFORE
+            // administrator's change - no rebind, no cut session. Read BEFORE
             // the connection cap so the trusted-upstream exemption below can
             // consult it.
             let (cfg, acceptor) = {
@@ -299,7 +299,7 @@ async fn start(
                     Some(g) => Some(g),
                     None => {
                         tracing::warn!(peer = %peer_addr, protocol = listener.protocol.as_str(),
-                            "Trop de connexions simultanées pour cette IP — refusée");
+                            "Trop de connexions simultanées pour cette IP - refusée");
                         drop(stream);
                         continue;
                     }
@@ -326,7 +326,7 @@ async fn start(
                             }
                         },
                         None => {
-                            tracing::error!(port = listener.port, "Port TLS implicite sans certificat — connexion fermée");
+                            tracing::error!(port = listener.port, "Port TLS implicite sans certificat - connexion fermée");
                             return;
                         }
                     }
@@ -335,7 +335,7 @@ async fn start(
                 };
 
                 // STARTTLS is only offered when a certificate exists AND the
-                // listener asked for it — never advertise an upgrade we cannot do.
+                // listener asked for it - never advertise an upgrade we cannot do.
                 let starttls_acceptor = if listener.tls == TlsMode::StartTls { acceptor.clone() } else { None };
                 let inc = Incoming {
                     db, cfg, peer: peer.clone(),
@@ -450,7 +450,7 @@ mod tests {
 
     /// The certificate and the TLS floor are read per connection from the shared
     /// snapshot, so they take effect on the next handshake without unbinding a
-    /// port — no window during which the service is refused.
+    /// port - no window during which the service is refused.
     #[test]
     fn a_tls_floor_change_does_not_rebind_either() {
         let before = base();

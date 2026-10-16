@@ -209,7 +209,7 @@ pub async fn test_existing_account(
         smtp_password: if dto.smtp_password.is_empty() { smtp_pass } else { dto.smtp_password },
     };
 
-    // OAuth accounts (Gmail, Microsoft): the passwords above are placeholders —
+    // OAuth accounts (Gmail, Microsoft): the passwords above are placeholders -
     // authenticate the same steps with a fresh access token over XOAUTH2.
     let oauth_token = if auth_kind.starts_with("oauth") {
         Some(
@@ -562,7 +562,7 @@ pub async fn trigger_sync(
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Compte {account_id}")))?;
 
-    // A local account is served by the instance itself — there is no external
+    // A local account is served by the instance itself - there is no external
     // mailbox to poll, so a manual sync is a no-op rather than a failed IMAP dial.
     if account.kind == "local" {
         return Ok(Json(serde_json::json!({

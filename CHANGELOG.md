@@ -22,11 +22,11 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **The mobile app moves to Kubuno views (Rust), laid out like the desktop app.** `mobile/` is now a Cargo
   workspace: `common/kubuno-mail-mobile-common` (the app's `.kbview` screens, edited in Visual Studio),
-  `android/kubuno-mail-mobile-android` (the APK — package `com.kubuno.mail`, launcher icon = the module's web logo)
+  `android/kubuno-mail-mobile-android` (the APK - package `com.kubuno.mail`, launcher icon = the module's web logo)
   and `ios/kubuno-mail-mobile-ios`, shown in the Visual Studio solution under `Mobile/Common`, `Mobile/Android` and
   `Mobile/iOS`. The screens used to live inside the core's mobile renderer; they are now the module's own, rendered
   and run by the shared Kubuno mobile renderer and Android / iOS shells of the core. The previous Mail
-  Kotlin/Jetpack Compose app is retired from `mobile/` — it stays in the git history as the functional reference for
+  Kotlin/Jetpack Compose app is retired from `mobile/` - it stays in the git history as the functional reference for
   migrating the app's behaviour (data, server calls), which is still to come. The `mobile` workflow builds the new
   APK with cargo-apk.
 - **Android: the Kubuno logo is the current mark.** The app's `ic_kubuno_logo` drawable (the Kubuno mark in
@@ -43,8 +43,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   The crate and npm names do not change.
 
 - **Upgrading from an earlier release (PostgreSQL):** one migration (000043) converts three list columns to
-  JSON arrays in place — the labels of a message, the destinations of an alias and the allowed senders of a
-  mailing list — so the same code reads them on every engine. Nothing is lost and no setting changes; on a
+  JSON arrays in place - the labels of a message, the destinations of an alias and the allowed senders of a
+  mailing list - so the same code reads them on every engine. Nothing is lost and no setting changes; on a
   very large mailbox the conversion of `mail.messages` takes a moment at the first start.
 - **IMAP IDLE on MySQL/MariaDB and SQLite** reports new mail and flag changes within about five seconds (the
   session polls the mailbox state); on PostgreSQL it stays instantaneous (`LISTEN`/`NOTIFY`).
@@ -79,8 +79,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   such query here was traced back to its source, and the values a request
   carries are all bound rather than spliced.
 - **DNS libraries updated: two vulnerabilities closed.** Everything this module
-  does with DNS — finding where to deliver an outgoing message, checking SPF,
-  DKIM and DMARC on an incoming one, and the administrator's DNS diagnostic —
+  does with DNS - finding where to deliver an outgoing message, checking SPF,
+  DKIM and DMARC on an incoming one, and the administrator's DNS diagnostic -
   now runs on a release that fixes CPU exhaustion while encoding a DNS message
   (RUSTSEC-2026-0119) and a loop that never ends while validating a DNSSEC
   proof of non-existence (RUSTSEC-2026-0118). A remote name server could reach
@@ -89,13 +89,13 @@ number at release time, and CI publishes that section as the GitHub Release note
   name server at a time: the new version drops the retry over TCP when two
   servers answer in parallel that their reply was too big to fit, and a DNS
   reply too big to fit is exactly what a long SPF record or a DKIM public key
-  produces. Without this, a perfectly valid record would have read as missing —
+  produces. Without this, a perfectly valid record would have read as missing -
   SPF failing on ordinary mail, and the administrator's DNS report calling a
   published record absent.
 - **Still outstanding, and narrower than previously stated: the RSA advisory.**
   RUSTSEC-2023-0071 is a timing side-channel in RSA *decryption*, and no fix
   exists for it. The earlier note here overstated its reach: DKIM signing and
-  verification never touch the affected code — they use a separate
+  verification never touch the affected code - they use a separate
   implementation that is hardened against this class of attack, and the
   vulnerable one is only ever asked to *create* a DKIM key pair, which the
   advisory does not concern. The one place it does apply is opening an OpenPGP
@@ -105,7 +105,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   already sees that account's own responses.
 - **Input validation library updated.** The version in use carried
   RUSTSEC-2024-0421 through its domain-name parser, which accepted Punycode
-  labels that decode to plain ASCII — a mismatch an attacker can use to make two
+  labels that decode to plain ASCII - a mismatch an attacker can use to make two
   different names look like one.
 
 ### Fixed
@@ -155,8 +155,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   string.
 
 - **Writing to someone opens the composer, from anywhere in the instance.** The
-  "write to them" action other modules offer beside a person — a guest on a
-  calendar event today — used to be a `mailto:` handed to whatever the operating
+  "write to them" action other modules offer beside a person - a guest on a
+  calendar event today - used to be a `mailto:` handed to whatever the operating
   system opens, which on an instance that has a mailbox is the wrong answer: it
   loses the signature, the drafts and the sent copy. The composer already
   floated above every module; it is now reachable by them, pre-filled with the
@@ -183,8 +183,8 @@ number at release time, and CI publishes that section as the GitHub Release note
   external IMAP account (e.g. Gmail).
 
 - **Remote images from an unknown sender are held back, Gmail-style.** A message
-  whose images would be fetched from outside the instance now shows a notice —
-  "External images are not displayed" — with *Display images* (this message) and
+  whose images would be fetched from outside the instance now shows a notice -
+  "External images are not displayed" - with *Display images* (this message) and
   *Always display images from <sender>* (remembered). Nothing leaves the browser
   until you ask: fetching a remote image tells its host the message was opened.
   Inline (`cid:`), embedded (`data:`) and same-origin images are never touched,
@@ -193,7 +193,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   applying to every account on top of each user's own list, the way a Workspace
   allowlist set at the top level applies to all organisations. It ships stocked
   with major legitimate senders, accepts `# comments` for grouping, and an entry
-  only takes effect on a DMARC-authenticated message — nobody opted into it
+  only takes effect on a DMARC-authenticated message - nobody opted into it
   individually, so a spoofed From must not be able to ride it.
 
 - **Notifications for calendar invitations.** Receiving an invitation, a reply
@@ -214,7 +214,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Gmail-style rich cards for structured mail.** Emails carrying schema.org
   annotations (JSON-LD) or a calendar invitation (ICS) now show a card above the
   body: calendar events/invitations, flight, hotel, train/bus, restaurant, car
-  rental, and order/parcel — with the key details laid out and, where relevant,
+  rental, and order/parcel - with the key details laid out and, where relevant,
   a check-in or tracking link. Event and invitation cards offer "Add to
   calendar" (creates the event in the Calendar module) and a ".ics" download.
   Extraction runs at delivery/sync time, so cards appear on mail received from
@@ -222,15 +222,15 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **Multiple sources and destinations in the search criteria.** The "From"
   field accepts several addresses, OR-combined (any of these senders); the "To"
-  field is a full AND/OR rule tree with nested groups — the same builder as the
+  field is a full AND/OR rule tree with nested groups - the same builder as the
   "Additional filters" tab, its conditions locked on `to:`. "To" starts
-  compact like "From" — one input and a [+] — and switches to the multi-line
+  compact like "From" - one input and a [+] - and switches to the multi-line
   builder when a second condition is added, collapsing back at one. Both
   round-trip with the bar's query text (`(from:a OR from:b)`, parenthesized pure-`to:`
   groups).
 - **Gmail-style contact suggestions in address fields of the search panel.**
   From/To criteria and builder rows whose operator takes an address (`cc:`,
-  `bcc:`, `deliveredto:`) suggest contacts as you type — avatar, display name
+  `bcc:`, `deliveredto:`) suggest contacts as you type - avatar, display name
   and address, merged from the contacts module and the mail address index.
 - **Logical repetitions are detected and removed when the search is
   validated.** Clicking "Search" simplifies the rule trees: duplicate
@@ -238,22 +238,22 @@ number at release time, and CI publishes that section as the GitHub Release note
   nesting flattens, single-child groups unwrap, and boolean absorption applies
   (`A OR (A AND B)` → `A`); duplicate sources are deduplicated too.
 
-- **Search results always carry the filter-chip row** — date, "Has attachment",
+- **Search results always carry the filter-chip row** - date, "Has attachment",
   "To", "Exclude promotional offers" (new), "Unread" and the "Advanced search"
   link. On a search view the chips refine the committed query (they append to
   it and lift off it); folder views keep their scoped chip bar.
-- **Searching on senders features them above the results** — avatar, display
+- **Searching on senders features them above the results** - avatar, display
   name and the address as a mail link that opens the composer prefilled with
   them. Multi-source queries (`(from:a OR from:b)`) show one card per sender,
   flowing side by side on a single row; each card highlights on hover with a
   plain rounded grey rectangle.
-- **The committed search lives in the URL** — `#search/<encoded query>`, Gmail
+- **The committed search lives in the URL** - `#search/<encoded query>`, Gmail
   style: a search survives reloads, can be deep-linked and follows the browser's
   back/forward. Clearing the search returns the hash to the folder.
 - **Condition rows can be reordered by drag and drop.** Every condition and
   group carries a grip; dropping between siblings shows a crisp insertion bar
-  (no translucent browser ghost), and dropping onto a group's header — which
-  highlights — moves the node *into* that group. Conditions and whole groups
+  (no translucent browser ghost), and dropping onto a group's header - which
+  highlights - moves the node *into* that group. Conditions and whole groups
   move freely between root and any group; a group can never be dropped into its
   own descendants.
 - **Uniform field typography in the advanced panel.** The free-value inputs
@@ -262,7 +262,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **The search language accepts an explicit `AND`.** `(-in:spam AND in:trash) OR
   is:subscription` now parses as intended: `AND` is a combinator (juxtaposition
   already meant AND), no longer a literal word to search for.
-- **The "Additional filters" tab is now a full recursive condition tree** — the
+- **The "Additional filters" tab is now a full recursive condition tree** - the
   standard query-builder model: every group carries one combinator ("all
   conditions (AND)" / "any condition (OR)") and holds conditions, raw
   expressions and nested groups, with "Condition" / "Group" buttons and per-node
@@ -272,28 +272,28 @@ number at release time, and CI publishes that section as the GitHub Release note
   never silently split into a plain "From" field).
 
 - **A new search operator, `is:subscription`.** It matches messages that carry
-  a `List-Unsubscribe` header — the same population the "Manage subscriptions"
+  a `List-Unsubscribe` header - the same population the "Manage subscriptions"
   view is built on. It combines with every other operator (`from:`, `in:`,
   `OR`, negation, parentheses), and is suggested in the search bar.
 
 ### Fixed
-- **Sent messages keep their formatting.** Every outgoing message was cleaned with a policy that strips `style` outright, so bold colours, spacing and alignment were lost the moment a message left — invitations arrived at their guests as an unstyled table. Sending now applies the module's own vetted policy, the same one the reader uses.
+- **Sent messages keep their formatting.** Every outgoing message was cleaned with a policy that strips `style` outright, so bold colours, spacing and alignment were lost the moment a message left - invitations arrived at their guests as an unstyled table. Sending now applies the module's own vetted policy, the same one the reader uses.
 - **A conversation carrying an attachment now opens on a single click, wherever you click it.** The attachment strip stretches across the whole row, and it swallowed clicks: the entire lower half of such a row opened nothing, so it often took a second click higher up. Clicking an attachment chip still previews that file instead of opening the conversation.
 - **Sender, subject and date stay on the first line of a row.** When an attachment chip added a second line, they drifted to the vertical middle of the taller row; the chips now sit on the line below, with everything else aligned on the first.
-- **Clicking a folder or label in the sidebar now leaves the search**, the way it does in any mail client: the search box empties and the folder shows its own content. The committed query used to stay applied on top of every folder you clicked, so the list never changed — only the highlighted row did. Back/forward out of a search and the inbox categories behave the same way. The URL is now the single source of truth for being in a search (`#search/<query>`).
-- **Searching from a page without a message list now shows the results.** A search committed from Settings, Manage subscriptions, Drafts or Scheduled — by typing in the bar or by clicking a sender on the subscriptions page — opens the mailbox on that search instead of leaving you on the page you came from.
-- An iMIP reply (RSVP) that omits `DTSTART` — allowed by RFC 5546 — is now recognised and forwarded to the organizer's calendar instead of being silently ignored.
+- **Clicking a folder or label in the sidebar now leaves the search**, the way it does in any mail client: the search box empties and the folder shows its own content. The committed query used to stay applied on top of every folder you clicked, so the list never changed - only the highlighted row did. Back/forward out of a search and the inbox categories behave the same way. The URL is now the single source of truth for being in a search (`#search/<query>`).
+- **Searching from a page without a message list now shows the results.** A search committed from Settings, Manage subscriptions, Drafts or Scheduled - by typing in the bar or by clicking a sender on the subscriptions page - opens the mailbox on that search instead of leaving you on the page you came from.
+- An iMIP reply (RSVP) that omits `DTSTART` - allowed by RFC 5546 - is now recognised and forwarded to the organizer's calendar instead of being silently ignored.
 
 - **A sender can no longer impersonate someone in the interface.** A display
   name carrying somebody else's address (a spoofed display name sent from
-  elsewhere) now shows the real address next to it — on mobile too, where it
-  used to be hidden — with a warning chip. Bidi and invisible characters are
+  elsewhere) now shows the real address next to it - on mobile too, where it
+  used to be hidden - with a warning chip. Bidi and invisible characters are
   stripped from every attacker-authored text, so an attachment named
   `annexe_<RLO>gpj.exe` no longer paints itself `annexe_exe.jpg`. Punycode
   domains are flagged, with their Unicode form in the tooltip.
 - **Links in rich cards are restricted to http(s).** The `url`, `checkinUrl` and
   `trackingUrl` fields come from the sender's own JSON-LD or `.ics`, and were
-  stored and rendered unchecked — protection rested on React refusing
+  stored and rendered unchecked - protection rested on React refusing
   `javascript:` hrefs, i.e. on a framework version. They are now validated at
   extraction (the key is dropped from the stored node), again when parsed, and
   once more where the link is built.
@@ -301,26 +301,26 @@ number at release time, and CI publishes that section as the GitHub Release note
   the module load an unbounded batch into memory: message sizes are now read
   first (`RFC822.SIZE`) so oversized messages are skipped without downloading,
   fetches are grouped under a byte budget, and attachments are capped per
-  message in count and in total size — the message is kept, only the excess
+  message in count and in total size - the message is kept, only the excess
   parts are dropped. Attachment bytes are borrowed rather than copied, halving
   the resident cost of an ingest.
 
 - **Trust indicators no longer read as guarantees when nothing was verified.**
   "Sent by", "signed by" and "security" are read from headers the message
   carries. Our own SMTP server checks SPF/DKIM/DMARC on delivery, but a message
-  synced from an external mailbox arrives with none of that — so a forged
+  synced from an external mailbox arrives with none of that - so a forged
   `DKIM-Signature: d=paypal.com` displayed as "signed by paypal.com". Unless the
   message actually passed DMARC, these values are now marked "(non vérifié)".
 
 - **An attachment can no longer be rendered as a document in Kubuno's origin.**
   Attachments were served `inline` with the `Content-Type` the SENDER wrote, so
-  an HTML or SVG part opened as a page with the reader's session — and a second
+  an HTML or SVG part opened as a page with the reader's session - and a second
   part declared `application/javascript` loaded from that page same-origin,
   defeating `script-src 'self'`. Only a short list of previewable types (images,
   PDF, audio, video) keeps its type and stays `inline`; everything else is
   served as `application/octet-stream` with `Content-Disposition: attachment`.
-  Both cases now carry `nosniff` and a sandbox CSP, and control characters —
-  bidi overrides included — are stripped from the filename.
+  Both cases now carry `nosniff` and a sandbox CSP, and control characters -
+  bidi overrides included - are stripped from the filename.
 
 - **The reader enforces the same policy as the server.** A message stored before
   the server rules were tightened still carries whatever was allowed the day it
@@ -332,8 +332,8 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Nothing in an e-mail can execute.** The body sanitiser was audited against
   Gmail's policy and hardened: `data:` and `cid:` URLs are now accepted ONLY as
   an image source, so a link can no longer carry an inline
-  `data:text/html;base64,<script>` document; and e-mail CSS — which the
-  sanitiser passed through untouched — is stripped of `@import` (which pulls a
+  `data:text/html;base64,<script>` document; and e-mail CSS - which the
+  sanitiser passed through untouched - is stripped of `@import` (which pulls a
   remote stylesheet) and of the legacy script-in-CSS hooks `expression()`,
   `behavior:` and `-moz-binding`, in `<style>` blocks as well as `style=`
   attributes. Scripts, event handlers, iframes, objects, embeds, forms, `<meta
@@ -346,7 +346,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   68 instance settings was registered.
 
 - **The condition builder's "Condition" and "Group" text buttons are now icon
-  buttons with tooltips** — a lighter group header, same actions.
+  buttons with tooltips** - a lighter group header, same actions.
 - **One insertion slot per boundary in the condition builder.** "After row N"
   and "before row N+1" were shown as two distinct drop positions when they are
   the same place; drop targets are now normalized to a single slot per sibling
@@ -362,10 +362,10 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **This module now installs as a Kubuno package (`.kbpkg`) only.** Its system
   packages (Debian/RPM and the Windows and macOS installers) are no longer
   built: the module is distributed as one `.kbpkg` per platform (Linux, Windows,
-  macOS) that the Kubuno server installs itself — from the admin console, or
+  macOS) that the Kubuno server installs itself - from the admin console, or
   offline with `kubuno modules:install <file>.kbpkg`.
-- Internal refactor: `handlers/messages.rs` (≈1230 lines, a grab-bag of unrelated concerns) was split into a `messages/` module — one file per responsibility (reading, sending, attachments, flags, address suggestions, OpenPGP, calendar-invitation RSVP). No visible or behavioural change; every import path is unchanged.
-- **An invitation is presented like a calendar entry.** Its card is now shown above the whole conversation, ahead of the sender's header, rather than inside the message under it — an invitation precedes the mail that carries it. The card leads with the day said plainly ("Tomorrow · 07:30 – 08:30"), then the event name in full size, then where it is held and who is organising it side by side, and finally Yes / No / Maybe. The three answers carry equal weight until one is given, after which it stays marked and the other two step back. The invitation e-mail itself is laid out the same way: the organiser's own words first, then Date, Place and Guests as titled blocks with room to breathe, instead of a cramped label-value table.
+- Internal refactor: `handlers/messages.rs` (≈1230 lines, a grab-bag of unrelated concerns) was split into a `messages/` module - one file per responsibility (reading, sending, attachments, flags, address suggestions, OpenPGP, calendar-invitation RSVP). No visible or behavioural change; every import path is unchanged.
+- **An invitation is presented like a calendar entry.** Its card is now shown above the whole conversation, ahead of the sender's header, rather than inside the message under it - an invitation precedes the mail that carries it. The card leads with the day said plainly ("Tomorrow · 07:30 – 08:30"), then the event name in full size, then where it is held and who is organising it side by side, and finally Yes / No / Maybe. The three answers carry equal weight until one is given, after which it stays marked and the other two step back. The invitation e-mail itself is laid out the same way: the organiser's own words first, then Date, Place and Guests as titled blocks with room to breathe, instead of a cramped label-value table.
 
 - **"Reply all" is hidden when there is no one else to reply to.** On a message
   whose only correspondent is the sender, it would send the exact same mail as
@@ -374,7 +374,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **The README now opens with the module's logo.** The public README on
   GitHub now shows the module's designer logo (the same PNG shown as the
-  browser tab icon and in the applications menu) at the top of the page — the
+  browser tab icon and in the applications menu) at the top of the page - the
   repository landing now matches the icon a signed-in user sees inside the
   platform. The image ships in-repo, under `.github/logo.png`, so it renders
   even when the repo is browsed offline.
@@ -394,9 +394,9 @@ number at release time, and CI publishes that section as the GitHub Release note
   square and restore two overlapping squares, instead of diagonal double
   arrows.
 
-- **The advanced search panel gained an "Additional filters" tab — a real
+- **The advanced search panel gained an "Additional filters" tab - a real
   condition builder.** Operator fragments from the bar's query (parenthesized
-  groups, OR chains, any supported operator) are decomposed into editable rows —
+  groups, OR chains, any supported operator) are decomposed into editable rows -
   the classic filter-builder layout: an AND/OR connector from the second row, an
   operator picker over the full supported list, an enumerated or free value, an
   exclusion toggle and a per-row delete, plus "Add a condition". Consecutive OR
@@ -404,7 +404,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   search bar live. "Has the words" only ever holds free words. The panel sits in
   two tabs (Criteria / Additional filters), uses the shared UI primitives
   throughout, with uniform typography and no separator rules between fields.
-- **The advanced search panel mirrors the search bar — both ways.** Opening it
+- **The advanced search panel mirrors the search bar - both ways.** Opening it
   decomposes the bar's query into the fields (From, To, Subject, "Has the
   words", size, date, scope…), unknown fragments landing verbatim in "Has the
   words"; editing any field rewrites the bar's text live. Fields and query text
@@ -414,11 +414,11 @@ number at release time, and CI publishes that section as the GitHub Release note
   sender with a coloured avatar, its address on its own column and a
   plain-language frequency ("More than 20 emails recently", "10-20 emails
   recently", …). Clicking a sender opens the mailbox on the full Gmail-style
-  query — `from:X (-in:spam OR in:trash) is:subscription` — everywhere but
+  query - `from:X (-in:spam OR in:trash) is:subscription` - everywhere but
   spam, trash included, subscription messages only. "Unsubscribe" is a discreet
   inline action that
-  first asks for confirmation — "Stop receiving messages from all of X's mailing
-  lists?" — before triggering the `List-Unsubscribe`, matching the familiar
+  first asks for confirmation - "Stop receiving messages from all of X's mailing
+  lists?" - before triggering the `List-Unsubscribe`, matching the familiar
   mail-client layout.
 
 
@@ -433,11 +433,11 @@ number at release time, and CI publishes that section as the GitHub Release note
   release; the lockfile now takes the version that replaced it.
 - **The package could not be built where `zip` is absent.** The Windows job of
   the continuous integration has no `zip`, so the Windows package was simply lost
-  the first time it was attempted — a script failure, not a build failure. The
+  the first time it was attempted - a script failure, not a build failure. The
   builder now falls back to 7-Zip, then to PowerShell.
 ### Added
 
-- **This module now ships a `.kbpkg`** — the single package format a Kubuno
+- **This module now ships a `.kbpkg`** - the single package format a Kubuno
   server installs by itself, the same file on Linux, Windows and macOS. It
   carries the same binary, interface and manifest as the system packages,
   arranged the way the server expects to find a module on disk, plus a
@@ -451,7 +451,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **A built package could be thrown away instead of published.** The job that
   attaches a package to the release waited ten minutes for another workflow to
-  create that release, then gave up with "release never appeared — build.yml
+  create that release, then gave up with "release never appeared - build.yml
   likely failed". The diagnosis was wrong: on a repository whose `.deb` takes
   longer than ten minutes to build, the release simply did not exist yet, and a
   package that had built perfectly was discarded. Four modules reached v0.1.6
@@ -467,7 +467,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 - **Automatic address attribution.** Once a primary domain is verified (DNS
   proof and MX), every account without a mailbox on it receives one, and so
   does every new account thereafter. The local part is built from an
-  administrator's rule (`Attribution des adresses` settings — e.g.
+  administrator's rule (`Attribution des adresses` settings - e.g.
   `{prenom}.{nom}`, tokens `{prenom} {nom} {p} {n} {username}`), accents folded
   and clashes resolved with a numeric suffix. It never overwrites: an address
   set by hand, or from a previous run, is left untouched, and the whole
@@ -484,7 +484,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - **Pill-shaped buttons are gone from the interface.** Filter chips, view
   segments, tab selectors and action buttons that were drawn as pills now use the
-  same 4 px corner radius as every other button — the shape set them apart for no
+  same 4 px corner radius as every other button - the shape set them apart for no
   reason other than habit. Round buttons that hold a lone icon, avatars, status
   dots and non-clickable badges keep their shape: a circle around a single glyph
   is not a pill.
@@ -493,7 +493,7 @@ number at release time, and CI publishes that section as the GitHub Release note
   « Contient une pièce jointe », « À » and « Non lu » now use the same 4 px corner
   radius as every other button in the product; the pill set them apart for no
   reason other than habit. Round icon-only buttons (zoom, print) and status
-  badges keep their shape — a circle around a lone icon is not the same thing.
+  badges keep their shape - a circle around a lone icon is not the same thing.
 
 - The monospace fallback for message bodies no longer names an external font that
   was never shipped; it uses DM Mono, which the instance actually serves.
@@ -508,7 +508,7 @@ number at release time, and CI publishes that section as the GitHub Release note
 
 - Theme tokens: two colours for navigation labels (`--color-text-nav`,
   `--color-text-nav-active`). Every module carries the same token sheet, so the
-  values must match across them — whichever bundle loads last would otherwise
+  values must match across them - whichever bundle loads last would otherwise
   win. No visible change inside this module.
 - The search bar follows the new default background (`#e9eef6`).
 - Default application background token aligned with the core (`--body-bg` `#f8fafd`). Only

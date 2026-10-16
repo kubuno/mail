@@ -5,7 +5,7 @@
 //! acceptor from the administrator's certificate.
 //!
 //! rustls with the ring provider, aligned with the core: TLS 1.2 + 1.3 only,
-//! forward secrecy and AEAD enforced by the library — there are no weak
+//! forward secrecy and AEAD enforced by the library - there are no weak
 //! ciphersuites to accidentally re-enable, unlike an OpenSSL setup.
 
 use std::{io, path::Path, pin::Pin, sync::Arc, task::{Context, Poll}};
@@ -21,7 +21,7 @@ use super::config::TlsFloor;
 /// How a listener handles TLS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TlsMode {
-    /// Plaintext only — no encryption offered (LAN / behind a TLS terminator).
+    /// Plaintext only - no encryption offered (LAN / behind a TLS terminator).
     None,
     /// Plaintext, upgradable on client request (STARTTLS on 25/587/143, STLS on 110).
     StartTls,
@@ -30,7 +30,7 @@ pub enum TlsMode {
 }
 
 /// A connection that may be plaintext or TLS, and can move from the first to
-/// the second without being torn down — that is what STARTTLS needs.
+/// the second without being torn down - that is what STARTTLS needs.
 ///
 /// It implements `AsyncRead`/`AsyncWrite` by delegating to whichever it is, so
 /// the protocol handlers read and write through it without caring which.
@@ -44,7 +44,7 @@ pub enum MailStream {
 const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl MailStream {
-    /// True once the connection is encrypted — used to refuse cleartext auth and
+    /// True once the connection is encrypted - used to refuse cleartext auth and
     /// to reject a second STARTTLS.
     pub fn is_tls(&self) -> bool {
         matches!(self, MailStream::Tls(_))
@@ -59,7 +59,7 @@ impl MailStream {
             MailStream::Plain(tcp) => {
                 // Bounded: a peer that opens a connection and then never sends
                 // its ClientHello would otherwise hold a task and a socket
-                // forever — the session's own idle timeout does not apply yet,
+                // forever - the session's own idle timeout does not apply yet,
                 // because the session does not exist until this returns. A few
                 // hundred such connections are a free denial of service.
                 let tls = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(tcp))
@@ -114,7 +114,7 @@ impl AsyncWrite for MailStream {
 /// Why a STARTTLS/STLS upgrade was refused.
 #[derive(Debug)]
 pub enum UpgradeError {
-    /// The client sent bytes after the STARTTLS command, before the handshake —
+    /// The client sent bytes after the STARTTLS command, before the handshake -
     /// they travelled in the clear. Honouring them inside the TLS session is the
     /// STARTTLS command-injection attack (RFC 3207, CVE-2011-0411), so the
     /// connection must be dropped, not upgraded.
@@ -136,7 +136,7 @@ pub async fn upgrade(
     reader: BufReader<MailStream>,
     acceptor: &TlsAcceptor,
 ) -> Result<BufReader<MailStream>, UpgradeError> {
-    // Any plaintext still buffered was sent before the handshake — it must never
+    // Any plaintext still buffered was sent before the handshake - it must never
     // be interpreted as a command inside the tunnel. Postfix's `vstream_fpurge`
     // discards it; we refuse the whole connection, which is stricter.
     if !reader.buffer().is_empty() {
@@ -147,7 +147,7 @@ pub async fn upgrade(
     Ok(BufReader::new(tls))
 }
 
-/// The TLS versions a floor allows, highest first — the order rustls negotiates
+/// The TLS versions a floor allows, highest first - the order rustls negotiates
 /// in. TLS 1.0/1.1 are not in the library at all, so the only real choice is
 /// whether 1.2 is still accepted.
 ///
@@ -155,7 +155,7 @@ pub async fn upgrade(
 /// that only speaks TLS 1.2 does not "fail over" to another version: its
 /// STARTTLS handshake aborts, and every sane sender then retries the delivery in
 /// the clear rather than dropping the mail. So on port 25 a 1.3-only floor
-/// converts opportunistic encryption into plaintext — a net loss. It is a sound
+/// converts opportunistic encryption into plaintext - a net loss. It is a sound
 /// setting only on the ports whose clients we control or whose failure mode is
 /// "cannot connect": submission (587), SMTPS (465), IMAPS (993), POP3S (995).
 fn protocol_versions(floor: TlsFloor) -> &'static [&'static rustls::SupportedProtocolVersion] {
@@ -180,7 +180,7 @@ fn floor_label(floor: TlsFloor) -> &'static str {
 /// Builds the acceptor from the operator's certificate chain and private key
 /// (PEM), refusing to negotiate anything below `floor`. Returns `Ok(None)` when
 /// no certificate is configured, which simply means the TLS listeners will not
-/// start — never a hard failure, so a LAN instance runs fine without a
+/// start - never a hard failure, so a LAN instance runs fine without a
 /// certificate.
 pub fn build_acceptor(
     cert_path: &str,
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(versions(TlsFloor::Tls13), vec![ProtocolVersion::TLSv1_3]);
     }
 
-    /// The floor never removes TLS 1.3 — an operator can only ever restrict the
+    /// The floor never removes TLS 1.3 - an operator can only ever restrict the
     /// set downwards from 1.2, never end up with no modern version at all.
     #[test]
     fn tls13_is_always_available() {

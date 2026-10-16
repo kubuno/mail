@@ -21,7 +21,7 @@ use crate::{
     state::AppState,
 };
 
-/// Whether the instance admin enabled OpenPGP — lets the client show or hide the
+/// Whether the instance admin enabled OpenPGP - lets the client show or hide the
 /// whole "Chiffrement" tab without a 403 round-trip.
 pub async fn status(
     State(state): State<AppState>,
@@ -46,7 +46,7 @@ fn crypto(state: &AppState) -> Result<MailCrypto, MailError> {
 
 // ── Own keys ──────────────────────────────────────────────────────────────────
 
-/// The public view of an identity — never the secret material.
+/// The public view of an identity - never the secret material.
 pub async fn list_keys(
     State(state): State<AppState>,
     user: AuthUser,
@@ -275,8 +275,8 @@ pub async fn delete_contact(
 }
 
 /// Stores (or replaces) a correspondent's key from a manual import. One key per
-/// `(user_id, lower(email))` — a unique key on an expression, which an
-/// `ON CONFLICT` target cannot name portably — so the row is looked up first and
+/// `(user_id, lower(email))` - a unique key on an expression, which an
+/// `ON CONFLICT` target cannot name portably - so the row is looked up first and
 /// updated in place, else inserted; a concurrent insert of the same address
 /// surfaces as a unique violation and is resolved by updating the winner.
 async fn upsert_contact(

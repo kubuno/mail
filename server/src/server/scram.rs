@@ -1,7 +1,7 @@
 //! SASL SCRAM-SHA-256 (RFC 5802) server side.
 //!
 //! SCRAM proves the client knows the password without ever sending it, and a
-//! leak of the stored secret does not reveal it — an attacker would have to
+//! leak of the stored secret does not reveal it - an attacker would have to
 //! break PBKDF2. This is the mechanism Thunderbird/Apple Mail prefer over PLAIN.
 //!
 //! Only the crypto primitives come from crates (PBKDF2/HMAC/SHA-256); the
@@ -76,7 +76,7 @@ impl Handshake {
     }
 
     /// Starts the exchange. `secret` is the real one if the user exists, or a
-    /// decoy (`decoy_secret`) otherwise — `known` records which.
+    /// decoy (`decoy_secret`) otherwise - `known` records which.
     pub fn new(secret: Secret, known: bool, client_first: &str) -> Result<Self> {
         let bare = client_first
             .splitn(3, ',')
@@ -175,7 +175,7 @@ fn hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 /// SASLprep (RFC 4013) via stringprep. On any prep error, fall back to the raw
-/// password — better to let a valid password through than to reject it.
+/// password - better to let a valid password through than to reject it.
 fn saslprep(password: &str) -> String {
     stringprep::saslprep(password).map(|c| c.into_owned()).unwrap_or_else(|_| password.to_string())
 }

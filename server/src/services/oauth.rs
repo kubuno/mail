@@ -84,7 +84,7 @@ impl Provider {
     }
 
     /// IMAP/SMTP server presets applied when an account is created via OAuth.
-    /// (host, port, security) — IMAP then SMTP.
+    /// (host, port, security) - IMAP then SMTP.
     pub fn imap_preset(&self) -> (&'static str, i32, &'static str) {
         match self {
             Provider::Google    => ("imap.gmail.com",        993, "ssl"),
@@ -166,7 +166,7 @@ pub async fn exchange_code(
 
     let status = resp.status();
     if !status.is_success() {
-        // Summarize only — never log the code or the raw body (may echo secrets).
+        // Summarize only - never log the code or the raw body (may echo secrets).
         let kind = resp
             .json::<TokenErrorResponse>()
             .await
@@ -262,7 +262,7 @@ pub async fn valid_access_token(
 
     let (refresh_enc, refresh_nonce) = match (refresh_enc, refresh_nonce) {
         (Some(e), Some(n)) => (e, n),
-        _ => return Err(anyhow!("Jeton de rafraîchissement absent — reconnexion requise")),
+        _ => return Err(anyhow!("Jeton de rafraîchissement absent - reconnexion requise")),
     };
     let refresh_token = crypto
         .decrypt(&refresh_enc, &refresh_nonce)
@@ -292,7 +292,7 @@ pub async fn valid_access_token(
         tracing::error!(%account_id, provider = provider.as_str(), %status, error = %kind, "Refresh OAuth échoué");
         if kind == "invalid_grant" {
             // Token revoked or expired: surface a clear, actionable error.
-            let msg = "Autorisation OAuth expirée ou révoquée — reconnexion requise dans les réglages du compte";
+            let msg = "Autorisation OAuth expirée ou révoquée - reconnexion requise dans les réglages du compte";
             let _ = crate::db::query("UPDATE mail.accounts SET last_error = $1 WHERE id = $2")
                 .bind(msg)
                 .bind(account_id)

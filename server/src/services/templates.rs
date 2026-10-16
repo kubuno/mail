@@ -1,4 +1,4 @@
-//! Personal e-mail templates — reusable canned subject/body drafts.
+//! Personal e-mail templates - reusable canned subject/body drafts.
 //!
 //! A user saves a named template once and inserts it into any compose window
 //! later. This module owns the persisted rows and the pure validation logic; the
@@ -13,10 +13,10 @@ use chrono::{DateTime, Utc};
 use kubuno_db::DbPool;
 use uuid::Uuid;
 
-/// Longest accepted template name — matches the `VARCHAR(255)` column.
+/// Longest accepted template name - matches the `VARCHAR(255)` column.
 pub const NAME_MAX_LEN: usize = 255;
 
-/// Longest accepted subject — matches the `VARCHAR(998)` column (RFC 5322 line).
+/// Longest accepted subject - matches the `VARCHAR(998)` column (RFC 5322 line).
 pub const SUBJECT_MAX_LEN: usize = 998;
 
 // ── Pure logic (unit-tested, no database) ───────────────────────────────────
@@ -39,7 +39,7 @@ pub fn validate_name(name: &str) -> std::result::Result<(), String> {
 }
 
 /// Trims a subject and clamps it to the column length. A subject is optional, so
-/// this never rejects — it only shapes.
+/// this never rejects - it only shapes.
 pub fn clean_subject(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.chars().count() > SUBJECT_MAX_LEN {
@@ -93,7 +93,7 @@ pub async fn list(db: &DbPool, user_id: Uuid) -> Result<Vec<EmailTemplate>> {
 }
 
 /// Does this user already have a template with this name (case-insensitive)?
-/// `exclude_id`, when set, is skipped — used on rename so a row does not clash
+/// `exclude_id`, when set, is skipped - used on rename so a row does not clash
 /// with itself.
 pub async fn name_taken(
     db: &DbPool,

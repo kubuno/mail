@@ -7,7 +7,7 @@
 //!   authenticate, and it may therefore only name recipients in one of OUR
 //!   domains. Anything else is refused with `550 5.7.1 Relay access denied`.
 //! * one of our own users, authenticated with a mailbox credential
-//!   (`server::auth`), who is allowed to send anywhere — see `relay_decision`.
+//!   (`server::auth`), who is allowed to send anywhere - see `relay_decision`.
 //!
 //! An SMTP server that accepts mail for third-party domains from unauthenticated
 //! clients is an open relay: within hours it is enumerated, within days it sends
@@ -20,7 +20,7 @@
 //! a certificate is configured. The anti-injection defence of the upgrade itself
 //! lives in `server::tls`; this file only drives it.
 //!
-//! Who a recipient IS — a mailbox, an alias, a catch-all, a distribution list —
+//! Who a recipient IS - a mailbox, an alias, a catch-all, a distribution list -
 //! is answered by `server::resolve`, at RCPT time, because a recipient we
 //! cannot serve must be refused while the sender is still being told which one.
 //! One RCPT may therefore turn into several local deliveries and several
@@ -65,7 +65,7 @@ const MAX_COMMAND_BYTES: usize = 1000;
 const MAX_DATA_LINE_BYTES: usize = 65_536;
 
 // The recipient ceiling (RFC 5321 §4.5.3.1.8 asks for at least 100) and the
-// tolerated number of negative replies are BOTH settings now — see
+// tolerated number of negative replies are BOTH settings now - see
 // `ServerConfig::max_recipients` and `max_protocol_errors`. Nothing in this
 // file may re-introduce a compiled-in limit for them: a knob the admin panel
 // shows and the server ignores is worse than no knob at all.
@@ -80,7 +80,7 @@ fn attachments_dir() -> &'static str {
         crate::config::settings::Settings::load()
             .map(|s| s.mail.attachments_dir)
             .unwrap_or_else(|e| {
-                tracing::error!(error = %e, "Répertoire des pièces jointes illisible — repli sur le défaut");
+                tracing::error!(error = %e, "Répertoire des pièces jointes illisible - repli sur le défaut");
                 "/var/lib/kubuno/mail/attachments".to_string()
             })
     })
@@ -153,7 +153,7 @@ struct Session {
     /// MSA fills in a missing Message-ID/Date. `false` on a reception port (25):
     /// an MX, which authenticates no one and rewrites nothing.
     submission: bool,
-    /// The name given in HELO/EHLO — a session cannot start without one.
+    /// The name given in HELO/EHLO - a session cannot start without one.
     greeting: Option<String>,
     /// Set once AUTH succeeded. This, and only this, unlocks relaying.
     mailbox: Option<Mailbox>,
@@ -170,7 +170,7 @@ struct Session {
     remote_rcpts: Vec<String>,
     /// How many recipients the CLIENT named, which is what `max_recipients`
     /// bounds. Counting the expanded addresses instead would refuse a legitimate
-    /// second recipient because the first one happened to be a large list — and
+    /// second recipient because the first one happened to be a large list - and
     /// the expansion has limits of its own (`resolve::MAX_FANOUT`).
     named_rcpts: usize,
     commands: i32,
@@ -186,14 +186,14 @@ enum Line {
     /// Longer than the caller allowed; the rest of it has been discarded.
     TooLong,
     /// Terminated by a bare LF (or containing a bare CR) instead of CRLF. The
-    /// line has been discarded; the session must be torn down, never resumed —
+    /// line has been discarded; the session must be torn down, never resumed -
     /// resuming is exactly what lets an attacker desynchronise us from a relay.
     BareNewline,
 }
 
 /// Outcome of processing a STARTTLS command.
 enum Tls {
-    /// Stay in the session — either the upgrade succeeded, or it was declined
+    /// Stay in the session - either the upgrade succeeded, or it was declined
     /// (already active / not offered) without tearing the connection down.
     KeepGoing,
     /// The connection must be closed; the string is the fault to log.
@@ -247,7 +247,7 @@ impl Session {
                     return Ok(None);
                 }
                 // A HELO/EHLO the operator asked us to screen is refused here,
-                // before the session has a greeting — so MAIL still answers
+                // before the session has a greeting - so MAIL still answers
                 // "send HELO first" rather than proceeding on a name we
                 // rejected.
                 "HELO" | "EHLO" if helo_rejected(cfg, self.submission, rest) => {
@@ -271,7 +271,7 @@ impl Session {
                     self.reply(&format!("250-SIZE {}", cfg.max_message_bytes)).await?;
                     self.reply("250-8BITMIME").await?;
                     // Only offered on a plaintext listener that can actually
-                    // upgrade — never advertise an encryption we cannot honour.
+                    // upgrade - never advertise an encryption we cannot honour.
                     if advertises_starttls(inc.tls_mode, inc.acceptor.is_some(), self.tls) {
                         self.reply("250-STARTTLS").await?;
                     }
@@ -327,7 +327,7 @@ impl Session {
             }
 
             // Checked once, after any command: `reply` counted whatever the
-            // handler refused, so this bounds probing across every verb —
+            // handler refused, so this bounds probing across every verb -
             // including the RCPT and AUTH loops an attacker actually uses.
             if self.too_many_errors(cfg) {
                 self.reply("421 4.7.0 Too many errors, closing connection").await?;
@@ -372,7 +372,7 @@ impl Session {
                 Ok(Tls::KeepGoing)
             }
             Err(UpgradeError::Pipelined) => {
-                tracing::warn!(peer = %peer, "STARTTLS: données pipelinées en clair — connexion fermée");
+                tracing::warn!(peer = %peer, "STARTTLS: données pipelinées en clair - connexion fermée");
                 Ok(Tls::Close("STARTTLS: données pipelinées en clair".to_string()))
             }
             Err(UpgradeError::Handshake(e)) => {
@@ -391,8 +391,8 @@ impl Session {
         }
         // On submission, credentials MUST NOT travel in the clear (RFC 6409 §4.3,
         // RFC 4954 §4): the client is told to STARTTLS first rather than have its
-        // password observed. A reception listener never needs this — it does not
-        // advertise AUTH — so the rule is scoped to submission.
+        // password observed. A reception listener never needs this - it does not
+        // advertise AUTH - so the rule is scoped to submission.
         if self.submission && !self.tls {
             return self
                 .reply("538 5.7.11 Encryption required for requested authentication mechanism")
@@ -426,7 +426,7 @@ impl Session {
             }
             "LOGIN" => {
                 let user = if initial.is_empty() {
-                    // "Username:" — the challenge clients expect verbatim.
+                    // "Username:" - the challenge clients expect verbatim.
                     self.reply("334 VXNlcm5hbWU6").await?;
                     match self.read_secret_line().await? {
                         Some(value) => value,
@@ -513,7 +513,7 @@ impl Session {
             Err(_) => return self.reply("501 5.5.2 Cannot decode authentication").await,
         };
 
-        // Real secret for a known user, decoy otherwise — the exchange proceeds
+        // Real secret for a known user, decoy otherwise - the exchange proceeds
         // identically and fails at the proof either way.
         let (secret, known) = match auth::scram_secret(db, &username).await {
             Some(secret) => (secret, true),
@@ -618,7 +618,7 @@ impl Session {
         // It only ever applies to FOREIGN mail: a session that authenticated is
         // one of our users, and the address they may use is settled by the
         // ownership check below, not by a spam list. The allow-list wins, which
-        // is its documented purpose — it buys a bypass of the block lists and
+        // is its documented purpose - it buys a bypass of the block lists and
         // of greylisting, and of nothing else. A trusted upstream relay is
         // exempt too: it has already filtered, and it must not be treated as a
         // hostile client.
@@ -634,7 +634,7 @@ impl Session {
 
             // Delivery restriction: when the operator has declared the only
             // domains this instance exchanges mail with, anything else is
-            // refused here — before a byte of the message is transferred, and
+            // refused here - before a byte of the message is transferred, and
             // permanently, so the sending server tells its user why. Our own
             // domains and the null return path are never restricted (see
             // `inbound_sender_allowed`).
@@ -651,7 +651,7 @@ impl Session {
 
         // Anti-spoofing (RFC 6409): an authenticated user may only send AS
         // themselves. Kubuno has no downstream MTA to enforce this, so it is done
-        // here — and ONLY on submission. Authentication is already guaranteed by
+        // here - and ONLY on submission. Authentication is already guaranteed by
         // the dispatch-loop checkpoint; the `else` is defence in depth.
         if self.submission {
             match self.mailbox.clone() {
@@ -676,7 +676,7 @@ impl Session {
         if self.sender.is_none() {
             return self.reply("503 5.5.1 Need MAIL before RCPT").await;
         }
-        // What the CLIENT named, local and remote alike — the case this limit
+        // What the CLIENT named, local and remote alike - the case this limit
         // exists for is an authenticated submitter fanning one message out to
         // thousands of remote addresses, and counting only the local list left
         // exactly that unbounded.
@@ -691,7 +691,7 @@ impl Session {
             tracing::warn!(
                 expanded = self.rcpts.len() + self.remote_rcpts.len(),
                 limit = resolve::MAX_FANOUT,
-                "SMTP : enveloppe trop développée — destinataire supplémentaire refusé"
+                "SMTP : enveloppe trop développée - destinataire supplémentaire refusé"
             );
             return self.reply("452 4.5.3 Too many recipients").await;
         }
@@ -777,7 +777,7 @@ impl Session {
                     if !cfg.outbound_recipient_allowed(&address) {
                         tracing::warn!(
                             forward_to = %sanitize_token(&address),
-                            "SMTP : réexpédition d'alias hors des domaines autorisés — abandonnée"
+                            "SMTP : réexpédition d'alias hors des domaines autorisés - abandonnée"
                         );
                         continue;
                     }
@@ -844,7 +844,7 @@ impl Session {
         let mut too_big = false;
         let mut damaged = false;
         // Once the message is over the limit we stop keeping it but must keep
-        // reading to find the terminator — up to a bound, past which the peer
+        // reading to find the terminator - up to a bound, past which the peer
         // is simply flooding us.
         let drain_limit = cfg.max_message_bytes.saturating_add(1024 * 1024);
         let mut drained: usize = 0;
@@ -912,18 +912,18 @@ impl Session {
         }
         // Loop guard, at the session level. `deliver_local` refuses a looping
         // message too, but that refusal arrives after we would have answered
-        // 451 — and a 4xx tells the loop to try again, which is the one thing
+        // 451 - and a 4xx tells the loop to try again, which is the one thing
         // it must not hear. A hop count is never transient: answer 5xx.
         //
         // The ceiling is the administrator's `hopcount_limit`, capped by the
         // compiled floor: the setting may only make the check STRICTER.
         // `deliver_local` keeps enforcing the floor on its own, and it must
-        // never be the one to fire — its refusal turns into a 451.
+        // never be the one to fire - its refusal turns into a 451.
         let limit = effective_hopcount_limit(cfg);
         let hops = hygiene::hop_count(&message);
         if hops >= limit {
             tracing::error!(hops, limit, peer = %peer,
-                "SMTP : boucle de courrier détectée — message refusé définitivement");
+                "SMTP : boucle de courrier détectée - message refusé définitivement");
             self.reply("554 5.4.6 Routing loop detected, too many Received headers").await?;
             return Ok(None);
         }
@@ -931,7 +931,7 @@ impl Session {
         // The sender's daily allowance, checked BEFORE anything is delivered or
         // queued. A refusal that came after the local copies were filed would
         // make the client retry a message it had already half-delivered, so the
-        // one safe place for this check is here — nothing has happened yet.
+        // one safe place for this check is here - nothing has happened yet.
         //
         // Temporary (4xx) on purpose: an allowance is a rolling window, so the
         // message becomes sendable again on its own. A 5xx would bounce for good
@@ -944,7 +944,7 @@ impl Session {
                     {
                         tracing::warn!(
                             used, asked = remote_rcpts.len(), limit = cfg.send_max_recipients_per_day,
-                            "SMTP : quota d'envoi quotidien atteint — message différé"
+                            "SMTP : quota d'envoi quotidien atteint - message différé"
                         );
                         self.reply("452 4.5.3 Daily sending quota exceeded, try again later").await?;
                         return Ok(None);
@@ -953,7 +953,7 @@ impl Session {
                     // The count is a protection, not a gate: a database hiccup
                     // must not stop legitimate mail. It is logged and the send
                     // proceeds.
-                    Err(e) => tracing::error!(error = %e, "Quota d'envoi : comptage impossible — envoi autorisé"),
+                    Err(e) => tracing::error!(error = %e, "Quota d'envoi : comptage impossible - envoi autorisé"),
                 }
             }
         }
@@ -974,7 +974,7 @@ impl Session {
         } else {
             // Reception (MX): authenticate the sender with SPF/DKIM/DMARC and
             // stamp the result. Any Authentication-Results already in the message
-            // is stripped first — otherwise a spammer forges `dmarc=pass`.
+            // is stripped first - otherwise a spammer forges `dmarc=pass`.
             let helo = self.greeting.clone().unwrap_or_default();
             let verdict = authres::verify(
                 self.peer_ip, &cfg.trusted_upstreams, &helo, &sender, &message, &cfg.hostname,
@@ -988,7 +988,7 @@ impl Session {
             // policy in the panel and every forgery is delivered anyway.
             //
             // ⚠️ Only on reception. An authenticated submitter is never judged
-            // by these policies — their own domain's SPF record does not list
+            // by these policies - their own domain's SPF record does not list
             // our IP, so every user of the instance would be rejected.
             let policy = published_dmarc_policy(cfg, &verdict, &stamped).await;
             match message_policy_action(cfg, &verdict, policy) {
@@ -1024,7 +1024,7 @@ impl Session {
 
         // Attachment and content compliance, in BOTH directions. These rules are
         // the operator's, not the sending domain's, so an authenticated
-        // submitter is judged by them exactly like a foreign MX — that is the
+        // submitter is judged by them exactly like a foreign MX - that is the
         // whole point of a rule that forbids a file type: it must stop the file
         // coming in *and* going out.
         //
@@ -1056,7 +1056,7 @@ impl Session {
                     // own inboxes. Quarantine means quarantine.
                     tracing::warn!(
                         dropped = remote_rcpts.len(),
-                        "SMTP : réexpédition abandonnée — message mis en quarantaine par la conformité"
+                        "SMTP : réexpédition abandonnée - message mis en quarantaine par la conformité"
                     );
                     remote_rcpts.clear();
                     relay_quarantined = true;
@@ -1101,7 +1101,7 @@ impl Session {
         // Queue REMOTE recipients for outbound delivery: the ones an
         // authenticated submitter named, and the ones an alias of OURS forwards
         // to. One message, all remote recipients, enqueued in a single
-        // transaction — durable before we answer 250. The worker signs (DKIM)
+        // transaction - durable before we answer 250. The worker signs (DKIM)
         // and delivers with retries + DSN.
         //
         // A forwarded message keeps the sender's return path, which is what
@@ -1111,7 +1111,7 @@ impl Session {
         // ever, and every bounce along the way is backscatter aimed at a third
         // party. The hop-count check above is the guard, and it runs BEFORE
         // this block on purpose: each pass through a server adds a `Received:`
-        // header — ours included, prepended just below — so a routing loop dies
+        // header - ours included, prepended just below - so a routing loop dies
         // at `effective_hopcount_limit` with a permanent 554 instead of being
         // queued again. Nothing here may be moved above that check.
         let mut queued = 0usize;
@@ -1154,7 +1154,7 @@ impl Session {
 
         // Journalling, once per accepted message and only once it IS accepted:
         // an archive of messages we refused would be a record of things that
-        // never happened. Best-effort — it never changes the reply below.
+        // never happened. Best-effort - it never changes the reply below.
         journal::archive(db, cfg, attachments_dir(), &sender, &message).await;
 
         let id = last_id.map(|id| id.to_string()).unwrap_or_default();
@@ -1180,7 +1180,7 @@ impl Session {
     }
 
     /// The live buffered connection. Absent only for the instant a STARTTLS
-    /// upgrade swaps the stream — a read or write outside that window means the
+    /// upgrade swaps the stream - a read or write outside that window means the
     /// session is being driven after it was torn down, and is a hard error.
     fn conn(&mut self) -> Result<&mut BufReader<MailStream>> {
         self.reader
@@ -1193,7 +1193,7 @@ impl Session {
         // error counter works. Counting HERE rather than at each rejection is
         // what makes the limit real: previously only two of the thirty-odd
         // rejection sites called the counter, so a client could be refused
-        // indefinitely — a free address-enumeration and password-probing
+        // indefinitely - a free address-enumeration and password-probing
         // channel. `421` is our own goodbye and never counts.
         if (line.starts_with('4') || line.starts_with('5')) && !line.starts_with("421") {
             self.errors = self.errors.saturating_add(1);
@@ -1306,7 +1306,7 @@ impl Session {
 enum RelayDecision {
     /// One of our domains: deliver into the local store.
     Local,
-    /// A third-party domain named by a client that has not authenticated —
+    /// A third-party domain named by a client that has not authenticated -
     /// the open relay case, always refused.
     Denied,
     /// A third-party domain named by one of our own users. Legitimate, but this
@@ -1336,15 +1336,15 @@ fn advertises_starttls(tls_mode: TlsMode, has_acceptor: bool, already_tls: bool)
 // ── Submission policy (RFC 6409) ─────────────────────────────────────────────
 
 /// Whether the EHLO response should advertise AUTH: only on a submission
-/// listener, and only once the channel is encrypted — offering a mechanism whose
+/// listener, and only once the channel is encrypted - offering a mechanism whose
 /// use we would then refuse (see the `538` in `cmd_auth`) only misleads clients.
 fn advertises_auth(submission: bool, encrypted: bool) -> bool {
     submission && encrypted
 }
 
 /// The SASL mechanisms named in the EHLO `AUTH` line, in preference order.
-/// SCRAM-SHA-256 comes first: it is the strongest — the password never crosses
-/// the wire and a stolen stored secret does not reveal it (RFC 5802) — so a
+/// SCRAM-SHA-256 comes first: it is the strongest - the password never crosses
+/// the wire and a stolen stored secret does not reveal it (RFC 5802) - so a
 /// capable client picks it over the cleartext-carrying PLAIN/LOGIN.
 fn auth_mechanisms() -> &'static str {
     "SCRAM-SHA-256 PLAIN LOGIN"
@@ -1360,13 +1360,13 @@ fn envelope_blocked_pending_auth(submission: bool, authenticated: bool) -> bool 
 enum SenderCheck {
     /// The envelope sender belongs to the authenticated user: proceed.
     Accept,
-    /// Refuse with this protocol reply — either a permanent `553` (not owned) or
+    /// Refuse with this protocol reply - either a permanent `553` (not owned) or
     /// a temporary `451` (the lookup itself failed, must not bounce for good).
     Reject(&'static str),
 }
 
 /// Whether `envelope_from` (already lowercased) is one of the addresses the
-/// authenticated mailbox owns. Kept pure — the caller assembles the set from the
+/// authenticated mailbox owns. Kept pure - the caller assembles the set from the
 /// mailbox login and the user's account addresses. The null sender `<>` is never
 /// owned: a submission client sends real mail, not a bounce.
 fn sender_is_owned(envelope_from: &str, owned_addresses: &[&str]) -> bool {
@@ -1448,7 +1448,7 @@ fn add_submission_headers(message: &[u8], hostname: &str) -> Vec<u8> {
 /// Stripping the inbound ones is the security point: a sender can put
 /// `Authentication-Results: our.host; dmarc=pass` in their message, and a
 /// downstream reader that trusts the topmost such header would be fooled. Only a
-/// header WE add, above everything, may be trusted — so we drop theirs first.
+/// header WE add, above everything, may be trusted - so we drop theirs first.
 fn stamp_auth_results(message: &[u8], header_value: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(message.len() + header_value.len() + 32);
     if !header_value.trim().is_empty() {
@@ -1462,8 +1462,8 @@ fn stamp_auth_results(message: &[u8], header_value: &str) -> Vec<u8> {
     out
 }
 
-/// Returns the message with every header field named `name` — and its folded
-/// continuation lines — removed from the header block.
+/// Returns the message with every header field named `name` - and its folded
+/// continuation lines - removed from the header block.
 ///
 /// This is what makes a header WE add trustworthy: whatever the sender wrote
 /// under that name is gone before ours goes on top, so the topmost occurrence
@@ -1504,7 +1504,7 @@ fn strip_headers(message: &[u8], name: &str) -> Vec<u8> {
 /// Only on a reception listener: `require_fqdn_helo` is a setting about foreign
 /// servers, and an end user's mail client routinely announces its laptop's
 /// name. Refusing that would break submission for the sake of a check that
-/// buys nothing there — the client has already authenticated.
+/// buys nothing there - the client has already authenticated.
 fn helo_rejected(cfg: &ServerConfig, submission: bool, argument: &str) -> bool {
     cfg.require_fqdn_helo && !submission && !hygiene::is_fqdn_helo(argument)
 }
@@ -1518,7 +1518,7 @@ fn effective_hopcount_limit(cfg: &ServerConfig) -> usize {
 /// The disposition a sending domain published in its DMARC record (`p=`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DmarcPolicy {
-    /// `p=none` — the domain asks to be told, not to be protected.
+    /// `p=none` - the domain asks to be told, not to be protected.
     None,
     Quarantine,
     Reject,
@@ -1531,7 +1531,7 @@ enum DmarcPolicy {
 /// (`PolicyAction` is ordered by severity). A verdict that is not a plain
 /// failure contributes nothing: `temperror` above all means our own resolver
 /// had a bad minute, and turning that into a rejection would drop real mail
-/// every time DNS hiccups. Same for `permerror`, `neutral` and `none` — a
+/// every time DNS hiccups. Same for `permerror`, `neutral` and `none` - a
 /// domain that publishes nothing has said nothing.
 fn message_policy_action(
     cfg: &ServerConfig,
@@ -1562,7 +1562,7 @@ fn message_policy_action(
     action
 }
 
-/// Reads back the `p=` the `From:` domain publishes, when — and only when —
+/// Reads back the `p=` the `From:` domain publishes, when - and only when -
 /// something is going to be decided with it.
 ///
 /// `mail-auth` computes the applicable policy inside `verify_dmarc` but does
@@ -1570,7 +1570,7 @@ fn message_policy_action(
 /// this is a second, deliberately narrow lookup: it runs on a `dmarc=fail`
 /// with the policy honoured, which is a rare path, and never otherwise.
 ///
-/// Returns `None` when the policy cannot be established — the caller treats
+/// Returns `None` when the policy cannot be established - the caller treats
 /// that as "mark only", never as a licence to reject.
 async fn published_dmarc_policy(
     cfg: &ServerConfig,
@@ -1584,7 +1584,7 @@ async fn published_dmarc_policy(
     lookup_dmarc_policy(&domain).await
 }
 
-/// One `_dmarc.<domain>` TXT lookup, then the parent domain's record — RFC 7489
+/// One `_dmarc.<domain>` TXT lookup, then the parent domain's record - RFC 7489
 /// §6.6.3's tree walk, minus the public-suffix step: without a suffix list the
 /// only safe stopping point is the last label, and a query for `_dmarc.com`
 /// returns nothing anyway.
@@ -1605,7 +1605,7 @@ async fn lookup_dmarc_policy(domain: &str) -> Option<DmarcPolicy> {
     }
 
     // A subdomain with no record of its own inherits the organizational
-    // domain's, where `sp=` — when present — is what governs it.
+    // domain's, where `sp=` - when present - is what governs it.
     let parent = domain.split_once('.').map(|(_, rest)| rest)?;
     if !parent.contains('.') {
         return None;
@@ -1621,8 +1621,8 @@ async fn lookup_dmarc_policy(domain: &str) -> Option<DmarcPolicy> {
     })
 }
 
-/// Maps `mail-auth`'s policy tag onto ours. `Unspecified` — a record with no
-/// `p=` — is not a policy and yields `None`, so nothing is enforced from it.
+/// Maps `mail-auth`'s policy tag onto ours. `Unspecified` - a record with no
+/// `p=` - is not a policy and yields `None`, so nothing is enforced from it.
 fn dmarc_policy_of(policy: mail_auth::dmarc::Policy) -> Option<DmarcPolicy> {
     match policy {
         mail_auth::dmarc::Policy::None => Some(DmarcPolicy::None),
@@ -1632,7 +1632,7 @@ fn dmarc_policy_of(policy: mail_auth::dmarc::Policy) -> Option<DmarcPolicy> {
     }
 }
 
-/// The domain of the `From:` header — the identity DMARC is about, and the only
+/// The domain of the `From:` header - the identity DMARC is about, and the only
 /// one a human ever sees.
 ///
 /// Deliberately hand-rolled and bounded rather than a full RFC 5322 parse: this
@@ -1689,7 +1689,7 @@ fn header_from_domain(message: &[u8]) -> Option<String> {
 /// store, the user's rules and the interface can all see it.
 ///
 /// `Quarantine` gets the same header AND is filed into Spam by way of
-/// `deliver::Disposition` — the header alone would only be a mark under
+/// `deliver::Disposition` - the header alone would only be a mark under
 /// another name.
 fn policy_marker(message: &[u8], action: PolicyAction, verdict: &AuthVerdict) -> Vec<u8> {
     let label = match action {
@@ -1708,7 +1708,7 @@ fn policy_marker(message: &[u8], action: PolicyAction, verdict: &AuthVerdict) ->
     );
     // Anything the SENDER wrote under this name is dropped first. A forged
     // marker could otherwise sit alongside ours and let a reader that takes the
-    // last occurrence — or a naive filter — read the wrong verdict.
+    // last occurrence - or a naive filter - read the wrong verdict.
     let stripped = strip_headers(message, "X-Kubuno-Auth-Policy");
     let mut out = Vec::with_capacity(header.len() + stripped.len());
     out.extend_from_slice(header.as_bytes());
@@ -1720,7 +1720,7 @@ fn policy_marker(message: &[u8], action: PolicyAction, verdict: &AuthVerdict) ->
 ///
 /// The name must END where it ends: matching on the prefix alone would drop
 /// `Authentication-Results-Original:` along with `Authentication-Results:`, and
-/// — the other way round — let `X-Kubuno-Auth-Policy-Note:` masquerade as ours.
+/// - the other way round - let `X-Kubuno-Auth-Policy-Note:` masquerade as ours.
 fn header_name_is(line: &str, name: &str) -> bool {
     match line.get(..name.len()) {
         Some(candidate) if candidate.eq_ignore_ascii_case(name) => {
@@ -1733,8 +1733,8 @@ fn header_name_is(line: &str, name: &str) -> bool {
 }
 
 /// Whether the header block (everything up to the first blank line) carries a
-/// field named `name`, case-insensitively. Folded continuation lines — those
-/// starting with a space or tab — belong to the previous header and are skipped,
+/// field named `name`, case-insensitively. Folded continuation lines - those
+/// starting with a space or tab - belong to the previous header and are skipped,
 /// so a `name:` appearing inside a folded value is never mistaken for a field.
 fn has_header(message: &[u8], name: &[u8]) -> bool {
     for raw in message.split(|b| *b == b'\n') {
@@ -1923,7 +1923,7 @@ fn unstuff_dot(line: &[u8]) -> &[u8] {
 /// Control characters become spaces rather than disappearing: dropping them
 /// would splice `client.example\r\nBcc: victim@…` into one unreadable token,
 /// whereas a space keeps the whole thing visible on the single line it belongs
-/// to — which is what stops it from becoming a header of its own.
+/// to - which is what stops it from becoming a header of its own.
 fn sanitize_token(value: &str) -> String {
     let cleaned: String = value
         .chars()
@@ -2179,7 +2179,7 @@ mod tests {
     //
     // The database handle fails every query on purpose: refusing to relay must
     // need no query at all, and a database that is down must yield a TEMPORARY
-    // refusal — a 550 there would bounce legitimate mail for good.
+    // refusal - a 550 there would bounce legitimate mail for good.
 
     async fn unreachable_pool() -> DbPool {
         crate::server::broken_pool().await
@@ -2303,7 +2303,7 @@ mod tests {
     }
 
     /// End to end on a real socket: with the screen on, a non-qualified HELO is
-    /// refused and the session never acquires a greeting — while a proper name
+    /// refused and the session never acquires a greeting - while a proper name
     /// goes through on the very same listener.
     #[tokio::test]
     async fn a_live_session_refuses_a_non_qualified_helo() {
@@ -2324,7 +2324,7 @@ mod tests {
     }
 
     /// The instance block list refuses the envelope sender outright, and the
-    /// allow-list is what lifts it — that is the only thing it lifts.
+    /// allow-list is what lifts it - that is the only thing it lifts.
     #[tokio::test]
     async fn a_live_session_refuses_a_blocklisted_sender() {
         let cfg = ServerConfig {
@@ -2407,7 +2407,7 @@ mod tests {
     #[test]
     fn scram_is_the_first_advertised_mechanism() {
         // Announced (via `250-AUTH <auth_mechanisms()>`) exactly when
-        // `advertises_auth` holds — i.e. on an encrypted submission channel.
+        // `advertises_auth` holds - i.e. on an encrypted submission channel.
         let advertised = auth_mechanisms();
         assert!(advertised.starts_with("SCRAM-SHA-256"), "SCRAM annoncé en premier (préféré)");
         assert!(advertised.contains("PLAIN"));
@@ -2567,8 +2567,8 @@ mod tests {
         assert_eq!(message_policy_action(&cfg, &v, None), PolicyAction::Mark);
     }
 
-    /// An operator can soften a sender's policy — that is what the two
-    /// `dmarc_*_action` settings are for — and turning DMARC off entirely must
+    /// An operator can soften a sender's policy - that is what the two
+    /// `dmarc_*_action` settings are for - and turning DMARC off entirely must
     /// really turn it off.
     #[test]
     fn honouring_the_dmarc_policy_can_be_switched_off() {

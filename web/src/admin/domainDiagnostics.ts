@@ -2,7 +2,7 @@
  * Mail's answer to the core's question "what does this domain's DNS say?".
  *
  * ── Why the core asks instead of reading ─────────────────────────────────────
- * Instance ▸ Domaines does a minimal reading of its own — the MX hosts, whether
+ * Instance ▸ Domaines does a minimal reading of its own - the MX hosts, whether
  * an SPF record exists, whether a DMARC record exists. It cannot do better: it
  * does not know which MX ought to answer, what an SPF record costs in lookups,
  * which DKIM selector is actually signing, what the outgoing IP's PTR says, or
@@ -15,8 +15,8 @@
  *
  * ⚠️ The contract (key + shapes) is DECLARED IN THE CORE, in
  * `core/frontend/src/core/registry/domainDiagnostics.ts`, and exported by
- * `@kubuno/sdk`. It is mirrored here — same convention as `calendar.view-option`
- * — because a module builds against the PUBLISHED `@kubuno/sdk`, which only
+ * `@kubuno/sdk`. It is mirrored here - same convention as `calendar.view-option`
+ * - because a module builds against the PUBLISHED `@kubuno/sdk`, which only
  * carries the contract from its next release. Once published, replace the local
  * types with an import from `@kubuno/sdk` and delete this block. The key string
  * is the real coupling and must never drift.
@@ -58,7 +58,7 @@ interface DomainDiagnosticsProvider {
  *  facts that most often explain a rejection. They travel flagged, not merged. */
 const INSTANCE_WIDE_KINDS = new Set(['ptr', 'tls'])
 
-/** Who is speaking, in the reader's language — the core prints it verbatim. */
+/** Who is speaking, in the reader's language - the core prints it verbatim. */
 function sourceLabel(): string {
   return i18n.t('mail:diag_source_name', { defaultValue: 'le module Courrier' })
 }
@@ -80,7 +80,7 @@ export function registerDomainDiagnostics(): void {
   ExtensionRegistry.register(DOMAIN_DIAGNOSTICS, 'mail', {
     fetch: async (domain: string) => {
       // A failure here is deliberately NOT caught: the core falls back to its
-      // own reading, which is the honest outcome — an unreachable module must
+      // own reading, which is the honest outcome - an unreachable module must
       // not leave the operator staring at an empty diagnostic.
       const report = await mailAdminApi.diagnostics()
 
@@ -88,7 +88,7 @@ export function registerDomainDiagnostics(): void {
       const served = report.domains.some(d => d.toLowerCase().replace(/\.$/, '') === name)
 
       if (!served) {
-        // Mail knows this domain is NOT one of its own — which is exactly the
+        // Mail knows this domain is NOT one of its own - which is exactly the
         // link between the two screens the operator is missing. It is said, and
         // the instance's own reading stays below it.
         return {

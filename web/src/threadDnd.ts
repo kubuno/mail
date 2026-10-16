@@ -7,7 +7,7 @@ export const THREAD_DND_TYPE = 'application/x-kubuno-mail-thread'
  * `setDragImage` is deliberately NOT used for the visible pill: the browser
  * snapshots the node and renders it translucent, which looks washed out. So we
  * hand the browser a 1×1 transparent pixel to suppress the native ghost, and
- * draw our own fully opaque pill that follows the cursor — which also lets us
+ * draw our own fully opaque pill that follows the cursor - which also lets us
  * show the hovered target's name above it.
  */
 const TRANSPARENT_PIXEL =

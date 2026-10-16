@@ -2,7 +2,7 @@
 //!
 //! The core deserialises the body as its `AppEvent` enum, which is adjacently
 //! tagged (`#[serde(tag = "type", content = "payload")]`). For the `Custom`
-//! variant — the only one a module may emit — the wire shape is therefore:
+//! variant - the only one a module may emit - the wire shape is therefore:
 //!
 //! ```jsonc
 //! { "type": "Custom",
@@ -62,7 +62,7 @@ pub async fn publish_custom(
 /// Notifies the core that a message just landed in a local recipient's inbox,
 /// so it can fan out a push notification to that user's registered devices.
 ///
-/// Best-effort: a failure is logged and swallowed — a mail that was stored must
+/// Best-effort: a failure is logged and swallowed - a mail that was stored must
 /// never be lost because the notification could not be sent. No body content
 /// beyond the subject ever leaves this module.
 #[allow(clippy::too_many_arguments)]
@@ -184,7 +184,7 @@ pub async fn notify_calendar_message(
 /// `recipient_user_ids`, so the core distributes it to subscribers without
 /// firing any push notification (the push is `notify_calendar_message`'s job).
 ///
-/// Best-effort, like every publish here: a failure is logged, never propagated —
+/// Best-effort, like every publish here: a failure is logged, never propagated -
 /// the reply itself is already stored.
 #[allow(clippy::too_many_arguments)]
 pub async fn notify_invite_reply(

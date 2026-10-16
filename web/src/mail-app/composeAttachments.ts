@@ -5,11 +5,11 @@ import { isDriveAvailable, uploadAsShareLink, discardUploadedFile } from './driv
 //
 // Two kinds of attachment coexist:
 //
-//  • `kind: 'file'` — the classic path. The file is read + base64-encoded
+//  • `kind: 'file'` - the classic path. The file is read + base64-encoded
 //    LOCALLY (FileReader → progress events) and travels inside the POST /send
 //    JSON payload. The bytes only leave the browser when the message is sent.
 //
-//  • `kind: 'link'` — Gmail parity for a file that would push the message past
+//  • `kind: 'link'` - Gmail parity for a file that would push the message past
 //    the admin's max size. Instead of base64, it is uploaded to the user's
 //    Drive under `Mail/Attachment/` and a PUBLIC share link is minted; that URL
 //    is injected into the mail body at send time (see driveLinks()). Such an
@@ -93,7 +93,7 @@ export function useComposeAttachments(
 
   // Active FileReaders by id, so an in-progress read can be aborted.
   const readersRef = useRef<Map<string, FileReader>>(new Map())
-  // Ids removed while their Drive upload was still in flight — the resolving
+  // Ids removed while their Drive upload was still in flight - the resolving
   // upload checks this to skip the state update and clean the orphaned file.
   const cancelledRef = useRef<Set<string>>(new Set())
   // Object URLs created for preview/download, revoked on removal / unmount.
@@ -220,7 +220,7 @@ export function useComposeAttachments(
   }, [])
 
   // Ready inline (base64) attachments in the wire format POST /send expects.
-  // Drive-link attachments are excluded on purpose — they travel as body links.
+  // Drive-link attachments are excluded on purpose - they travel as body links.
   const payload = useCallback((): AttachmentPayload[] =>
     attachments
       .filter(a => a.kind === 'file' && a.status === 'ready')
@@ -234,7 +234,7 @@ export function useComposeAttachments(
       .map(a => ({ filename: a.filename, size: a.size, url: a.driveUrl! })),
     [attachments])
 
-  // Large-file uploads currently in flight — drives the « Ajout des fichiers… » modal.
+  // Large-file uploads currently in flight - drives the « Ajout des fichiers… » modal.
   const pendingUploads = attachments.filter(a => a.kind === 'link' && a.status === 'reading')
 
   // Teardown: abort pending reads, revoke every object URL.

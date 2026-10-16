@@ -1,4 +1,4 @@
-//! `/admin/mailing-lists` — an address that expands to a membership.
+//! `/admin/mailing-lists` - an address that expands to a membership.
 //!
 //! Separate from an alias because the question "who is allowed to post here"
 //! only exists for a list, and answering it wrong is how an internal list
@@ -73,7 +73,7 @@ pub struct ListPage {
 pub struct CreateListDto {
     pub address: String,
     pub name: String,
-    /// Defaults to `internal` — the schema default, and the only one that is not
+    /// Defaults to `internal` - the schema default, and the only one that is not
     /// a decision an operator should make by omission.
     pub post_policy: Option<String>,
     pub allowed_senders: Option<Vec<String>>,
@@ -597,7 +597,7 @@ fn normalize_policy(raw: Option<&str>, allowed: &[String]) -> Result<String, Mai
 }
 
 /// Members are destinations: validated, de-duplicated, and never the list
-/// itself. Unlike an alias, an EMPTY membership is legitimate — a list created
+/// itself. Unlike an alias, an EMPTY membership is legitimate - a list created
 /// before anybody joined it is not a black hole, it is an empty room.
 fn parse_members(raw: &[String], own: &str) -> Result<Vec<String>, MailError> {
     if raw.iter().all(|m| m.trim().is_empty()) {

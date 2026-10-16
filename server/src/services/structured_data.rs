@@ -5,7 +5,7 @@
 //! frontend maps each node to a rich card (event, flight, hotel, order…).
 //!
 //! Crucially this runs on the RAW HTML, BEFORE `html_sanitize` strips `<script>`
-//! and microdata attributes — otherwise the annotations are gone before storage.
+//! and microdata attributes - otherwise the annotations are gone before storage.
 
 use serde_json::{json, Value};
 
@@ -27,8 +27,8 @@ const RECOGNIZED: &[&str] = &[
 //
 // Every value in these nodes is authored by the SENDER (JSON-LD embedded in the
 // HTML body, or an attached .ics) and the frontend turns some of them into
-// clickable links. A link whose scheme can run code in the page — `javascript:`,
-// `data:text/html`, `vbscript:` — or hand the click to an arbitrary local
+// clickable links. A link whose scheme can run code in the page - `javascript:`,
+// `data:text/html`, `vbscript:` - or hand the click to an arbitrary local
 // handler must therefore never be stored in the first place: filtering at
 // display time would leave the payload one framework change away from being
 // honoured. Only the two schemes the cards actually need survive extraction.
@@ -66,7 +66,7 @@ fn is_safe_url(raw: &str) -> bool {
 /// Drop every link field whose value is not a safe absolute URL, at any depth
 /// (a reservation nests its `url` inside `reservationFor`). The key disappears
 /// from the stored node, so a hostile link is simply not part of the data any
-/// consumer — this webmail or another client — can ever read back.
+/// consumer - this webmail or another client - can ever read back.
 fn strip_unsafe_urls(v: &mut Value) {
     match v {
         Value::Array(a) => a.iter_mut().for_each(strip_unsafe_urls),
@@ -99,7 +99,7 @@ fn is_recognized(t: &str) -> bool {
 }
 
 /// Walk arrays and `@graph` containers, collecting every object that carries an
-/// `@type` (recognized or not — filtering happens in the caller).
+/// `@type` (recognized or not - filtering happens in the caller).
 fn collect_nodes(v: &Value, out: &mut Vec<Value>) {
     match v {
         Value::Array(a) => a.iter().for_each(|x| collect_nodes(x, out)),
@@ -237,7 +237,7 @@ fn organizer_parts(params: &str, value: &str) -> (Option<String>, Option<String>
 }
 
 /// First VEVENT of an ICS document → an `Event`-shaped JSON-LD node, tagged with
-/// `_source:"ics"` and `_invite` (true when METHOD is REQUEST — the RSVP case).
+/// `_source:"ics"` and `_invite` (true when METHOD is REQUEST - the RSVP case).
 fn event_from_ics(ics: &str) -> Option<Value> {
     let lines = unfold(ics);
     let method = lines
@@ -419,7 +419,7 @@ pub fn invite_notice(nodes: &Value) -> Option<InviteNotice> {
 /// exists to word a push notification).
 #[derive(Debug, PartialEq)]
 pub struct InviteReplyDetails {
-    /// The event's iCalendar UID — matches the invitation Calendar sent.
+    /// The event's iCalendar UID - matches the invitation Calendar sent.
     pub uid:       String,
     /// The address that answered (the REPLY's single ATTENDEE).
     pub from:      String,

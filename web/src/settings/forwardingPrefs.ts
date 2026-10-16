@@ -1,7 +1,7 @@
 // ── Forwarding preferences (client-side fallback) ─────────────────────────────
 //
 // The forwarding rules (destinations + keep/archive the local copy) live on the
-// server — they must, so incoming mail is re-sent while the user is offline —
+// server - they must, so incoming mail is re-sent while the user is offline -
 // and are loaded/saved through `/mail/forwarding`. This localStorage blob is
 // only a fallback used until the server responds (and if it is unreachable), so
 // the tab is never empty on first paint.
@@ -39,13 +39,13 @@ export function loadForwardingPrefs(): ForwardingPrefs {
 export function saveForwardingPrefs(prefs: ForwardingPrefs): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
-  } catch { /* storage full / disabled — nothing we can do */ }
+  } catch { /* storage full / disabled - nothing we can do */ }
 }
 
 /** Best-effort unique id for a forwarding entry (secure-context safe). */
 export function newForwardId(): string {
   try {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
-  } catch { /* insecure context — fall through */ }
+  } catch { /* insecure context - fall through */ }
   return `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }

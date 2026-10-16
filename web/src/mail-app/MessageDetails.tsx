@@ -87,7 +87,7 @@ export default function MessageDetails({ message, lang, important = false, onClo
 
   return (
     <>
-      {/* Click-away catcher — the card floats over the message body. */}
+      {/* Click-away catcher - the card floats over the message body. */}
       <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); onClose() }} />
       <div
         onClick={e => e.stopPropagation()}

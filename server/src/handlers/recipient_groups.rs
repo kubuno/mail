@@ -1,4 +1,4 @@
-//! Recipient-group endpoints — the user's personal distribution lists.
+//! Recipient-group endpoints - the user's personal distribution lists.
 //!
 //! Every route is scoped to the authenticated user: a group is only ever visible
 //! or mutable by its owner, and an id that is not the user's yields `NotFound`.
@@ -55,7 +55,7 @@ pub struct UpsertGroupDto {
 
 // ── Endpoints ───────────────────────────────────────────────────────────────
 
-/// GET /recipient-groups — the user's groups, alphabetical.
+/// GET /recipient-groups - the user's groups, alphabetical.
 pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
@@ -66,7 +66,7 @@ pub async fn list(
     Ok(Json(rows.into_iter().map(GroupDto::from).collect()))
 }
 
-/// POST /recipient-groups — create a group. Rejects an empty name, a duplicate
+/// POST /recipient-groups - create a group. Rejects an empty name, a duplicate
 /// name (`Conflict`) and any invalid member address (`Validation`).
 pub async fn create(
     State(state): State<AppState>,
@@ -90,7 +90,7 @@ pub async fn create(
     Ok(Json(GroupDto::from(row)))
 }
 
-/// PUT /recipient-groups/:id — rename / replace members. `NotFound` if the id is
+/// PUT /recipient-groups/:id - rename / replace members. `NotFound` if the id is
 /// not the user's; `Conflict` if the new name collides with another group.
 pub async fn update(
     State(state): State<AppState>,
@@ -116,7 +116,7 @@ pub async fn update(
     Ok(Json(GroupDto::from(row)))
 }
 
-/// DELETE /recipient-groups/:id — remove a group.
+/// DELETE /recipient-groups/:id - remove a group.
 pub async fn remove(
     State(state): State<AppState>,
     user: AuthUser,

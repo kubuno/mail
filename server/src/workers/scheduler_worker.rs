@@ -13,7 +13,7 @@ pub async fn run(state: Arc<AppState>) {
     let crypto = match MailCrypto::new(&state.settings.mail.encryption_key) {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!(error = %e, "Scheduler: clé de chiffrement invalide — worker arrêté");
+            tracing::error!(error = %e, "Scheduler: clé de chiffrement invalide - worker arrêté");
             return;
         }
     };
@@ -52,7 +52,7 @@ async fn send_due(state: &AppState, crypto: &MailCrypto) {
             }
             Err(e) => {
                 // Éviter une boucle d'échecs : reporter d'une heure.
-                tracing::warn!(draft_id = %id, error = %e, "Envoi programmé échoué — report d'1 h");
+                tracing::warn!(draft_id = %id, error = %e, "Envoi programmé échoué - report d'1 h");
                 let _ = crate::db::query("UPDATE mail.drafts SET scheduled_at = $1 WHERE id = $2")
                     .bind(chrono::Utc::now() + chrono::Duration::hours(1)).bind(id).execute(&state.db).await;
             }
@@ -102,7 +102,7 @@ async fn send_one(
     // the interactive send (handlers::messages::send_message).
     //
     // Scheduled sends are not PGP-protected in this wave (the sign/encrypt flags
-    // and keys are not carried through the drafts queue) — pass None for `pgp`.
+    // and keys are not carried through the drafts queue) - pass None for `pgp`.
     // The Autocrypt header IS still advertised: it is independent of encryption
     // and lets correspondents learn our key from a scheduled message too.
     let autocrypt =

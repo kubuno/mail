@@ -6,7 +6,7 @@
 //!
 //! Mail consumes `calendar.invite`: when Calendar publishes an invitation
 //! (METHOD:REQUEST) or a cancellation (METHOD:CANCEL), Mail sends the matching
-//! e-mail — an `invite.ics` attachment plus a plain HTML body — to every
+//! e-mail - an `invite.ics` attachment plus a plain HTML body - to every
 //! attendee, on behalf of the organizer's default sending account. Calendar is
 //! the authority on the ICS payload, so it is forwarded verbatim, never rebuilt.
 
@@ -77,7 +77,7 @@ struct CalendarInvite {
     description:       Option<String>,
     #[serde(default)]
     attendees:         Vec<InviteAttendee>,
-    /// The complete VCALENDAR (METHOD:REQUEST or METHOD:CANCEL) — the authority
+    /// The complete VCALENDAR (METHOD:REQUEST or METHOD:CANCEL) - the authority
     /// on the invitation, attached verbatim as `invite.ics`.
     ics:               String,
 }
@@ -158,7 +158,7 @@ async fn send_invitation(state: &AppState, invite: &CalendarInvite) -> Result<()
     let ics_b64 = base64::engine::general_purpose::STANDARD.encode(invite.ics.as_bytes());
     let subject = build_subject(invite, is_cancel);
 
-    // No attendee is not an error — a solo event still updates the organizer's
+    // No attendee is not an error - a solo event still updates the organizer's
     // own calendar; there is simply no e-mail to send.
     for attendee in &invite.attendees {
         let to = attendee.email.trim();
@@ -247,7 +247,7 @@ fn build_body_html(invite: &CalendarInvite, is_cancel: bool, rsvp: Option<&RsvpL
     }
 
     // Guests: the organiser is named first and marked as such, then everyone
-    // invited — one per line, so a long list stays readable.
+    // invited - one per line, so a long list stays readable.
     let mut guests = String::new();
     let organizer = match (
         invite.organizer_name.as_deref().filter(|s| !s.trim().is_empty()),
@@ -260,7 +260,7 @@ fn build_body_html(invite: &CalendarInvite, is_cancel: bool, rsvp: Option<&RsvpL
     };
     if !organizer.is_empty() {
         guests.push_str(&format!(
-            "<div style=\"margin:0 0 4px\">{organizer}<span style=\"color:#5f6368\"> — organisateur</span></div>"
+            "<div style=\"margin:0 0 4px\">{organizer}<span style=\"color:#5f6368\"> - organisateur</span></div>"
         ));
     }
     for a in &invite.attendees {
@@ -358,7 +358,7 @@ fn build_when_line(invite: &CalendarInvite) -> String {
     match (start, end) {
         (Some(s), Some(e)) => format!("{} – {}", esc(&s), esc(&e)),
         (Some(s), None) => esc(&s),
-        (None, _) => "—".to_string(),
+        (None, _) => "-".to_string(),
     }
 }
 
@@ -393,7 +393,7 @@ fn format_when_long(s: &str) -> Option<String> {
     ))
 }
 
-/// "5 sept. à 14:30" — compact form for the subject line.
+/// "5 sept. à 14:30" - compact form for the subject line.
 fn format_when_short(s: &str) -> Option<String> {
     use chrono::{Datelike, Timelike};
     let dt = parse_rfc3339(s)?;
@@ -407,7 +407,7 @@ fn format_when_short(s: &str) -> Option<String> {
     ))
 }
 
-/// "lundi 5 septembre 2026" — no time, for an all-day event.
+/// "lundi 5 septembre 2026" - no time, for an all-day event.
 fn format_date_only(s: &str) -> Option<String> {
     use chrono::Datelike;
     let dt = parse_rfc3339(s)?;
@@ -416,7 +416,7 @@ fn format_date_only(s: &str) -> Option<String> {
     Some(format!("{day} {} {month} {}", dt.day(), dt.year()))
 }
 
-/// "14:30" — the end time on the same day as the start.
+/// "14:30" - the end time on the same day as the start.
 fn format_time_only(s: &str) -> Option<String> {
     use chrono::Timelike;
     let dt = parse_rfc3339(s)?;

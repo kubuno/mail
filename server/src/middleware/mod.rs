@@ -14,7 +14,7 @@ use crate::{errors::MailError, state::AppState};
 /// (same shape as the other Kubuno modules) rather than as an extractor: the
 /// guard must run before the handler body is even read.
 ///
-/// An unset secret means the module was started outside the core supervisor —
+/// An unset secret means the module was started outside the core supervisor -
 /// nothing may then be considered internal, so everything is refused. The
 /// comparison is constant-time.
 pub async fn require_internal_secret(

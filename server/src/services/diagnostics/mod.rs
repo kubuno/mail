@@ -3,15 +3,15 @@
 //!
 //! ── Why this is a page and not a paragraph in the settings ──────────────────
 //! A mail server has some fifty settings and six external facts that decide
-//! whether its mail is delivered at all — MX, SPF, DKIM, DMARC, PTR and a valid
+//! whether its mail is delivered at all - MX, SPF, DKIM, DMARC, PTR and a valid
 //! certificate. None of them lives in this instance: they live in someone's DNS
 //! zone and in a file on disk, and every one of them is a silent failure. The
 //! settings screen cannot show them, so this does, and the operator only opens
 //! the settings when a light here is not green.
 //!
 //! ── Honesty rules, and why they matter more than the lights ─────────────────
-//!   • Where there is no single correct value — SPF's mechanisms, DMARC's
-//!     policy — this reports WHAT IS PUBLISHED and does not invent a green.
+//!   • Where there is no single correct value - SPF's mechanisms, DMARC's
+//!     policy - this reports WHAT IS PUBLISHED and does not invent a green.
 //!     A tick next to a record nobody checked teaches an operator to trust the
 //!     page instead of reading the record.
 //!   • A DNS lookup that fails to answer is `Unknown`, never `Fail`. A resolver
@@ -32,7 +32,7 @@ pub use records::DnsRecord;
 use crate::server::config::ServerConfig;
 
 /// The signing keys the diagnostic checks against DNS. Only the public half is
-/// needed here — the private key never leaves the outbound worker.
+/// needed here - the private key never leaves the outbound worker.
 pub struct DkimTarget {
     pub domain:     String,
     pub selector:   String,
@@ -47,14 +47,14 @@ pub struct DkimTarget {
 pub enum Verdict {
     /// Requirement met, with no room for interpretation.
     Ok,
-    /// Met, but weakly — or a deadline approaching (a certificate expiring).
+    /// Met, but weakly - or a deadline approaching (a certificate expiring).
     Warn,
     /// Definitely not met. Mail is being rejected, or will be.
     Fail,
     /// Published, but only the operator can say whether it is right. Never
     /// dressed up as a green.
     Info,
-    /// Could not be determined — a resolver that did not answer, a file that
+    /// Could not be determined - a resolver that did not answer, a file that
     /// could not be read. Explicitly not a failure.
     Unknown,
 }
@@ -62,7 +62,7 @@ pub enum Verdict {
 /// One line of the report.
 #[derive(Debug, Clone, Serialize)]
 pub struct Check {
-    /// Stable identity, e.g. `spf:example.com` — usable as a React key and as
+    /// Stable identity, e.g. `spf:example.com` - usable as a React key and as
     /// something to link an alert to later.
     pub id:       String,
     /// `mx` | `spf` | `dkim` | `dmarc` | `ptr` | `tls`, for the icon.
@@ -72,7 +72,7 @@ pub struct Check {
     pub verdict:  Verdict,
     /// One sentence, in French, saying what was concluded.
     pub summary:  String,
-    /// What a correct configuration looks like — shown as-is so it can be
+    /// What a correct configuration looks like - shown as-is so it can be
     /// copied into a zone file.
     pub expected: Option<String>,
     /// What is actually published/found. Empty means nothing was found.
@@ -102,7 +102,7 @@ impl Check {
         self
     }
 
-    /// Prepends one line to what was found — used to name the file a
+    /// Prepends one line to what was found - used to name the file a
     /// certificate came from without threading the path through the parser.
     fn found_prefixed(mut self, first: impl Into<String>) -> Self {
         self.found.insert(0, first.into());
@@ -122,7 +122,7 @@ pub struct Report {
     pub hostname:   String,
     /// The domains whose mail is delivered here.
     pub domains:    Vec<String>,
-    /// True when the administrator has not declared any local domain yet — with
+    /// True when the administrator has not declared any local domain yet - with
     /// none, most checks have nothing to look at, and saying so beats six
     /// identical "not found" lines.
     pub configured: bool,
@@ -131,7 +131,7 @@ pub struct Report {
     /// is the "what to publish" half of the page, beside the "what is wrong"
     /// half above; each record carries the verdict of its matching check.
     pub records:    Vec<DnsRecord>,
-    /// Generic warnings shown above the records — facts publishing a zone from
+    /// Generic warnings shown above the records - facts publishing a zone from
     /// this page cannot tell the operator on its own (moving MX, the PTR).
     pub advisories: Vec<String>,
 }
@@ -143,7 +143,7 @@ pub async fn run(cfg: &ServerConfig, keys: &[DkimTarget], relay_enabled: bool) -
 
     let resolver = dns::resolver();
 
-    // Resolved once, then reused to fill the A record and the SPF `ip4:` — it is
+    // Resolved once, then reused to fill the A record and the SPF `ip4:` - it is
     // the same lookup the PTR check makes, but named here for the records.
     let mut public_ip = None;
 
@@ -152,7 +152,7 @@ pub async fn run(cfg: &ServerConfig, keys: &[DkimTarget], relay_enabled: bool) -
             // Built once and shared by every domain check: a resolver pointed at
             // public recursive resolvers with our cache off, so MX, SPF, DMARC,
             // DKIM and the announced name's A record all reflect what is
-            // published now — not what the machine's resolver cached under the
+            // published now - not what the machine's resolver cached under the
             // record's TTL. Falls back to the system resolver if it cannot build.
             let fresh = dns::fresh_resolver();
             let r = dns::resolver_for(&fresh, system);
@@ -167,7 +167,7 @@ pub async fn run(cfg: &ServerConfig, keys: &[DkimTarget], relay_enabled: bool) -
                 checks.push(dns::check_dkim(r, key).await);
             }
             // PTR stays on the SYSTEM resolver, on purpose: the reverse zone
-            // (in-addr.arpa) is delegated by the IP's host — the VPS provider —
+            // (in-addr.arpa) is delegated by the IP's host - the VPS provider -
             // not the mail domain, so it is looked up the ordinary way. It also
             // changes rarely, so a cached answer is fine here.
             checks.push(dns::check_ptr(system, &cfg.hostname).await);

@@ -3,10 +3,10 @@
 //! The SAME body (`exercise`) runs, through the real router and the real
 //! server-side store/queue/delivery code, against:
 //!
-//! * SQLite — always, on a temp directory;
-//! * PostgreSQL — when `KUBUNO_PG_TEST_URL` points at a throwaway database;
-//! * Oracle MySQL — when `KUBUNO_MYSQL_TEST_URL` does;
-//! * MariaDB — when `KUBUNO_MARIADB_TEST_URL` does.
+//! * SQLite - always, on a temp directory;
+//! * PostgreSQL - when `KUBUNO_PG_TEST_URL` points at a throwaway database;
+//! * Oracle MySQL - when `KUBUNO_MYSQL_TEST_URL` does;
+//! * MariaDB - when `KUBUNO_MARIADB_TEST_URL` does.
 //!
 //! Every run uses the schema prefix `kbmig_`, so the module's namespace is
 //! `kbmig_mail` (a PostgreSQL schema / a MySQL database) and is dropped and

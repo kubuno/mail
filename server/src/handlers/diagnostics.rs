@@ -1,4 +1,4 @@
-//! `GET /diagnostics` — the deliverability report shown at the top of the
+//! `GET /diagnostics` - the deliverability report shown at the top of the
 //! module's admin page. Administrators only.
 //!
 //! Everything it reports is external to this instance (a DNS zone, a file on
@@ -32,7 +32,7 @@ pub async fn report(
     require_admin(&user)?;
 
     // The same view of the configuration the listeners run on, read from the
-    // core rather than from a copy kept here — a diagnostic that reports on a
+    // core rather than from a copy kept here - a diagnostic that reports on a
     // stale snapshot of the settings is worse than none.
     let http = reqwest::Client::new();
     let Some(cfg) = config::fetch(&http, &state.settings).await else {
@@ -65,7 +65,7 @@ pub async fn report(
 
     // Whether an outbound relay is active decides the SPF the setup offers: with
     // a smarthost in front, mail leaves from the relay's IP, so `ip4:<own-ip>`
-    // would be wrong. Only the flag is read — never the credentials.
+    // would be wrong. Only the flag is read - never the credentials.
     let relay_enabled = crate::db::query_as::<(bool,)>(
         "SELECT enabled FROM mail.outbound_relay WHERE id = TRUE",
     )

@@ -1,4 +1,4 @@
-//! "Send mail as" endpoints — manage the user's verified sender identities.
+//! "Send mail as" endpoints - manage the user's verified sender identities.
 //!
 //! Adding an address does not make it usable: the instance mails a confirmation
 //! code TO the address, and only entering that code back marks it verified. This
@@ -72,7 +72,7 @@ pub struct VerifyDto {
 
 // ── Endpoints ───────────────────────────────────────────────────────────────
 
-/// GET /send-as — the user's sender identities (never the pending code).
+/// GET /send-as - the user's sender identities (never the pending code).
 pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
@@ -81,10 +81,10 @@ pub async fn list(
     Ok(Json(rows.into_iter().map(SendAsDto::from).collect()))
 }
 
-/// POST /send-as — add an address and mail it a confirmation code.
+/// POST /send-as - add an address and mail it a confirmation code.
 ///
 /// The address is created unverified with its pending code BEFORE the code is
-/// sent, so a delivery failure still leaves a row the user can resend from — the
+/// sent, so a delivery failure still leaves a row the user can resend from - the
 /// error is surfaced, nothing is silently lost.
 pub async fn add(
     State(state): State<AppState>,
@@ -123,7 +123,7 @@ pub async fn add(
     Ok(Json(SendAsDto::from(row)))
 }
 
-/// POST /send-as/:id/resend — regenerate the code and mail it again.
+/// POST /send-as/:id/resend - regenerate the code and mail it again.
 pub async fn resend(
     State(state): State<AppState>,
     user: AuthUser,
@@ -156,7 +156,7 @@ pub async fn resend(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// POST /send-as/:id/verify — confirm ownership with the mailed code.
+/// POST /send-as/:id/verify - confirm ownership with the mailed code.
 ///
 /// No information leakage: a wrong code and an expired code return the same
 /// generic message, so a caller cannot tell them apart.
@@ -193,7 +193,7 @@ pub async fn verify(
     Ok(Json(serde_json::json!({ "verified": true })))
 }
 
-/// DELETE /send-as/:id — remove a sender identity.
+/// DELETE /send-as/:id - remove a sender identity.
 pub async fn remove(
     State(state): State<AppState>,
     user: AuthUser,
@@ -370,7 +370,7 @@ fn build_confirmation(from_email: &str, to_email: &str, code: &str) -> anyhow::R
          l'adresse ne pourra pas être utilisée sans ce code.\n"
     );
 
-    // Minimal, self-contained HTML — the code stands out, no external assets.
+    // Minimal, self-contained HTML - the code stands out, no external assets.
     let html = format!(
         "<div style=\"font-family:system-ui,Arial,sans-serif;font-size:14px;color:#202124;line-height:1.6\">\
            <p>Vous (ou quelqu'un) avez demandé à ajouter cette adresse comme expéditeur dans <strong>Kubuno</strong>.</p>\

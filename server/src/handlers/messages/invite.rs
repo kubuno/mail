@@ -18,7 +18,7 @@ use super::send::send_message_inner;
 pub struct InviteReplyDto {
     /// accepted | tentative | declined
     pub response: String,
-    /// Optional note for the organizer — typically the reason for a decline.
+    /// Optional note for the organizer - typically the reason for a decline.
     /// Travels as the iCalendar COMMENT of the reply.
     #[serde(default)]
     pub comment: Option<String>,

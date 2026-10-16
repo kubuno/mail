@@ -12,7 +12,7 @@
 //! Capture happens at the two points where a message enters or leaves through
 //! the SMTP services:
 //!
-//!   * everything an SMTP session accepts — foreign mail on the MX port, and
+//!   * everything an SMTP session accepts - foreign mail on the MX port, and
 //!     everything an authenticated user submits from a mail client;
 //!   * everything sent from the web interface by a hosted mailbox.
 //!
@@ -26,7 +26,7 @@
 //! ## Why it cannot loop
 //!
 //! The copy is filed with [`deliver::deliver_local`], the same call an ordinary
-//! delivery uses — and this module is never called FROM that path. A journalled
+//! delivery uses - and this module is never called FROM that path. A journalled
 //! copy therefore produces no second copy of itself.
 
 use kubuno_db::DbPool;
@@ -40,8 +40,8 @@ use super::{
 /// Files a copy of `raw` into the configured journal mailbox.
 ///
 /// Best-effort from end to end: journalling must never fail, delay or alter the
-/// delivery that has already happened. Every problem is logged — loudly, since
-/// a journal silently not recording is the one failure mode that matters — and
+/// delivery that has already happened. Every problem is logged - loudly, since
+/// a journal silently not recording is the one failure mode that matters - and
 /// swallowed.
 pub async fn archive(
     db: &DbPool,
@@ -56,12 +56,12 @@ pub async fn archive(
     }
 
     // The journal mailbox must be one of ours. A remote address would turn every
-    // message the instance handles into an outbound copy to a third party — the
+    // message the instance handles into an outbound copy to a third party - the
     // opposite of what an archive is for.
     if !cfg.is_local_domain(&address) {
         tracing::error!(
             archive = %address,
-            "Archivage : l'adresse d'archivage n'est pas une adresse de cette instance — aucune copie conservée"
+            "Archivage : l'adresse d'archivage n'est pas une adresse de cette instance - aucune copie conservée"
         );
         return;
     }
@@ -74,7 +74,7 @@ pub async fn archive(
         Ok(Outcome::Refuse(refusal)) => {
             tracing::error!(
                 archive = %address, reason = %refusal.reply(),
-                "Archivage : l'adresse d'archivage est refusée — aucune copie conservée"
+                "Archivage : l'adresse d'archivage est refusée - aucune copie conservée"
             );
             return;
         }
@@ -87,7 +87,7 @@ pub async fn archive(
     if expansion.local.is_empty() {
         tracing::error!(
             archive = %address,
-            "Archivage : l'adresse d'archivage ne mène à aucune boîte — aucune copie conservée"
+            "Archivage : l'adresse d'archivage ne mène à aucune boîte - aucune copie conservée"
         );
         return;
     }
@@ -105,7 +105,7 @@ pub async fn archive(
             // a message quarantined for a user is exactly the one an auditor
             // will look for, and burying it in the archive's spam folder would
             // hide it. Authentication verdicts are left out for the same reason
-            // — this copy is evidence, not correspondence to be judged again.
+            // - this copy is evidence, not correspondence to be judged again.
             Disposition::Inbox,
             None,
             None,

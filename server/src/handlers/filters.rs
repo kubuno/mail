@@ -275,7 +275,7 @@ pub async fn unblock_sender(
 
 // ── Expéditeurs dont les images distantes sont affichées ─────────────────────
 // The user's own allowlist ("Always show images from X"), plus the instance-wide
-// one the administrator maintains — the latter is read-only here and applies to
+// one the administrator maintains - the latter is read-only here and applies to
 // everyone, the way a Workspace image allowlist set at the top level does.
 
 pub async fn list_image_senders(
@@ -290,13 +290,13 @@ pub async fn list_image_senders(
     .await?;
 
     // The instance policy is advisory to the client: unreadable means "no
-    // instance allowlist", never "block everything" — a missing policy must not
+    // instance allowlist", never "block everything" - a missing policy must not
     // silently widen NOR narrow what the user already allowed.
     let http = reqwest::Client::new();
     let instance = match crate::server::config::fetch(&http, &state.settings).await {
         Some(cfg) => cfg.image_allowlist,
         None => {
-            tracing::warn!("Politique d'instance illisible — liste blanche d'images ignorée");
+            tracing::warn!("Politique d'instance illisible - liste blanche d'images ignorée");
             Vec::new()
         }
     };

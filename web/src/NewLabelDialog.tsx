@@ -36,7 +36,7 @@ export default function NewLabelDialog({
   title?:       string
   submitLabel?: string
   initialName?: string
-  /** Preset parent — used by "Add a sub-label" and when editing a nested one. */
+  /** Preset parent - used by "Add a sub-label" and when editing a nested one. */
   initialParent?: string
   /** A label can be nested under neither itself nor its own descendants. */
   excludeName?: string
@@ -119,7 +119,7 @@ export default function NewLabelDialog({
             />
             <Dropdown
               value={parent}
-              // Picking a parent implies nesting — same shortcut as Gmail.
+              // Picking a parent implies nesting - same shortcut as Gmail.
               onChange={v => { setParent(v); if (v) setNested(true) }}
               options={parents}
               placeholder={t('label_parent_placeholder', { defaultValue: 'Veuillez sélectionner un libellé parent…' })}

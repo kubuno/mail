@@ -1,7 +1,7 @@
 //! The outbound relay (smarthost): the runtime side of the configuration the
 //! admin API stores in `mail.outbound_relay`.
 //!
-//! Why this exists — an instance on a residential line cannot deliver
+//! Why this exists - an instance on a residential line cannot deliver
 //! direct-to-MX (port 25 blocked outbound). Its only route out is a trusted
 //! SMTP host (the VPS's Postfix over a private tunnel), so when a relay is
 //! configured the outbound worker hands EVERY remote message to `host:port`
@@ -9,15 +9,15 @@
 //!
 //! This module is the read side: load the singleton row once per worker cycle,
 //! decrypt the password with the module's `MailCrypto`, and hand the worker a
-//! ready-to-use target — or `None`, meaning "deliver direct-to-MX as before".
+//! ready-to-use target - or `None`, meaning "deliver direct-to-MX as before".
 
 use kubuno_db::DbPool;
 
 use crate::services::crypto::MailCrypto;
 
 /// How TLS is used TO the relay. Distinct from `OutboundTls` (the MX policy):
-/// a relay is one known host, so the vocabulary is a mail client's — clear,
-/// STARTTLS, or implicit TLS — not Postfix's opportunistic MX levels.
+/// a relay is one known host, so the vocabulary is a mail client's - clear,
+/// STARTTLS, or implicit TLS - not Postfix's opportunistic MX levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelaySecurity {
     /// Cleartext. Legitimate ONLY over a trusted private link (the VPS tunnel).
@@ -75,13 +75,13 @@ struct RelayRow {
 
 /// Loads the relay configuration once, for a worker cycle.
 ///
-/// Returns `None` — deliver direct-to-MX — when the relay is disabled, has no
+/// Returns `None` - deliver direct-to-MX - when the relay is disabled, has no
 /// host, or the row cannot be read (a transient DB error must not turn into a
 /// bounce; the worker simply keeps the previous path and retries next cycle).
 ///
 /// A password that is set but cannot be decrypted (missing/broken module key)
 /// yields a target with an EMPTY password rather than no target: the connection
-/// is still attempted, AUTH then fails, and the message is deferred — visible in
+/// is still attempted, AUTH then fails, and the message is deferred - visible in
 /// the log, never bounced, and self-heals once the key is fixed.
 pub async fn fetch(db: &DbPool, crypto: Option<&MailCrypto>) -> Option<RelayTarget> {
     let row: Option<RelayRow> = match crate::db::query_as(
@@ -104,7 +104,7 @@ pub async fn fetch(db: &DbPool, crypto: Option<&MailCrypto>) -> Option<RelayTarg
     }
     let host = row.host.trim().to_string();
     if host.is_empty() {
-        tracing::warn!("Relais sortant : activé mais sans hôte — livraison directe au MX");
+        tracing::warn!("Relais sortant : activé mais sans hôte - livraison directe au MX");
         return None;
     }
     let security = RelaySecurity::parse(&row.security).unwrap_or(RelaySecurity::None);
@@ -128,13 +128,13 @@ fn decrypt_password(crypto: Option<&MailCrypto>, row: &RelayRow) -> String {
         return String::new();
     };
     let Some(crypto) = crypto else {
-        tracing::error!("Relais sortant : clé de chiffrement du module indisponible — authentification impossible");
+        tracing::error!("Relais sortant : clé de chiffrement du module indisponible - authentification impossible");
         return String::new();
     };
     match crypto.decrypt(enc, nonce) {
         Ok(pw) => pw,
         Err(e) => {
-            // The error type only — the value is a credential.
+            // The error type only - the value is a credential.
             tracing::error!(error = %e, "Relais sortant : déchiffrement du mot de passe impossible");
             String::new()
         }

@@ -1,4 +1,4 @@
-//! Mailbox credentials — what a user gives their mail client to reach the
+//! Mailbox credentials - what a user gives their mail client to reach the
 //! SMTP/IMAP/POP3 services this instance offers.
 //!
 //! The password is generated here, shown once, and stored only as an Argon2
@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::{errors::MailError, middleware::AuthUser, server::auth, state::AppState};
 
-/// A credential as the UI lists it — never the secret itself.
+/// A credential as the UI lists it - never the secret itself.
 #[derive(Serialize, sqlx::FromRow)]
 pub struct CredentialRow {
     pub id:           Uuid,
@@ -124,7 +124,7 @@ pub async fn delete_credential(
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
-/// 24 characters from an unambiguous alphabet — no O/0, no l/1/I. People do
+/// 24 characters from an unambiguous alphabet - no O/0, no l/1/I. People do
 /// retype these into a phone, and a lookalike character reads as a wrong
 /// password with no way to tell.
 fn generate_password() -> String {

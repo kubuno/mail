@@ -21,7 +21,7 @@ import ThreadReaderToolbar from './ThreadReaderToolbar'
 
 export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, name: string) => void }) {
   const { t } = useTranslation('mail')
-  // `composeOpen`: a floating composer is a surface of its own — the reader's
+  // `composeOpen`: a floating composer is a surface of its own - the reader's
   // shortcuts must not act on the conversation behind it.
   const { selectedThread, setSelectedThread, currentFolder, composeOpen } = useMailStore()
   const qc = useQueryClient()
@@ -49,7 +49,7 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
   }, [selectedThread, data?.messages?.length])
 
   /*
-   * Opening a conversation marks it read — ONCE per opening, and only from
+   * Opening a conversation marks it read - ONCE per opening, and only from
    * here. The GET used to do it, but it is prefetched for every visible row,
    * so entire pages were marked read on their own and a message put back to
    * unread flipped straight back at the next prefetch.
@@ -89,8 +89,8 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
   }, [pendingCompose, selectedThread, data, setPendingCompose])
 
   /**
-   * Reader actions apply to the UI first — the reader closes and the list row
-   * updates on the next frame — then the request runs. Waiting for the response
+   * Reader actions apply to the UI first - the reader closes and the list row
+   * updates on the next frame - then the request runs. Waiting for the response
    * before closing made every one of them feel like a server round trip.
    */
   const optimistic = <V,>(
@@ -296,7 +296,7 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
               </span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0 mt-1">
-              {/* Expand / collapse every message — only useful past one message. */}
+              {/* Expand / collapse every message - only useful past one message. */}
               {messages.length > 1 && (
                 <button
                   className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#444746]"
@@ -308,7 +308,7 @@ export default function ThreadReader({ onOpenPdf }: { onOpenPdf: (url: string, n
                   <ChevronsUpDown size={16} />
                 </button>
               )}
-              {/* Print / new window: secondary — on mobile they live in "⋮" only. */}
+              {/* Print / new window: secondary - on mobile they live in "⋮" only. */}
               {!isMobile && <>
                 <button className="p-1.5 rounded-full hover:bg-[#f1f3f4] text-[#444746]" title={t('print')}
                   onClick={() => window.print()}>

@@ -8,8 +8,8 @@ import { sanitizeDisplayText } from './senderSafety'
 export type PreviewSource = { url: string; name: string; mime: string }
 
 /**
- * Our own preview surfaces for an attachment, used when Drive — which owns the
- * real viewers — is not installed. PDF goes to the module's viewer, images to a
+ * Our own preview surfaces for an attachment, used when Drive - which owns the
+ * real viewers - is not installed. PDF goes to the module's viewer, images to a
  * full-screen lightbox, and plain text to a framed reader. Works from either a
  * server URL or a local object URL (a not-yet-sent compose attachment).
  */

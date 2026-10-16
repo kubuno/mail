@@ -28,10 +28,10 @@ export function AccountTestReport({ result, appPasswordHint = false }: {
   const authFailed = !result.incoming.auth.ok || !result.smtp.auth.ok
 
   const rows: { label: string; step: StepResult; successText: string }[] = [
-    { label: `${proto} — ${t('mail_settings_test_connection')}`,     step: result.incoming.connection, successText: t('mail_settings_test_server_reachable') },
-    { label: `${proto} — ${t('mail_settings_test_auth')}`,           step: result.incoming.auth,       successText: t('mail_settings_test_creds_valid') },
-    { label: `SMTP — ${t('mail_settings_test_connection')}`,         step: result.smtp.connection,     successText: t('mail_settings_test_server_reachable') },
-    { label: `SMTP — ${t('mail_settings_test_auth')}`,               step: result.smtp.auth,           successText: t('mail_settings_test_creds_valid') },
+    { label: `${proto} - ${t('mail_settings_test_connection')}`,     step: result.incoming.connection, successText: t('mail_settings_test_server_reachable') },
+    { label: `${proto} - ${t('mail_settings_test_auth')}`,           step: result.incoming.auth,       successText: t('mail_settings_test_creds_valid') },
+    { label: `SMTP - ${t('mail_settings_test_connection')}`,         step: result.smtp.connection,     successText: t('mail_settings_test_server_reachable') },
+    { label: `SMTP - ${t('mail_settings_test_auth')}`,               step: result.smtp.auth,           successText: t('mail_settings_test_creds_valid') },
   ]
 
   return (

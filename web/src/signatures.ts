@@ -1,4 +1,4 @@
-// User signatures — stored client-side (like the other mail preferences). A user
+// User signatures - stored client-side (like the other mail preferences). A user
 // can keep several named signatures and mark one default; the composer offers a
 // menu to insert one, and the settings page manages the list.
 
@@ -77,7 +77,7 @@ export function resolveSignatureId(
   return defaultSignatureId()
 }
 
-/** A fresh id — `crypto.randomUUID` throws outside a secure context, so guard it. */
+/** A fresh id - `crypto.randomUUID` throws outside a secure context, so guard it. */
 export function newSignatureId(): string {
   try {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()

@@ -3,7 +3,7 @@
 //! The diagnostic answers "what is wrong"; this answers "what to publish". They
 //! share one report because the second needs the first: every generated record
 //! carries the verdict of the check that looks for it, so a single view shows
-//! both the value to paste AND whether it is already live — the operator never
+//! both the value to paste AND whether it is already live - the operator never
 //! copies a record that is already published, nor trusts a green next to one
 //! that is not.
 //!
@@ -26,7 +26,7 @@ const MX_PREFERENCE: u16 = 10;
 pub struct DnsRecord {
     /// The served domain this record is grouped under.
     pub domain:    String,
-    /// `a` | `mx` | `spf` | `dkim` | `dmarc` — drives the icon and the grouping.
+    /// `a` | `mx` | `spf` | `dkim` | `dmarc` - drives the icon and the grouping.
     pub key:       String,
     /// FQDN of the entry, e.g. `kubuno._domainkey.kubuno.com`.
     pub name:      String,
@@ -35,7 +35,7 @@ pub struct DnsRecord {
     /// The whole record value, ready to paste as one entry.
     pub value:     String,
     /// DKIM only: the bare public key (the base64 after `p=`), for the registrars
-    /// — OVH among them — that take the key alone rather than the full TXT.
+    /// - OVH among them - that take the key alone rather than the full TXT.
     pub value_alt: Option<String>,
     /// MX only: the preference (10).
     pub priority:  Option<u16>,
@@ -53,7 +53,7 @@ pub struct DnsRecord {
 /// placeholder and the SPF falls back to `mx`. `relay_enabled` decides the SPF
 /// form: an instance that hands outbound mail to a smarthost sends from the
 /// relay's IP, not its own, so asserting `ip4:<own-ip> -all` would fail SPF for
-/// every relayed message — `mx ~all` is the honest default there.
+/// every relayed message - `mx ~all` is the honest default there.
 pub fn build(
     hostname:      &str,
     domains:       &[String],
@@ -65,7 +65,7 @@ pub fn build(
     // The A record lives in the zone of the served domain the hostname belongs
     // to (mail.kubuno.com → kubuno.com). Longest match wins, so a hostname under
     // a nested served domain lands in the more specific zone. When no served
-    // domain owns it — the hostname sits under a domain served elsewhere — it is
+    // domain owns it - the hostname sits under a domain served elsewhere - it is
     // attached to the first served domain so it is never dropped from the page.
     let a_owner = owning_domain(hostname, domains).or_else(|| domains.first().cloned());
 
@@ -86,7 +86,7 @@ pub fn build(
     records
 }
 
-/// The generic warnings shown above the records — the two facts that publishing
+/// The generic warnings shown above the records - the two facts that publishing
 /// a zone from this page will not tell the operator on its own.
 pub fn advisories() -> Vec<String> {
     vec![
@@ -229,7 +229,7 @@ fn owning_domain(hostname: &str, domains: &[String]) -> Option<String> {
 }
 
 /// The verdict of the check with this `kind` and `scope`, or `Unknown` when no
-/// such check ran — a record whose status could not be established shows grey,
+/// such check ran - a record whose status could not be established shows grey,
 /// never a false green or red.
 fn verdict_of(checks: &[Check], kind: &str, scope: &str) -> Verdict {
     checks

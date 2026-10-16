@@ -70,7 +70,7 @@ export default function ThreadList() {
     [currentFolder, currentLabelId, currentImapFolder, searchQuery, inboxCategory, selectedAccount])
   // The selection belongs to ONE view: switching folder/label/category/search
   // clears it (like Gmail). Opening a message and coming back does NOT change any
-  // of these, so the selection — and the scroll position — survive that round trip
+  // of these, so the selection - and the scroll position - survive that round trip
   // now that the list stays mounted under the reader.
   useEffect(() => { setCheckedIds(new Set()); setAllChecked(false) },
     [currentFolder, currentLabelId, currentImapFolder, searchQuery, inboxCategory, selectedAccount])
@@ -80,7 +80,7 @@ export default function ThreadList() {
   const [loadedRows, setLoadedRows] = useState<Thread[]>([])
 
   // The inbox tab filter is applied SERVER-side, so each tab paginates its own
-  // stream and gets its own total — like Gmail, where "1–50 of N" is per tab.
+  // stream and gets its own total - like Gmail, where "1–50 of N" is per tab.
   const category = isInbox && !searchQuery ? activeTab : undefined
 
   const { data, isLoading, isFetching } = useQuery({
@@ -101,7 +101,7 @@ export default function ThreadList() {
     }),
     // Switching tab/label changes the key: without this, `data` goes undefined
     // for one render, the range collapses to 0 and the total falls back to a
-    // DIFFERENT source (the whole folder count) — a wrong number flashes before
+    // DIFFERENT source (the whole folder count) - a wrong number flashes before
     // the right one lands. Holding the previous result makes the swap atomic.
     placeholderData: previous => previous,
     refetchInterval: 60_000,
@@ -117,7 +117,7 @@ export default function ThreadList() {
 
   const allThreads = data?.threads ?? []
   // Single source: the server counts exactly what it just listed, for every
-  // view. The sidebar counters must NOT be used as a fallback — they count
+  // view. The sidebar counters must NOT be used as a fallback - they count
   // unread threads, so a label with 3 read threads used to show "1–3 of 0".
   const total = data?.total ?? null
   const rangeStart = allThreads.length ? pageIdx * PAGE + 1 : 0
@@ -141,7 +141,7 @@ export default function ThreadList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isMobile])
 
-  // Reaching the bottom loads the next page — the mobile replacement for
+  // Reaching the bottom loads the next page - the mobile replacement for
   // "1–50 ‹ ›". A margin of one screen keeps the list from ever showing a gap.
   useEffect(() => {
     const el = listRef.current
@@ -174,7 +174,7 @@ export default function ThreadList() {
       slot.count += 1
       if (!slot.preview) {
         const sender = th.last_sender_name || th.last_sender_email || '?'
-        slot.preview = `${sender} — ${th.subject || t('mail_no_subject')}`
+        slot.preview = `${sender} - ${th.subject || t('mail_no_subject')}`
       }
     }
     return info
@@ -232,7 +232,7 @@ export default function ThreadList() {
   /**
    * Clicking an attachment chip. Drive owns the real viewers, so hand the URL
    * over when it is installed; fall back to our own PDF/image surfaces when it
-   * is not — a module may never assume a neighbour is there.
+   * is not - a module may never assume a neighbour is there.
    *
    * The WHOLE set of the conversation's attachments goes with the request, plus
    * the index of the clicked one: Drive's previewer then walks them with its
@@ -322,7 +322,7 @@ export default function ThreadList() {
       }
       else if (e.key === 'e' && hid) { e.preventDefault(); doArchive([hid]) }
       else if ((e.key === '#' || e.key === 'Backspace') && hid) { e.preventDefault(); doDelete([hid]) }
-      // Delete: exactly what the row menu's "Supprimer" does — the ticked
+      // Delete: exactly what the row menu's "Supprimer" does - the ticked
       // conversations when the selection is not empty, the highlighted row
       // otherwise. Never while a composer, a manager modal, the row menu or a
       // preview is up: they own the keyboard.
@@ -392,11 +392,11 @@ export default function ThreadList() {
 
       {(() => {
         // A search on ONE sender features that sender above the results
-        // (avatar + name + address opening the composer) — Gmail parity.
+        // (avatar + name + address opening the composer) - Gmail parity.
         if (!searchQuery) return null
         const senders = searchedSenders(searchQuery)
         if (!senders.length) return null
-        // One row, cards flowing side by side (wrapping when narrow) — several
+        // One row, cards flowing side by side (wrapping when narrow) - several
         // sources must not stack full-width rows.
         return (
           <div className="flex flex-wrap items-center gap-x-10 gap-y-2 px-6 py-3 border-b border-border bg-surface-0 flex-shrink-0">
@@ -479,7 +479,7 @@ export default function ThreadList() {
             <Loader2 size={18} className="animate-spin text-text-tertiary" />
           </div>
         )}
-        {/* Nothing left to load — say so rather than leaving the reader pulling. */}
+        {/* Nothing left to load - say so rather than leaving the reader pulling. */}
         {isMobile && !hasMore && threads.length > 0 && (
           <div className="py-4 text-center text-xs text-text-tertiary">
             {t('mail_end_of_list', { defaultValue: 'Fin de la liste' })}

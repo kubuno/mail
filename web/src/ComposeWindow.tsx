@@ -83,10 +83,10 @@ export default function ComposeWindow() {
   // the send payload (resuming a reply draft must still thread correctly).
   const replyToIdRef = useRef<string | undefined>(composeInitial?.replyToId)
   // « Message programmé »: captured at first render because `composeInitial` is
-  // cleared right after the init effect — the mount effect below reads the ref.
+  // cleared right after the init effect - the mount effect below reads the ref.
   const scheduleOnMountRef = useRef(!!composeInitial?.schedule)
 
-  // Gmail-style placeholder: shown while the body is "logically empty" — i.e. it
+  // Gmail-style placeholder: shown while the body is "logically empty" - i.e. it
   // holds nothing but the auto-inserted signature. It hides as soon as the user
   // types real content above it. Recomputed on mount and on every input.
   const [showPlaceholder, setShowPlaceholder] = useState(true)
@@ -130,7 +130,7 @@ export default function ComposeWindow() {
       // the app's own DOM.
       if (el && html) el.innerHTML = sanitizeEmailHtml(html)
       // Auto-insert the default "new message" signature (Gmail-style), UNLESS the
-      // body was prefilled (resuming a draft — it already carries its content) or
+      // body was prefilled (resuming a draft - it already carries its content) or
       // already contains a signature block. The caret sits ABOVE it, so the user
       // writes on top of the signature.
       if (el && !html && !el.querySelector(`[${SIGNATURE_ATTR}]`)) {
@@ -154,7 +154,7 @@ export default function ComposeWindow() {
 
   // ── Signature par adresse d'expédition ────────────────────────────────────────
   // When the user changes the « De » address, replace ONLY the marked signature
-  // block by the one that address defaults to — the user's own text is untouched
+  // block by the one that address defaults to - the user's own text is untouched
   // (Gmail parity). Skips the very first run (the init effect owns the initial sig).
   const prevFromEmailRef = useRef<string | null>(null)
   useEffect(() => {
@@ -206,7 +206,7 @@ export default function ComposeWindow() {
       label_ids:    labelSel.size ? [...labelSel] : undefined,
     }
     // Stop auto-saving; the actual send (5s later, after the undo window) reads
-    // the draft id then — so any create still in flight has landed — and hands
+    // the draft id then - so any create still in flight has landed - and hands
     // it over for the backend to delete once the message goes out.
     draft.markSent()
     scheduleUndo(payload, () => {
@@ -265,8 +265,8 @@ export default function ComposeWindow() {
 
   // Print the composed body. We deliberately avoid window.open('', '_blank'):
   // that leaves a child window attached to the page whose focus/execCommand
-  // state silently disables editing everywhere (body, subject, recipients) —
-  // and even freshly opened composers — until a full page reload. Instead we
+  // state silently disables editing everywhere (body, subject, recipients) -
+  // and even freshly opened composers - until a full page reload. Instead we
   // print through an off-screen iframe that we fully own and remove afterwards,
   // leaving the main document's focus and selection untouched.
   const printBody = () => {
@@ -462,7 +462,7 @@ export default function ComposeWindow() {
     })
   }
 
-  // « Enregistrer comme modèle » — capture the current subject + body as a
+  // « Enregistrer comme modèle » - capture the current subject + body as a
   // reusable template (the backend enforces a unique, non-empty name).
   const saveAsTemplate = async () => {
     const name = await prompt({
@@ -639,7 +639,7 @@ export default function ComposeWindow() {
 
       {/* ── Body (contenteditable) ────────────────────────────────────────────── */}
       {/* Wrapped so the placeholder overlay can sit at the top of the typing area
-          (above the signature/quote, where the caret is) — the CSS `empty:before`
+          (above the signature/quote, where the caret is) - the CSS `empty:before`
           pseudo can't do that once a signature is present. */}
       <div className="relative flex-1 flex flex-col min-h-0">
         <div
@@ -729,7 +729,7 @@ export default function ComposeWindow() {
   // composer is already full screen).
   const titleActions = isMobile ? undefined : (
     // Geometry, hover and colour come from the core caption-button rule
-    // (.kb-window-actions button) — identical to the close button. gap-2.5
+    // (.kb-window-actions button) - identical to the close button. gap-2.5
     // mirrors the band's own gap so the three buttons are evenly spaced.
     <div className="flex items-center gap-2.5">
       <button
@@ -753,7 +753,7 @@ export default function ComposeWindow() {
 
   // Full-screen mode (Gmail "Plein écran"): render the SAME composer body inside a
   // centered fixed panel instead of the floating window. Behaviour (editing,
-  // autosave, sending) is identical — only the shell differs.
+  // autosave, sending) is identical - only the shell differs.
   if (maximized && !isMobile) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">

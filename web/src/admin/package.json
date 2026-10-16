@@ -2,6 +2,6 @@
   "name": "@kubuno/mail-admin",
   "private": true,
   "version": "0.0.0",
-  "description": "The Mail module's admin console UI (web/src/admin) — a part of the module's frontend bundle, not a published package. Registered into the core admin console via ModuleAdminRegistry. This manifest exists only so Visual Studio loads Kubuno.Mail.Admin as its own project node.",
+  "description": "The Mail module's admin console UI (web/src/admin) - a part of the module's frontend bundle, not a published package. Registered into the core admin console via ModuleAdminRegistry. This manifest exists only so Visual Studio loads Kubuno.Mail.Admin as its own project node.",
   "type": "module"
 }

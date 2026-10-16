@@ -28,7 +28,7 @@ export interface LabelActions {
 
 /**
  * Sidebar row for a user label. Mirrors the core SidebarNavItem look (same
- * height, radius and inline hover background — module bundles race the host's
+ * height, radius and inline hover background - module bundles race the host's
  * utilities layer, so `hover:bg-*` cannot be relied on here) and adds Gmail's
  * hover affordance: the unread badge gives way to a ⋮ opening the label menu.
  */
@@ -40,7 +40,7 @@ export default function MailLabelItem({
   active:  boolean
   to:      string
   actions: LabelActions
-  /** Fired on the row link — used to close an open conversation so the label's
+  /** Fired on the row link - used to close an open conversation so the label's
    *  list is what shows, even when this label is already the active one. */
   onClick?: () => void
 }) {
@@ -57,7 +57,7 @@ export default function MailLabelItem({
   const HOVER_BG  = 'var(--kb-sidebar-hover, #e8eaed)'  // host-owned token: one hover colour product-wide
   const background = dropTarget ? '#fef7e0' : active ? ACTIVE_BG : hovered || menu.isOpen ? HOVER_BG : 'transparent'
 
-  // The trailing slot is either the unread badge or the ⋮ — never both, so the
+  // The trailing slot is either the unread badge or the ⋮ - never both, so the
   // row never changes width when the pointer enters it.
   const showMenuButton = hovered || menu.isOpen
 
@@ -225,7 +225,7 @@ function LabelTagIcon({ color }: { color: string }) {
   )
 }
 
-/** "Parent/Child" is displayed as "Child" — the nesting shows in the tree. */
+/** "Parent/Child" is displayed as "Child" - the nesting shows in the tree. */
 export function leafName(name: string) {
   const i = name.lastIndexOf('/')
   return i < 0 ? name : name.slice(i + 1)

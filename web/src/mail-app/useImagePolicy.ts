@@ -27,7 +27,7 @@ export function useImagePolicy() {
 
   return {
     alwaysShow,
-    /** The sender is trusted for images — by the instance or by the user.
+    /** The sender is trusted for images - by the instance or by the user.
      *  The INSTANCE list only applies to an authenticated sender (DMARC pass):
      *  nobody opted into it individually, so a spoofed From must not be able to
      *  ride it. A sender the user trusted themselves is honoured as chosen. */

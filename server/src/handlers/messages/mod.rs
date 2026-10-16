@@ -21,7 +21,7 @@ pub use send::send_message;
 pub use suggest::suggest_addresses;
 
 // These are consumed only from within this crate (other handlers, workers), so
-// they re-export at crate visibility — `pub use` of a `pub(crate)` item is
+// they re-export at crate visibility - `pub use` of a `pub(crate)` item is
 // rejected as widening its visibility.
 pub(crate) use pgp::sender_autocrypt_key;
 pub(crate) use read::strip_storage_paths;

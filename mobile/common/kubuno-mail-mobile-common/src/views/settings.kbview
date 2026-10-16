@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Mail · Settings — converted from SettingsScreen.kt (MailSettingsScreen). A minimal screen: the account, a
+  Mail · Settings - converted from SettingsScreen.kt (MailSettingsScreen). A minimal screen: the account, a
   shortcut to device accounts, and the app version. Shared vocabulary, light theme, logical px. Root is a Panel.
 -->
 <Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"

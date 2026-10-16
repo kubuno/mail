@@ -85,7 +85,7 @@ export default function ThreadReaderToolbar({
 
   // ══ Toolbar ══════════════════════════════════════════════════════════
   // Mobile: back + the 2 primary actions + a "⋮" menu holding everything
-  // else — never several wrapped rows of icons. Desktop: full bar.
+  // else - never several wrapped rows of icons. Desktop: full bar.
   return isMobile ? (
     <div className="flex items-center justify-between pl-1 pr-2 h-12 border-b border-[#e0e0e0] flex-shrink-0 no-print">
       <TBtn onClick={onBack} title={t('back')}>
@@ -127,7 +127,7 @@ export default function ThreadReaderToolbar({
     </TBtn>
     <div className="w-px h-5 bg-[#e0e0e0] mx-1" />
 
-    {/* Mark as unread — first-class action, like Gmail */}
+    {/* Mark as unread - first-class action, like Gmail */}
     <TBtn
       title={t('mail_mark_unread', { defaultValue: 'Marquer comme non lu' })}
       onClick={onThreadUnread}>
@@ -154,7 +154,7 @@ export default function ThreadReaderToolbar({
       )}
     </div>
 
-    {/* More options — Important / Mute / Snooze, like Gmail */}
+    {/* More options - Important / Mute / Snooze, like Gmail */}
     <button
       title={t('more_options', { defaultValue: "Plus d'options" })}
       onClick={e => { const r = e.currentTarget.getBoundingClientRect()

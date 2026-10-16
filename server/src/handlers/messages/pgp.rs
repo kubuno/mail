@@ -9,11 +9,11 @@ use crate::{
 
 /// Decrypt / verify a message IN PLACE when it was stored as PGP/MIME (its raw
 /// MIME preserved by the sync path) and the reader has OpenPGP enabled with a
-/// usable key. On any failure the stored (opaque) body is left untouched — a mail
+/// usable key. On any failure the stored (opaque) body is left untouched - a mail
 /// you cannot open must still open, showing the ciphertext, not an error.
 ///
 /// Shared by the single-message and thread endpoints, since a message card is
-/// populated from either. Skips the whole path — including the config lookup —
+/// populated from either. Skips the whole path - including the config lookup -
 /// for ordinary mail, whose `pgp_raw` is NULL.
 pub async fn decode_pgp_in_place(state: &AppState, user_id: Uuid, msg: &mut EmailMessage) {
     // Preserved raw MIME? Only PGP messages have it; everything else exits here.
@@ -36,7 +36,7 @@ pub async fn decode_pgp_in_place(state: &AppState, user_id: Uuid, msg: &mut Emai
 
     let Ok(crypto) = MailCrypto::new(&state.settings.mail.encryption_key) else { return };
 
-    // Every one of the reader's secret keys — the message may be encrypted to any
+    // Every one of the reader's secret keys - the message may be encrypted to any
     // of them; decryption tries each until one opens it.
     let key_rows = crate::db::query_as::<(Vec<u8>, Vec<u8>)>(
         "SELECT private_key, private_key_nonce FROM mail.pgp_keys WHERE user_id = $1 ORDER BY is_default DESC, created_at",
@@ -159,7 +159,7 @@ pub(super) async fn resolve_pgp(
                         }
                         None => {
                             return Err(MailError::Validation(format!(
-                                "Pas de clé publique pour {email} — introuvable via WKD ; importez-la dans Réglages ▸ Chiffrement."
+                                "Pas de clé publique pour {email} - introuvable via WKD ; importez-la dans Réglages ▸ Chiffrement."
                             )))
                         }
                     }

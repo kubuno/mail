@@ -16,11 +16,11 @@ export type ThreadCacheSnapshot = readonly (readonly [unknown[], ThreadPage | un
  * Rewrites the cached thread lists in place so a status change shows up on the
  * next frame instead of after two round trips (the mutation, then the refetch
  * of a 50-row page plus the 200-row tab overview). The request still runs, and
- * the lists are still revalidated afterwards — this only removes the wait.
+ * the lists are still revalidated afterwards - this only removes the wait.
  *
  * Returning `null` from `patch` drops the row and decrements the total. Rows
  * are patched in EVERY cached list: correct for read/star/important, which do
- * not depend on the view, and near enough for archive — the row does leave the
+ * not depend on the view, and near enough for archive - the row does leave the
  * inbox, and the background refetch puts it back in "All mail".
  */
 export function patchThreadCaches(
@@ -56,7 +56,7 @@ export function patchThreadCaches(
   return snapshot
 }
 
-/** Puts the lists back as they were — used when the request fails. */
+/** Puts the lists back as they were - used when the request fails. */
 export function restoreThreadCaches(qc: QueryClient, snapshot: ThreadCacheSnapshot) {
   for (const [key, data] of snapshot) qc.setQueryData(key, data)
 }

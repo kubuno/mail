@@ -1,7 +1,7 @@
 //! The certificate the SMTP/IMAP/POP3 listeners present: is there one, is it
 //! still valid, and does it cover the name this server announces?
 //!
-//! rustls loads a certificate and tells you nothing about it — by design, since
+//! rustls loads a certificate and tells you nothing about it - by design, since
 //! a server does not need to know its own expiry to serve. An administrator
 //! does: a mail certificate expires silently at 3am and every client that
 //! demands TLS stops collecting mail, with no error anywhere in this instance.
@@ -122,8 +122,8 @@ fn inspect(pem: &[u8], hostname: &str, now: i64) -> Check {
     }
 }
 
-/// The names a certificate is valid for: the SAN dNSName entries, and — only
-/// when there is no SAN at all — the legacy Common Name. Every current client
+/// The names a certificate is valid for: the SAN dNSName entries, and - only
+/// when there is no SAN at all - the legacy Common Name. Every current client
 /// ignores the CN when a SAN exists, so mixing them would report a coverage the
 /// clients do not honour.
 fn covered_names(cert: &X509Certificate<'_>) -> Vec<String> {
@@ -172,8 +172,8 @@ mod tests {
     use crate::services::diagnostics::Verdict;
 
     /// Self-signed, `CN=mail.example.com`, SAN `mail.example.com` + `*.example.net`,
-    /// valid 2026-08-07 → 2036-08-04. Fixed material so the parsing — dates and
-    /// SAN extraction — is exercised for real against a reference instant, not
+    /// valid 2026-08-07 → 2036-08-04. Fixed material so the parsing - dates and
+    /// SAN extraction - is exercised for real against a reference instant, not
     /// against the clock.
     const CERT: &[u8] = include_bytes!("testdata/leaf.pem");
 

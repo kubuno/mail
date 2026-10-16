@@ -9,9 +9,9 @@
 //!
 //! # The order, and why it is that order
 //!
-//! 1. `mail.mailboxes`      — an exact address we own: file it there.
-//! 2. `mail.aliases`        — an exact address that is a redirection: expand it.
-//! 3. `mail.mailing_lists`  — an exact address that is a membership: expand it.
+//! 1. `mail.mailboxes`      - an exact address we own: file it there.
+//! 2. `mail.aliases`        - an exact address that is a redirection: expand it.
+//! 3. `mail.mailing_lists`  - an exact address that is a membership: expand it.
 //! 4. the domain's catch-all alias (`@domain`): expand it.
 //! 5. legacy: `mail.mailbox_credentials`, then `mail.accounts`.
 //! 6. nothing matched: `550 5.1.1 No such user here`.
@@ -19,14 +19,14 @@
 //! Steps 1–3 are exact matches and mutually exclusive (the migration enforces
 //! that with a trigger), so their relative order only decides which table is
 //! read first, never who wins. Step 4 is the wildcard and therefore comes after
-//! every exact match — a catch-all that shadowed a real mailbox would make the
+//! every exact match - a catch-all that shadowed a real mailbox would make the
 //! mailbox unreachable without anybody touching it. Step 5 is kept because
 //! users receive mail through it TODAY; removing it would lose mail silently.
 //!
 //! ⚠️ The order above puts the catch-all BEFORE the legacy paths, as documented
 //! in the migration. Creating a catch-all on a domain therefore captures the
 //! addresses that used to reach a user through step 5. That is a deliberate,
-//! visible administrative act — but it is worth knowing before creating one.
+//! visible administrative act - but it is worth knowing before creating one.
 //!
 //! # Expansion is recursive, so it is bounded
 //!
@@ -37,9 +37,9 @@
 //! taken from Postfix's `cleanup_map1n` (`virtual_alias_recursion_limit`,
 //! `virtual_alias_expansion_limit`, and its `been_here` table):
 //!
-//! * loop detection — an address already expanded is never expanded twice;
-//! * [`MAX_DEPTH`] — a ceiling on nesting, in case a loop somehow escapes;
-//! * [`MAX_FANOUT`] — a ceiling on how many addresses one recipient becomes.
+//! * loop detection - an address already expanded is never expanded twice;
+//! * [`MAX_DEPTH`] - a ceiling on nesting, in case a loop somehow escapes;
+//! * [`MAX_FANOUT`] - a ceiling on how many addresses one recipient becomes.
 //!
 //! Hitting a limit is answered with a **temporary** refusal, exactly as Postfix
 //! does (`4.6.0 Alias expansion error`): a broken alias table is something an
@@ -51,7 +51,7 @@
 //! An expansion that produces nothing is refused explicitly. A remote
 //! destination that cannot be forwarded (outbound delivery is off) refuses the
 //! recipient rather than dropping that branch. And a database error propagates
-//! as `Err`, which the SMTP front-end answers with `451` — answering "no such
+//! as `Err`, which the SMTP front-end answers with `451` - answering "no such
 //! user" because the database hiccuped bounces perfectly valid mail for good.
 
 use std::collections::{HashSet, VecDeque};
@@ -68,7 +68,7 @@ use crate::server::hygiene;
 /// How deep an alias may nest before the recipient is refused.
 ///
 /// Postfix's `virtual_alias_recursion_limit` defaults to 1000, a number that is
-/// only safe because a loop is caught first by its `been_here` table — the
+/// only safe because a loop is caught first by its `been_here` table - the
 /// depth limit there is a last resort, not the working limit. The same is true
 /// here, and a chain of more than ten redirections is a configuration mistake
 /// long before it is a legitimate setup. Ten also bounds the worst case at ten
@@ -114,7 +114,7 @@ pub struct ListRow {
 
 /// Who may send TO a list. Answering this wrong is how an internal list becomes
 /// an open spam relay, so the default of an unknown value is the restrictive
-/// one — the same default the column itself carries.
+/// one - the same default the column itself carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PostPolicy {
     /// Open to the world. A public contact address; expect abuse.
@@ -138,7 +138,7 @@ impl PostPolicy {
             "internal" => Self::Internal,
             "allowed" => Self::Allowed,
             other => {
-                tracing::error!(policy = %other, "Politique de publication inconnue — repli sur « internal »");
+                tracing::error!(policy = %other, "Politique de publication inconnue - repli sur « internal »");
                 Self::Internal
             }
         }
@@ -152,14 +152,14 @@ impl PostPolicy {
 pub struct LocalDelivery {
     /// The address that resolved here: the envelope recipient itself, or the
     /// alias destination / list member it expanded to. Kept because it is what
-    /// belongs in the trace headers and the logs — "delivered to `contact@`"
+    /// belongs in the trace headers and the logs - "delivered to `contact@`"
     /// when the mail actually landed in `alice@` is a support call.
     pub address: String,
     pub target:  LocalTarget,
     /// The mailbox's quota, 0 meaning unlimited.
     ///
     /// TODO(quota): not enforced yet. Enforcing it needs the size of what is
-    /// already stored, and `mail.messages` has no size column — the bodies are
+    /// already stored, and `mail.messages` has no size column - the bodies are
     /// stored parsed apart, so any total computed from them is an estimate, and
     /// an estimate here means refusing legitimate mail with `452 4.2.2` on a
     /// mailbox that is not actually full. The refusal must stay temporary when
@@ -205,7 +205,7 @@ pub enum Refusal {
     PostingDenied,
     /// The expansion succeeded and produced no deliverable address.
     ExpandsToNothing,
-    /// Nesting or fan-out limit hit — a broken alias table, which is temporary.
+    /// Nesting or fan-out limit hit - a broken alias table, which is temporary.
     ExpansionError,
     /// A destination outside our domains, with outbound delivery switched off.
     OutboundDisabled,
@@ -240,8 +240,8 @@ pub enum Outcome {
 
 // ── The directory the resolver reads ─────────────────────────────────────────
 
-/// Every lookup the resolver needs, behind a trait so the expansion logic — the
-/// part that has limits, loops and policies to get right — is testable without
+/// Every lookup the resolver needs, behind a trait so the expansion logic - the
+/// part that has limits, loops and policies to get right - is testable without
 /// a database.
 #[async_trait]
 pub trait Directory: Send + Sync {
@@ -262,7 +262,7 @@ pub trait Directory: Send + Sync {
     /// address. Returns the user the address belongs to.
     async fn legacy_user(&self, address: &str) -> Result<Option<Uuid>>;
 
-    /// The account row a delivery for this user is filed under — every message
+    /// The account row a delivery for this user is filed under - every message
     /// and thread hangs off one (`mail.messages.account_id` is NOT NULL).
     async fn filing_account(&self, user_id: Uuid, address: &str) -> Result<Option<Uuid>>;
 }
@@ -276,7 +276,7 @@ pub trait Directory: Send + Sync {
 /// computed at DATA (`server::authres`) and the reject action the administrator
 /// sets: this predicate answers "does the address claim to be internal", the
 /// authentication policy answers "is the claim true". An authenticated session
-/// needs neither — it has already proved who it is.
+/// needs neither - it has already proved who it is.
 pub fn post_allowed(
     list: &ListRow,
     cfg: &ServerConfig,
@@ -349,7 +349,7 @@ pub async fn resolve<D: Directory + ?Sized>(
         // is the only safe answer, and the log says where to look.
         tracing::error!(
             recipient = %top,
-            "Résolution demandée pour une adresse hors des domaines locaux — refusée"
+            "Résolution demandée pour une adresse hors des domaines locaux - refusée"
         );
         return Ok(Outcome::Refuse(Refusal::NoSuchUser));
     }
@@ -366,14 +366,14 @@ pub async fn resolve<D: Directory + ?Sized>(
         if !seen.insert(address.clone()) {
             tracing::warn!(
                 address = %address, recipient = %top,
-                "Boucle d'expansion : adresse déjà développée — branche ignorée"
+                "Boucle d'expansion : adresse déjà développée - branche ignorée"
             );
             continue;
         }
         if depth > MAX_DEPTH {
             tracing::warn!(
                 recipient = %top, depth, limit = MAX_DEPTH,
-                "Expansion d'alias trop profonde — destinataire refusé"
+                "Expansion d'alias trop profonde - destinataire refusé"
             );
             return Ok(Outcome::Refuse(Refusal::ExpansionError));
         }
@@ -382,7 +382,7 @@ pub async fn resolve<D: Directory + ?Sized>(
         if out.len() + queue.len() + 1 > MAX_FANOUT {
             tracing::warn!(
                 recipient = %top, produced = out.len(), pending = queue.len(), limit = MAX_FANOUT,
-                "Expansion d'alias trop large — destinataire refusé"
+                "Expansion d'alias trop large - destinataire refusé"
             );
             return Ok(Outcome::Refuse(Refusal::ExpansionError));
         }
@@ -397,11 +397,11 @@ pub async fn resolve<D: Directory + ?Sized>(
             if !cfg.outbound_enabled {
                 // Accepting and dropping the branch would make the message
                 // vanish; accepting only the local half would answer 250 for an
-                // address we cannot serve. Refuse, temporarily — switching
+                // address we cannot serve. Refuse, temporarily - switching
                 // outbound on makes the sender's next attempt work.
                 tracing::warn!(
                     recipient = %top, destination = %address,
-                    "Destination distante impossible : envoi sortant désactivé — destinataire refusé"
+                    "Destination distante impossible : envoi sortant désactivé - destinataire refusé"
                 );
                 return Ok(Outcome::Refuse(Refusal::OutboundDisabled));
             }
@@ -417,7 +417,7 @@ pub async fn resolve<D: Directory + ?Sized>(
                 }
                 tracing::warn!(
                     recipient = %top, destination = %address,
-                    "Boîte désactivée dans une expansion — destination ignorée"
+                    "Boîte désactivée dans une expansion - destination ignorée"
                 );
                 continue;
             }
@@ -459,7 +459,7 @@ pub async fn resolve<D: Directory + ?Sized>(
                 }
                 tracing::warn!(
                     recipient = %top, destination = %address,
-                    "Liste désactivée dans une expansion — destination ignorée"
+                    "Liste désactivée dans une expansion - destination ignorée"
                 );
                 continue;
             }
@@ -519,7 +519,7 @@ pub async fn resolve<D: Directory + ?Sized>(
         }
         tracing::warn!(
             recipient = %top, destination = %address,
-            "Destination inconnue dans une expansion — ignorée"
+            "Destination inconnue dans une expansion - ignorée"
         );
     }
 
@@ -528,7 +528,7 @@ pub async fn resolve<D: Directory + ?Sized>(
         // Silence here is the black hole the migration warns about.
         tracing::warn!(
             recipient = %top,
-            "Expansion sans aucun destinataire servable — destinataire refusé"
+            "Expansion sans aucun destinataire servable - destinataire refusé"
         );
         return Ok(Outcome::Refuse(Refusal::ExpandsToNothing));
     }
@@ -538,7 +538,7 @@ pub async fn resolve<D: Directory + ?Sized>(
 }
 
 /// Queues an alias's destinations. Returns `false` when the alias is disabled
-/// and it is the address the client named — the caller turns that into a
+/// and it is the address the client named - the caller turns that into a
 /// "mailbox disabled" refusal.
 fn push_alias(
     alias: &AliasRow,
@@ -553,7 +553,7 @@ fn push_alias(
         }
         tracing::warn!(
             recipient = %recipient, alias = %alias.address,
-            "Alias désactivé dans une expansion — destination ignorée"
+            "Alias désactivé dans une expansion - destination ignorée"
         );
         return true;
     }
@@ -575,14 +575,14 @@ fn push_destination(
     if !hygiene::valid_envelope_address(&address) {
         tracing::warn!(
             recipient = %recipient, destination = %destination,
-            "Destination d'expansion invalide — ignorée"
+            "Destination d'expansion invalide - ignorée"
         );
         return;
     }
     queue.push_back((address, depth + 1));
 }
 
-/// Removes the duplicates an expansion produces on its own — two aliases
+/// Removes the duplicates an expansion produces on its own - two aliases
 /// leading to the same mailbox, or a member who is also named directly. Local
 /// deliveries are deduplicated on where they LAND (the account row), because
 /// that is what would receive two copies of the same message.
@@ -671,8 +671,8 @@ impl Directory for PgDirectory<'_> {
             None => return Ok(None),
         };
 
-        // Members are only read once the list is known: a lookup that misses —
-        // the common case — costs one query, not two.
+        // Members are only read once the list is known: a lookup that misses -
+        // the common case - costs one query, not two.
         let members: Vec<String> = crate::db::query_scalar(
             "SELECT address FROM mail.mailing_list_members WHERE list_id = $1",
         )
@@ -718,7 +718,7 @@ impl Directory for PgDirectory<'_> {
     }
 
     async fn legacy_user(&self, address: &str) -> Result<Option<Uuid>> {
-        // The mailbox credential — what a mail client actually logs in with.
+        // The mailbox credential - what a mail client actually logs in with.
         let by_credential: Option<(Uuid,)> =
             crate::db::query_as("SELECT user_id FROM mail.mailbox_credentials WHERE username = $1")
                 .bind(address)
@@ -755,7 +755,7 @@ impl Directory for PgDirectory<'_> {
 
     async fn filing_account(&self, user_id: Uuid, address: &str) -> Result<Option<Uuid>> {
         // A message to a hosted address belongs in ITS OWN local account, so the
-        // local account bearing exactly this address wins over everything else —
+        // local account bearing exactly this address wins over everything else -
         // otherwise a message to `test001@` could land in the owner's Gmail. Then
         // the historical order: the account carrying the address, the user's
         // default, any active one.
@@ -1156,7 +1156,7 @@ mod tests {
     #[tokio::test]
     async fn a_two_alias_loop_costs_a_branch_not_the_server() {
         // A→B→A, the mistake somebody will make. B also reaches a real mailbox,
-        // so the message is still delivered — the loop is merely ignored.
+        // so the message is still delivered - the loop is merely ignored.
         let dir = Fake::default()
             .alias("a@kubuno.test", &["b@kubuno.test"])
             .alias("b@kubuno.test", &["a@kubuno.test", "alice@kubuno.test"])

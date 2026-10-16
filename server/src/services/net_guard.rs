@@ -1,7 +1,7 @@
 //! Outbound fetches triggered by a THIRD PARTY, kept away from our own network.
 //!
 //! Several features go and fetch a URL whose host is chosen by whoever sent the
-//! message — the sender's domain (favicon), a URL published in that domain's
+//! message - the sender's domain (favicon), a URL published in that domain's
 //! BIMI record, a WKD key directory. Left unguarded that is a server-side
 //! request forgery: `From: x@127.0.0.1` makes the server probe itself, and a
 //! hostile DNS zone can point at `169.254.169.254` (cloud metadata) or at
@@ -9,9 +9,9 @@
 //! reachability and timing already answer "what is running in there?".
 //!
 //! Two rules, both needed:
-//!  * the address must be PUBLIC — every address the host resolves to is
+//!  * the address must be PUBLIC - every address the host resolves to is
 //!    checked, so a name that resolves to a private range is refused;
-//!  * redirects are NOT followed — otherwise a public host would simply bounce
+//!  * redirects are NOT followed - otherwise a public host would simply bounce
 //!    us to `http://169.254.169.254/…` and undo the check above.
 
 use std::net::IpAddr;
@@ -37,13 +37,13 @@ fn is_forbidden(ip: IpAddr) -> bool {
         IpAddr::V4(v4) => {
             v4.is_loopback()
                 || v4.is_private()
-                || v4.is_link_local()      // 169.254/16 — cloud metadata lives here
+                || v4.is_link_local()      // 169.254/16 - cloud metadata lives here
                 || v4.is_unspecified()
                 || v4.is_broadcast()
                 || v4.is_multicast()
                 || v4.is_documentation()
                 || v4.octets()[0] == 0
-                // 100.64/10, carrier-grade NAT — routable-looking, not public.
+                // 100.64/10, carrier-grade NAT - routable-looking, not public.
                 || (v4.octets()[0] == 100 && (64..=127).contains(&v4.octets()[1]))
         }
         IpAddr::V6(v6) => {
@@ -69,7 +69,7 @@ pub async fn host_is_public(host: &str, port: u16) -> bool {
             for addr in addrs {
                 any = true;
                 if is_forbidden(addr.ip()) {
-                    tracing::warn!(host, ip = %addr.ip(), "URL tierce pointant vers une adresse interne — refusée");
+                    tracing::warn!(host, ip = %addr.ip(), "URL tierce pointant vers une adresse interne - refusée");
                     return false;
                 }
             }
@@ -88,11 +88,11 @@ pub async fn guarded_get(http: &reqwest::Client, url: &str) -> Option<reqwest::R
     }
     let host = parsed.host_str()?;
     let port = parsed.port_or_known_default().unwrap_or(443);
-    // A literal IP in the URL is checked directly — no lookup needed, and no
+    // A literal IP in the URL is checked directly - no lookup needed, and no
     // chance of a resolver returning something else.
     if let Ok(ip) = host.parse::<IpAddr>() {
         if is_forbidden(ip) {
-            tracing::warn!(host, "URL tierce pointant vers une adresse interne — refusée");
+            tracing::warn!(host, "URL tierce pointant vers une adresse interne - refusée");
             return None;
         }
     } else if !host_is_public(host, port).await {

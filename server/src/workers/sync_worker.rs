@@ -6,7 +6,7 @@ pub async fn run(state: Arc<AppState>) {
     let crypto = match MailCrypto::new(&state.settings.mail.encryption_key) {
         Ok(c)  => c,
         Err(e) => {
-            tracing::error!(error = %e, "Sync worker: clé de chiffrement invalide — worker arrêté");
+            tracing::error!(error = %e, "Sync worker: clé de chiffrement invalide - worker arrêté");
             return;
         }
     };

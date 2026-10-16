@@ -7,13 +7,13 @@
 //! and the "keep the most recent" policy live in the sync/send paths.
 //!
 //! Header grammar (Level 1 §2.1): a `;`-separated attribute list.
-//!   * `addr`           — REQUIRED, the sender address the key is for;
-//!   * `keydata` — REQUIRED, base64 of the BINARY public key (may be folded
+//!   * `addr`           - REQUIRED, the sender address the key is for;
+//!   * `keydata` - REQUIRED, base64 of the BINARY public key (may be folded
 //!     across lines, so whitespace is stripped);
-//!   * `prefer-encrypt` — OPTIONAL, `mutual` or `nopreference`;
+//!   * `prefer-encrypt` - OPTIONAL, `mutual` or `nopreference`;
 //!   * attribute names starting with `_` are non-critical and ignored when
 //!     unknown; any OTHER unknown attribute is "critical" and makes the whole
-//!     header invalid (§2.1) — we return `None` so it is skipped entirely.
+//!     header invalid (§2.1) - we return `None` so it is skipped entirely.
 
 use base64::Engine;
 use lettre::message::header::{Header, HeaderName, HeaderValue};
@@ -34,7 +34,7 @@ pub struct AutocryptHeader {
 }
 
 /// Parse one `Autocrypt:` header value. Returns `None` if it is malformed or
-/// carries an unknown critical attribute (Level 1 §2.1 — such a header is
+/// carries an unknown critical attribute (Level 1 §2.1 - such a header is
 /// ignored, not partially honoured).
 pub fn parse(value: &str) -> Option<AutocryptHeader> {
     let mut addr: Option<String> = None;
@@ -97,7 +97,7 @@ pub fn header_value(addr: &str, public_key_binary: &[u8], prefer_mutual: bool) -
 
 /// A lettre header carrying a pre-built Autocrypt value. `header_value` already
 /// folds and is pure ASCII, so it is emitted verbatim (no further RFC 2047
-/// encoding). Attach it to the OUTER message headers — Autocrypt is always sent
+/// encoding). Attach it to the OUTER message headers - Autocrypt is always sent
 /// in the clear, even for an encrypted message.
 #[derive(Debug, Clone)]
 pub struct AutocryptMimeHeader(pub String);

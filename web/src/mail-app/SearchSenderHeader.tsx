@@ -4,13 +4,13 @@ import { analyzeSender } from './senderSafety'
 import { useMailStore } from '../store'
 
 /** The sender card shown above search results when the query filters on a
- *  single `from:<email>` — Gmail parity: avatar, display name and the address
+ *  single `from:<email>` - Gmail parity: avatar, display name and the address
  *  as a mail link. Clicking the address opens OUR composer prefilled with it
  *  (not the OS mailto handler). */
 export default function SearchSenderHeader({ email, name }: { email: string; name?: string | null }) {
   const { setComposeInitial, setComposeOpen } = useMailStore()
   // Card for a searched sender: the address is right beside the name, but the
-  // name itself is still attacker-controlled — neutralize it, and let it fall
+  // name itself is still attacker-controlled - neutralize it, and let it fall
   // back to the address when it impersonates a different one.
   const safety  = analyzeSender(name, email)
   const display = safety.name || email.split('@')[0]
@@ -37,7 +37,7 @@ export default function SearchSenderHeader({ email, name }: { email: string; nam
   )
 }
 
-/** Every concrete `from:<email>` of a query (deduped, lowercased) — one card
+/** Every concrete `from:<email>` of a query (deduped, lowercased) - one card
  *  per searched sender, multi-source `(from:a OR from:b)` queries included.
  *  Negated senders and `from:me`-style words don't feature anyone. */
 export function searchedSenders(query: string): string[] {

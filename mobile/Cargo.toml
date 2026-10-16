@@ -1,4 +1,4 @@
-# Kubuno Mail — the mobile app. ONE Cargo workspace for every mobile OS, laid out like the desktop app
+# Kubuno Mail - the mobile app. ONE Cargo workspace for every mobile OS, laid out like the desktop app
 # (../desktop) and independent of the module server's (../server):
 #
 #   common/   the complete app, portable: the .kbview screens (edited in Visual Studio), rendered by the shared

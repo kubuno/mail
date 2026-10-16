@@ -58,7 +58,7 @@ function draftMatches(d: Draft, f: FilterState): boolean {
 
 // ── Brouillons ────────────────────────────────────────────────────────────────
 // The local drafts live in `mail.drafts` (auto-saved compose sessions), NOT in
-// the synced message store — so this folder has its own list and cannot reuse
+// the synced message store - so this folder has its own list and cannot reuse
 // the thread list. Clicking a row resumes editing the SAME draft; the only ways
 // to remove one are this explicit trash button and sending it.
 export function DraftsView() {
@@ -101,7 +101,7 @@ export function DraftsView() {
 
   return (
     <div className="flex flex-col bg-white overflow-hidden flex-1 min-w-0">
-      {/* Toolbar — mirrors the inbox: select-all, refresh (or bulk delete). */}
+      {/* Toolbar - mirrors the inbox: select-all, refresh (or bulk delete). */}
       <div className="flex items-center gap-1 px-3 h-12 border-b border-[#e0e0e0] flex-shrink-0">
         <div className="w-10 flex items-center justify-center">
           <SelectBox checked={allChecked} partial={checked.size > 0 && !allChecked} onClick={toggleAll}
@@ -150,10 +150,10 @@ export function DraftsView() {
                 className={`group relative flex items-center gap-3 pl-4 pr-4 min-h-[40px] py-1.5 cursor-pointer
                             border-b border-[#f0f0f0] ${isChecked ? 'bg-[#c2dbff]' : 'hover:shadow-[inset_0_-1px_0_0_rgba(100,121,143,0.12)] hover:z-10 hover:bg-white'}`}
               >
-                {/* Drag grip — appears on hover in the left gutter slot, mirroring
+                {/* Drag grip - appears on hover in the left gutter slot, mirroring
                     the inbox rows. Purely decorative here: drafts don't reorder
                     like conversation threads (which drag onto sidebar labels), so
-                    no drag handler is wired — only the hover affordance. */}
+                    no drag handler is wired - only the hover affordance. */}
                 {!isMobile && (
                   <span
                     onClick={e => e.stopPropagation()}
@@ -165,7 +165,7 @@ export function DraftsView() {
                   </span>
                 )}
 
-                {/* Gutter: selection box (star omitted — drafts aren't starrable). */}
+                {/* Gutter: selection box (star omitted - drafts aren't starrable). */}
                 <div className="w-5 flex items-center justify-center flex-shrink-0" onClick={e => e.stopPropagation()}>
                   <SelectBox checked={isChecked} onClick={() => toggleOne(d.id)}
                     label={t('mail_select_thread', { defaultValue: 'Sélectionner' })} />
@@ -177,10 +177,10 @@ export function DraftsView() {
                   {recipients && !isMobile && <span className="text-sm text-text-secondary truncate">{recipients}</span>}
                 </div>
 
-                {/* Subject — snippet. */}
+                {/* Subject - snippet. */}
                 <div className="flex-1 min-w-0 text-sm truncate">
                   <span className="text-text-primary">{d.subject || t('no_subject', { defaultValue: '(sans objet)' })}</span>
-                  {preview && <span className="text-text-tertiary"> — {preview}</span>}
+                  {preview && <span className="text-text-tertiary"> - {preview}</span>}
                 </div>
 
                 {d.attachments.length > 0 && <Paperclip size={14} className="text-text-tertiary flex-shrink-0" />}
@@ -264,7 +264,7 @@ export function SubscriptionsView() {
   })
 
   // Clicking a subscription row opens the mailbox on the FULL Gmail-equivalent
-  // query — Gmail issues `from:X (-label:spam OR label:trash) label:^sub_m`;
+  // query - Gmail issues `from:X (-label:spam OR label:trash) label:^sub_m`;
   // ours transposes it operator for operator: everywhere but spam (trash
   // included), subscription-type messages only (`is:subscription` = carries a
   // List-Unsubscribe header, our equivalent of the `^sub_m` system label).
@@ -330,7 +330,7 @@ export function SubscriptionsView() {
                 >
                   <SenderAvatar email={s.from_email} name={s.from_name} size={28} />
                   {/* The address always sits next to it in this list, so the
-                      name only needs neutralizing — `label` still swaps in the
+                      name only needs neutralizing - `label` still swaps in the
                       address when the name impersonates another one. */}
                   <span className="w-56 min-w-0 flex-shrink-0 text-sm text-text-primary truncate">
                     {analyzeSender(s.from_name, s.from_email).label}

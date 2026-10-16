@@ -1,4 +1,4 @@
-//! Vacation responder — the out-of-office auto-reply.
+//! Vacation responder - the out-of-office auto-reply.
 //!
 //! The client edits a responder (active window, subject, rich-text body, and an
 //! optional "contacts only" scope); this module persists it and, on every
@@ -28,7 +28,7 @@
 //! ── "contacts only" ─────────────────────────────────────────────────────────
 //! The mail module does not link the standalone `contacts` module (cross-module
 //! imports are forbidden, and no internal contacts API is exposed to it here), so
-//! "my contacts" resolves to `mail.address_index` — the addresses this user has
+//! "my contacts" resolves to `mail.address_index` - the addresses this user has
 //! actually corresponded with, the same source that backs recipient
 //! auto-completion. Documented as a deliberate scope, not the global address book.
 
@@ -43,7 +43,7 @@ use uuid::Uuid;
 use crate::server::config::ServerConfig;
 use crate::server::{hygiene, queue, resolve};
 
-/// At most one auto-reply per sender per this many days — Gmail's rule. Prevents
+/// At most one auto-reply per sender per this many days - Gmail's rule. Prevents
 /// a legitimate but chatty correspondent from receiving the same notice again
 /// and again while the responder is on.
 pub const RESPONSE_INTERVAL_DAYS: i64 = 4;
@@ -156,14 +156,14 @@ pub enum LoopDecision {
     Skip(&'static str),
 }
 
-/// RFC 3834 — decide whether an auto-reply is permitted for this message.
+/// RFC 3834 - decide whether an auto-reply is permitted for this message.
 ///
 /// This is the single place the "never auto-reply to X" rules live; it is pure
 /// so every branch is unit-tested. It does NOT consider the active window, the
-/// contacts scope or the rate-limit — those need the database and are handled by
+/// contacts scope or the rate-limit - those need the database and are handled by
 /// [`maybe_autorespond`].
 pub fn evaluate_loop_guard(input: &LoopGuardInput) -> LoopDecision {
-    // §5.1 — never respond to another automatic message. Only `no` is safe;
+    // §5.1 - never respond to another automatic message. Only `no` is safe;
     // `auto-replied`, `auto-generated`, `auto-notified`, anything else → skip.
     if let Some(v) = input.auto_submitted {
         if !v.trim().eq_ignore_ascii_case("no") {
@@ -185,7 +185,7 @@ pub fn evaluate_loop_guard(input: &LoopGuardInput) -> LoopDecision {
         return LoopDecision::Skip("list-header");
     }
 
-    // §2 — an auto-reply MUST use a null return-path and MUST NOT be sent TO one:
+    // §2 - an auto-reply MUST use a null return-path and MUST NOT be sent TO one:
     // a `<>` / empty envelope sender is a bounce or notification.
     let env = strip_brackets(input.envelope_from);
     if env.is_empty() {
@@ -299,7 +299,7 @@ pub struct Incoming<'a> {
     pub auto_submitted:  Option<&'a str>,
     pub precedence:      Option<&'a str>,
     pub has_list_header: bool,
-    /// The message was filed into Spam — an auto-reply would answer junk.
+    /// The message was filed into Spam - an auto-reply would answer junk.
     pub is_spam:         bool,
 }
 
@@ -359,7 +359,7 @@ pub async fn maybe_autorespond(
         return;
     }
 
-    // "contacts only" — answer only correspondents already in the address index.
+    // "contacts only" - answer only correspondents already in the address index.
     if config.contacts_only {
         match is_known_contact(db, recipient_user_id, &reply_to).await {
             Ok(true) => {}
@@ -428,7 +428,7 @@ fn normalize_reply_target(envelope_from: &str, from_email: &str) -> String {
 }
 
 /// Builds the auto-reply and hands it to the right send path. Returns whether it
-/// actually left (queued or delivered) — a remote recipient with outbound
+/// actually left (queued or delivered) - a remote recipient with outbound
 /// delivery off cannot leave, and is not recorded against the rate-limit.
 #[allow(clippy::too_many_arguments)]
 async fn send_reply(
@@ -483,7 +483,7 @@ async fn send_reply(
             Err(e) => Err(e),
         }
     } else if cfg.outbound_enabled {
-        // A remote sender: hand to the outbound queue. RFC 3834 §3 — an
+        // A remote sender: hand to the outbound queue. RFC 3834 §3 - an
         // auto-reply is sent with a NULL return-path (empty envelope sender) so
         // it can never itself provoke a bounce loop.
         let stamped = hygiene::prepend_received(&raw, "local", &cfg.hostname);
@@ -544,7 +544,7 @@ fn build_reply(
         .from(from_mb)
         .to(to_mb)
         .subject(subject)
-        // RFC 3834 §5 — flag the reply automatic so a well-behaved responder on
+        // RFC 3834 §5 - flag the reply automatic so a well-behaved responder on
         // the other side does not answer it.
         .header(AutoSubmittedHeader("auto-replied".to_string()))
         .header(PrecedenceHeader("bulk".to_string()));
@@ -788,7 +788,7 @@ mod tests {
         assert_eq!(reply_subject("Absent du bureau"), "Absent du bureau");
     }
 
-    // The reply we build is itself marked automatic and threaded — proving the
+    // The reply we build is itself marked automatic and threaded - proving the
     // far-side loop would be stopped by its own guard.
     #[test]
     fn built_reply_carries_the_antiloop_headers() {

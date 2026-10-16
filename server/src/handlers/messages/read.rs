@@ -70,7 +70,7 @@ pub async fn get_message(
 
 /// Removes the server-side `storage_path` from a message's attachments before
 /// it leaves the module. The client downloads by `(message id, index)` through
-/// the API and never needs — nor should learn — where the file physically
+/// the API and never needs - nor should learn - where the file physically
 /// lives on the server.
 pub(crate) fn strip_storage_paths(msg: &mut EmailMessage) {
     if let Some(arr) = msg.attachments.as_array_mut() {

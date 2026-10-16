@@ -1,6 +1,6 @@
 // Inbox categories live in the URL HASH rather than in a route of their own:
 // /mail/#category/promotions. They are a client-side filter over the inbox, so
-// they must not create server routes — but they still deserve a real, shareable
+// they must not create server routes - but they still deserve a real, shareable
 // link (the sidebar and the inbox tabs are anchors, never buttons).
 import type { MailCategory } from './mail-app/categories'
 
@@ -19,7 +19,7 @@ export function categoryFromHash(hash: string): MailCategory {
     : 'main'
 }
 
-/** The mailbox opened on a committed search — the Gmail «#search/<query>» URL.
+/** The mailbox opened on a committed search - the Gmail «#search/<query>» URL.
  *  Flows that leave another view to search (the subscriptions page, the bar
  *  used from settings…) navigate HERE instead of setting the store and hoping
  *  it survives the route change: the URL is the single source of truth for

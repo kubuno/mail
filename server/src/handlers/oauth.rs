@@ -22,7 +22,7 @@ use crate::{
     state::AppState,
 };
 
-/// GET /oauth/providers — which OAuth providers the admin configured.
+/// GET /oauth/providers - which OAuth providers the admin configured.
 /// Never exposes the client ids/secrets themselves.
 pub async fn providers(
     State(state): State<AppState>,
@@ -99,7 +99,7 @@ async fn purge_stale_states(state: &AppState) {
         .await;
 }
 
-/// POST /oauth/:provider/start — returns the provider's consent URL.
+/// POST /oauth/:provider/start - returns the provider's consent URL.
 pub async fn start(
     State(state): State<AppState>,
     user: AuthUser,
@@ -165,7 +165,7 @@ pub struct CallbackQuery {
 
 /// Browser redirect to the mail settings page. Served as a tiny HTML page
 /// (meta-refresh + location.replace) instead of a 3xx because the core proxy's
-/// HTTP client follows redirects itself — a Location header would never reach
+/// HTTP client follows redirects itself - a Location header would never reach
 /// the browser. All embedded values are fixed slugs (no user input).
 fn settings_redirect(provider: Provider, status: &str, reason: Option<&str>) -> Html<String> {
     let mut url = format!("/mail/settings?oauth={}&status={}", provider.as_str(), status);
@@ -181,7 +181,7 @@ fn settings_redirect(provider: Provider, status: &str, reason: Option<&str>) -> 
     ))
 }
 
-/// GET /oauth/:provider/callback — provider redirect target (browser
+/// GET /oauth/:provider/callback - provider redirect target (browser
 /// navigation, authenticated by the session cookie through the core proxy).
 /// Always ends with a redirect to the mail settings page; failures carry a
 /// short machine reason, never provider details.
@@ -341,7 +341,7 @@ async fn upsert_oauth_account(
         .await?;
     } else {
         // Fresh account. The NOT NULL password columns hold an encrypted empty
-        // string — never used for oauth_* auth kinds.
+        // string - never used for oauth_* auth kinds.
         let (empty_enc, empty_nonce)   = crypto.encrypt("")?;
         let (empty_enc2, empty_nonce2) = crypto.encrypt("")?;
         let has_accounts: bool = crate::db::query_scalar(

@@ -68,7 +68,7 @@ impl ConnectionLimiter {
     }
 
     /// Applies a new cap to the live limiter. Connections already accepted are
-    /// never closed by a lowered cap — it applies to the next one, as Dovecot's
+    /// never closed by a lowered cap - it applies to the next one, as Dovecot's
     /// anvil does.
     pub fn set_max_per_ip(&self, max_per_ip: u32) {
         self.max_per_ip.store(max_per_ip.max(1), Ordering::Relaxed);
@@ -199,7 +199,7 @@ impl Tarpit {
         }
     }
 
-    /// A success wipes the penalty — a legitimate user who finally logs in is no
+    /// A success wipes the penalty - a legitimate user who finally logs in is no
     /// longer slowed.
     pub fn record_success(&self, ip: IpAddr) {
         if let Ok(mut ips) = self.ips.lock() {
@@ -312,7 +312,7 @@ mod tests {
     }
 
     /// The administrator's toggle is applied to the live instance, and the
-    /// strikes already collected are still there when it is turned back on —
+    /// strikes already collected are still there when it is turned back on -
     /// switching it off and on again must not reward an attacker.
     #[test]
     fn toggling_keeps_the_strikes_already_collected() {

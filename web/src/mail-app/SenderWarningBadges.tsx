@@ -5,7 +5,7 @@ import type { SenderSafety } from './senderSafety'
 /**
  * Impersonation warnings for the open message, in the same chip language as the
  * OpenPGP trust badges right next to them: a quiet coloured pill, the detail in
- * its tooltip. No dialog and no full-width banner — the reader must be informed
+ * its tooltip. No dialog and no full-width banner - the reader must be informed
  * without the client crying wolf on every newsletter with an accented domain.
  */
 export default function SenderWarningBadges({ safety }: { safety: SenderSafety }) {

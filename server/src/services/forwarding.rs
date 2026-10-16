@@ -1,9 +1,9 @@
-//! Automatic forwarding — re-sending an incoming message to another address.
+//! Automatic forwarding - re-sending an incoming message to another address.
 //!
 //! The client edits a list of destination addresses (each enabled or not) and a
 //! "keep or archive the local copy" choice; this module persists those rules and,
 //! on every message delivered into a local mailbox, decides whether to re-send a
-//! copy and does so through the instance's own send path — the same one the
+//! copy and does so through the instance's own send path - the same one the
 //! vacation responder uses.
 //!
 //! ── Why the anti-loop rules are the hard part ────────────────────────────────
@@ -37,7 +37,7 @@ use crate::server::config::ServerConfig;
 use crate::server::{hygiene, queue, resolve};
 
 /// The trace header stamped on every forwarded copy, carrying the mailbox that
-/// forwarded it. Its presence on an incoming message is the loop signal — we
+/// forwarded it. Its presence on an incoming message is the loop signal - we
 /// never forward a message that already has it (see [`evaluate_forward_guard`]).
 pub const FORWARD_MARKER: &str = "X-Kubuno-Forwarded";
 
@@ -74,7 +74,7 @@ pub async fn load(db: &DbPool, user_id: Uuid) -> Result<Vec<ForwardingRule>> {
 
 /// Replaces a user's whole set of forwarding rules in one transaction: the UI
 /// edits the list as a whole and saves it as a whole, so the server mirrors that
-/// — delete what was there, insert what is there now — rather than diffing.
+/// - delete what was there, insert what is there now - rather than diffing.
 ///
 /// `rules` is `(forward_to, enabled, keep_copy)`; addresses are lower-cased here.
 pub async fn replace(db: &DbPool, user_id: Uuid, rules: &[(String, bool, bool)]) -> Result<()> {
@@ -127,7 +127,7 @@ pub async fn replace(db: &DbPool, user_id: Uuid, rules: &[(String, bool, bool)])
 /// The header/sender facts the loop guard reasons about, pulled from the
 /// incoming message by the delivery path.
 pub struct ForwardGuardInput<'a> {
-    /// The incoming message already carries our [`FORWARD_MARKER`] — it has been
+    /// The incoming message already carries our [`FORWARD_MARKER`] - it has been
     /// forwarded once, so forwarding it again is a loop.
     pub already_forwarded: bool,
     /// Value of the incoming `Auto-Submitted` header, if any.
@@ -153,7 +153,7 @@ pub enum ForwardDecision {
 ///
 /// This is the single place the "never forward X" rules live; it is pure so
 /// every branch is unit-tested. It does NOT consider whether a rule exists or is
-/// enabled — that needs the database and is handled by [`maybe_forward`].
+/// enabled - that needs the database and is handled by [`maybe_forward`].
 pub fn evaluate_forward_guard(input: &ForwardGuardInput) -> ForwardDecision {
     // Hard stop: a message already stamped by us has been forwarded once. This
     // is what bounds the deliver_local → forward → deliver_local recursion, and
@@ -178,7 +178,7 @@ pub fn evaluate_forward_guard(input: &ForwardGuardInput) -> ForwardDecision {
     }
 
     // A daemon/postmaster/no-reply sender (envelope or header From) is a system
-    // notification — a bounce in spirit — and is never forwarded.
+    // notification - a bounce in spirit - and is never forwarded.
     if is_system_sender(&env) || is_system_sender(input.from_email) {
         return ForwardDecision::Skip("bounce");
     }
@@ -237,7 +237,7 @@ pub struct Incoming<'a> {
     pub auto_submitted:    Option<&'a str>,
     /// The incoming message already carries our [`FORWARD_MARKER`].
     pub already_forwarded: bool,
-    /// The message was filed into Spam — junk is never forwarded.
+    /// The message was filed into Spam - junk is never forwarded.
     pub is_spam:           bool,
 }
 
@@ -268,7 +268,7 @@ pub async fn maybe_forward(
 
     // The instance's switch. Checked HERE rather than only when a rule is
     // saved: turning automatic forwarding off must stop the rules that already
-    // exist — otherwise closing the door leaves every mailbox that had already
+    // exist - otherwise closing the door leaves every mailbox that had already
     // walked through it still copying company mail outside.
     if !cfg.allow_auto_forwarding {
         tracing::debug!("Transfert : désactivé par l'administrateur de l'instance");
@@ -303,7 +303,7 @@ pub async fn maybe_forward(
         if !cfg.outbound_recipient_allowed(&rule.forward_to) {
             tracing::warn!(
                 to = %rule.forward_to,
-                "Transfert : destination hors des domaines autorisés — abandonné"
+                "Transfert : destination hors des domaines autorisés - abandonné"
             );
             continue;
         }
@@ -348,7 +348,7 @@ pub async fn maybe_forward(
     }
 }
 
-/// Hands the stamped copy to the right send path — local delivery for a
+/// Hands the stamped copy to the right send path - local delivery for a
 /// destination in our own domains, the outbound queue otherwise. Returns whether
 /// the copy actually left (delivered or queued); a remote destination with
 /// outbound delivery off cannot leave.

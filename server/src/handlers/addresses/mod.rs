@@ -1,7 +1,7 @@
 //! Administration of the addresses this instance OWNS: mailboxes, aliases,
 //! distribution lists and per-domain policy.
 //!
-//! Until migration 000024 the instance had no such notion — a recipient was
+//! Until migration 000024 the instance had no such notion - a recipient was
 //! guessed from `mailbox_credentials.username` (a login) and then from
 //! `accounts.email_address` (the user's address at ANOTHER provider). Neither
 //! can express an alias, a catch-all, a list or a quota, so the address became a
@@ -13,7 +13,7 @@
 //! back and serves the verified ones, plus the `server_domains` stop-gap list
 //! for names DNS can never prove. `mail.domain_policies` only holds what a
 //! domain may additionally SAY about itself. Two competing answers to "is this
-//! domain ours" is exactly the split that delivers mail nowhere — so every write
+//! domain ours" is exactly the split that delivers mail nowhere - so every write
 //! below checks the address's domain against that union, read live from the
 //! core, and a policy row for a domain that is no longer served is reported as
 //! inert rather than treated as an answer.
@@ -54,7 +54,7 @@ const MAX_DOMAIN_LEN: usize = 253;
 const MAX_LABEL_LEN: usize = 63;
 
 /// Most destinations an alias may fan out to, and most members a list may hold
-/// in one write. Not a policy on what is reasonable — a bound on what a single
+/// in one write. Not a policy on what is reasonable - a bound on what a single
 /// request can cost, since every entry is validated and stored.
 pub(crate) const MAX_DESTINATIONS: usize = 200;
 
@@ -103,8 +103,8 @@ pub(crate) struct ParsedAddress {
 
 /// Parses and lower-cases an address written by an administrator.
 ///
-/// The syntactic predicate is [`hygiene::valid_envelope_address`] — the very one
-/// the SMTP path applies to RCPT TO — so an address this panel accepts is
+/// The syntactic predicate is [`hygiene::valid_envelope_address`] - the very one
+/// the SMTP path applies to RCPT TO - so an address this panel accepts is
 /// exactly one an envelope can carry, and there is a single definition of that.
 /// What is added here is the structure the schema needs and the envelope check
 /// does not provide: the split into local part and domain (the `domain` column
@@ -116,7 +116,7 @@ pub(crate) struct ParsedAddress {
 pub(crate) fn parse_address(raw: &str) -> Result<ParsedAddress, MailError> {
     let trimmed = raw.trim().trim_start_matches('<').trim_end_matches('>').trim();
     // Stored lower-cased so every lookup is a plain equality on an indexed
-    // column — the reason migration 000024 gives for doing it at write time.
+    // column - the reason migration 000024 gives for doing it at write time.
     let address = trimmed.to_ascii_lowercase();
 
     if !hygiene::valid_envelope_address(&address) {
@@ -214,7 +214,7 @@ pub(crate) fn parse_destination(raw: &str) -> Result<String, MailError> {
 ///
 /// A destination equal to its own alias is the loop somebody WILL configure, and
 /// it costs a rejected recipient at best. Refusing it here is the cheapest place
-/// — the resolver's depth limit is the backstop, not the answer. De-duplication
+/// - the resolver's depth limit is the backstop, not the answer. De-duplication
 /// is not cosmetic either: a duplicated destination is a duplicated delivery.
 pub(crate) fn parse_destinations(raw: &[String], own: &str) -> Result<Vec<String>, MailError> {
     if raw.len() > MAX_DESTINATIONS {
@@ -249,7 +249,7 @@ pub(crate) fn parse_destinations(raw: &[String], own: &str) -> Result<Vec<String
 
 /// Same validation as a destination list, but an empty result is allowed: an
 /// empty `allowed_senders` is meaningful (it is only consulted by the `allowed`
-/// policy, which refuses to be saved empty — see `lists.rs`).
+/// policy, which refuses to be saved empty - see `lists.rs`).
 pub(crate) fn parse_address_set(raw: &[String]) -> Result<Vec<String>, MailError> {
     if raw.len() > MAX_DESTINATIONS {
         return Err(MailError::Validation(format!(
@@ -370,7 +370,7 @@ pub(crate) fn db_error(context: &'static str) -> impl Fn(sqlx::Error) -> MailErr
 ///
 /// The pre-check in [`require_address_free`] answers the ordinary case with a
 /// precise message; what reaches here is the race between that check and the
-/// write, plus the catch-all index. Neither may surface as raw SQL — an operator
+/// write, plus the catch-all index. Neither may surface as raw SQL - an operator
 /// cannot act on `duplicate key value violates unique constraint`.
 pub(crate) fn translate_conflict(
     e: sqlx::Error,
@@ -399,7 +399,7 @@ pub(crate) fn translate_conflict(
 }
 
 /// True when a write was refused because the address (or the catch-all slot)
-/// is already taken — a unique key, or the `assert_address_is_free` trigger.
+/// is already taken - a unique key, or the `assert_address_is_free` trigger.
 ///
 /// PostgreSQL raises the trigger as `unique_violation` (23505) and MySQL
 /// signals it as `ER_DUP_ENTRY` (1062), both seen by
@@ -487,7 +487,7 @@ impl ListQuery {
 
 // ── Mailbox credentials ──────────────────────────────────────────────────────
 
-/// 24 characters from an unambiguous alphabet — no O/0, no l/1/I.
+/// 24 characters from an unambiguous alphabet - no O/0, no l/1/I.
 ///
 /// A local twin of the one in `handlers::mailbox`: people retype these into a
 /// phone, and a lookalike character reads as a wrong password with no way to
@@ -703,8 +703,8 @@ mod routing_tests {
     ///
     /// The bodies matter: axum runs the `Json` extractor before the handler
     /// body, so a payload missing a required field answers 422 and the admin
-    /// check is never reached. That is not a leak — nothing runs, nothing is
-    /// read — but it does mean a test posting `{}` would pass while proving
+    /// check is never reached. That is not a leak - nothing runs, nothing is
+    /// read - but it does mean a test posting `{}` would pass while proving
     /// nothing about the guard.
     fn routes() -> Vec<(&'static str, String, &'static str)> {
         vec![
@@ -773,7 +773,7 @@ mod routing_tests {
     #[tokio::test]
     async fn an_admin_is_refused_on_the_input_before_the_database_is_touched() {
         // These would hang on a connection attempt if validation ran after the
-        // first query — so this also pins the "validate before any DB work" rule.
+        // first query - so this also pins the "validate before any DB work" rule.
         let cases = [
             ("POST", "/admin/mailboxes", r#"{"address":"pas-une-adresse","user_id":"00000000-0000-0000-0000-000000000002"}"#),
             ("POST", "/admin/mailboxes", r#"{"address":"@example.com","user_id":"00000000-0000-0000-0000-000000000002"}"#),

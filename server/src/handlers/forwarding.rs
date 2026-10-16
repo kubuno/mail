@@ -54,13 +54,13 @@ async fn forwarding_allowed(state: &AppState) -> bool {
     match config::fetch(&http, &state.settings).await {
         Some(cfg) => cfg.allow_auto_forwarding,
         None => {
-            tracing::warn!("Transfert : politique d'instance illisible — édition autorisée par défaut");
+            tracing::warn!("Transfert : politique d'instance illisible - édition autorisée par défaut");
             true
         }
     }
 }
 
-/// RFC-lite address check — good enough to reject obvious typos before storing,
+/// RFC-lite address check - good enough to reject obvious typos before storing,
 /// matching the client-side validation.
 fn is_email(v: &str) -> bool {
     let v = v.trim();
@@ -76,7 +76,7 @@ fn is_email(v: &str) -> bool {
     }
 }
 
-/// GET /forwarding — the current user's forwarding rules, or empty defaults.
+/// GET /forwarding - the current user's forwarding rules, or empty defaults.
 pub async fn get_forwarding(
     State(state): State<AppState>,
     user: AuthUser,
@@ -98,7 +98,7 @@ pub async fn get_forwarding(
     Ok(Json(dto))
 }
 
-/// PUT /forwarding — replace the current user's forwarding rules.
+/// PUT /forwarding - replace the current user's forwarding rules.
 pub async fn put_forwarding(
     State(state): State<AppState>,
     user: AuthUser,
@@ -121,7 +121,7 @@ pub async fn put_forwarding(
 
     // The instance's switch. Only an ENABLED rule is refused: a user must always
     // be able to switch their forwarding off, or to delete a rule saved before
-    // the administrator closed the door — and only the network call is paid for
+    // the administrator closed the door - and only the network call is paid for
     // when there is actually something to enable.
     if rules.iter().any(|(_, enabled, _)| *enabled) && !forwarding_allowed(&state).await {
         return Err(MailError::Validation(

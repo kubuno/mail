@@ -17,7 +17,7 @@ type StoredKey = (String, String, Vec<u8>, Vec<u8>);
 
 /// The outcome of trying to DKIM-sign a message.
 ///
-/// The absence of a signature used to be silent — the message simply came back
+/// The absence of a signature used to be silent - the message simply came back
 /// unchanged, indistinguishable from a signed one. It is reported explicitly so
 /// the worker can honour `dkim_require_signature` and defer instead of putting
 /// unsigned mail on the wire.
@@ -32,7 +32,7 @@ pub enum Signed {
 
 /// Signs `raw` with the key configured for its `From:` domain, if any.
 ///
-/// A message whose domain has no key comes back as `Unsigned` — DKIM is the
+/// A message whose domain has no key comes back as `Unsigned` - DKIM is the
 /// administrator's choice to configure, not a hard requirement to send, unless
 /// they turned `dkim_require_signature` on. A key that is present but fails to
 /// load or sign logs the error and yields `Unsigned` rather than dropping the

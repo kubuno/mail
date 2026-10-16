@@ -10,7 +10,7 @@
 // The caller owns the body ref and a single `onAfterChange` callback (touch the
 // draft autosave + refresh the "logically empty" placeholder). This hook calls
 // it after every mutation it makes to the body (chip insert / chip remove) and
-// on every input, so the existing placeholder/autosave logic keeps working —
+// on every input, so the existing placeholder/autosave logic keeps working -
 // a lone chip counts as content because its text (+ the × glyph) survives the
 // `isLogicallyEmpty` text-content test.
 
@@ -57,7 +57,7 @@ export function useComposeMentions(
   const mention = useMentionAutocomplete({
     onSelect: (item: MentionItem, match: MentionMatch) => {
       // Replace the typed `@query` at the caret with a contenteditable=false chip
-      // (keeps the native undo stack — see the helper's doc). Then run the same
+      // (keeps the native undo stack - see the helper's doc). Then run the same
       // side effects as a normal input so autosave + placeholder stay in sync.
       replaceMentionQueryWithChip(match, item)
       cb.current()

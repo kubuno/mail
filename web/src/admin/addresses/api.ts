@@ -9,13 +9,13 @@
  * ── The shapes below are the server's, verbatim ──────────────────────────────
  * Three fields are deliberately nullable and must not be flattened into a
  * boolean by the views:
- *  • `used_bytes` is ALWAYS null and `usage_bytes_available` always false —
+ *  • `used_bytes` is ALWAYS null and `usage_bytes_available` always false -
  *    `mail.messages` stores neither the raw bytes nor a size, so any figure
  *    would be invented. Showing "0 o" would be a lie, not an approximation.
  *  • `domain_served: false` means the domain left `server_domains` and the row
  *    receives nothing; `null` means the core could not be asked. Painting both
  *    the same way sends an operator chasing a fault that is not there.
- *  • `owner_known: false` means the mail schema has never seen that account —
+ *  • `owner_known: false` means the mail schema has never seen that account -
  *    a state to fix, not a detail.
  */
 import { api } from '@kubuno/sdk'
@@ -50,7 +50,7 @@ export interface Mailbox {
   has_credential: boolean
   /** Messages of the OWNER account, every address together. */
   owner_message_count: number
-  /** Always null — see the file header. */
+  /** Always null - see the file header. */
   used_bytes:    number | null
 }
 
@@ -64,7 +64,7 @@ export interface MailboxPage {
   usage_note: string
 }
 
-/** The IMAP/SMTP login, returned exactly once — `password` is not stored. */
+/** The IMAP/SMTP login, returned exactly once - `password` is not stored. */
 export interface CreatedCredential {
   id:       string
   username: string
@@ -200,16 +200,16 @@ export interface UpdateListDto {
 // ── Domains ──────────────────────────────────────────────────────────────────
 
 /**
- * WHY a domain is served — the link between this screen and Instance ▸ Domaines.
+ * WHY a domain is served - the link between this screen and Instance ▸ Domaines.
  *
- *  • `instance` — the instance declares the domain AND has proved it by DNS.
- *  • `extra`    — served only by this module's stand-in list, for names the
+ *  • `instance` - the instance declares the domain AND has proved it by DNS.
+ *  • `extra`    - served only by this module's stand-in list, for names the
  *                 instance cannot prove (`kubuno.local` on a lab machine).
- *  • `both`     — verified by the instance AND listed in the stand-in list.
+ *  • `both`     - verified by the instance AND listed in the stand-in list.
  *                 Harmless, and worth saying: the stand-in entry is redundant,
  *                 and it is what would keep the domain served if somebody
- *                 removed it from the instance — silently.
- *  • `null`     — nothing serves it. Mail addressed here is refused.
+ *                 removed it from the instance - silently.
+ *  • `null`     - nothing serves it. Mail addressed here is refused.
  */
 export type DomainSource = 'instance' | 'extra' | 'both'
 
@@ -223,7 +223,7 @@ export interface DomainView {
   /**
    * Provenance, added by the server. OPTIONAL on purpose: an instance running
    * an older mail service does not send them, and the views then say nothing
-   * about provenance rather than guessing — a wrong origin is worse than none.
+   * about provenance rather than guessing - a wrong origin is worse than none.
    */
   source?:             DomainSource | null
   instance_state?:     InstanceDomainStatus
@@ -262,7 +262,7 @@ export interface ListQuery {
   offset?: number
 }
 
-/** Drops the keys the server should read as "no filter" — an empty `q=` and a
+/** Drops the keys the server should read as "no filter" - an empty `q=` and a
  *  `domain=` of `''` are not the same request as omitting them. */
 function params(q: ListQuery): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {}
@@ -343,7 +343,7 @@ export const ADDR_KEYS = {
  * The server's own sentence, or the fallback.
  *
  * Every write route answers `{ error, message }` with a message written for an
- * operator — it names the object already holding an address, the domain that is
+ * operator - it names the object already holding an address, the domain that is
  * not served, the ceiling that was reached. Replacing it with "Échec" throws
  * away the only part of the response that says what to do.
  *

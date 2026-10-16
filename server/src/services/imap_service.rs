@@ -8,7 +8,7 @@ use tokio_native_tls::{TlsConnector, TlsStream};
 
 /// Largest single message this module will pull down from a remote IMAP server.
 ///
-/// The peer is not ours: a hostile — or merely broken — server can answer a
+/// The peer is not ours: a hostile - or merely broken - server can answer a
 /// FETCH with a literal of any length, and the whole body has to be buffered
 /// before `mail_parser` can even look at it. The value mirrors the inbound SMTP
 /// ceiling (`server::config::ServerConfig::max_message_bytes`, 25 MiB by
@@ -130,7 +130,7 @@ pub struct RawMessage {
     /// `\Seen` on the server. Carried over so a backfilled mailbox does not
     /// come back as thousands of unread messages.
     pub seen: bool,
-    /// `\Flagged` on the server — the provider's equivalent of our star.
+    /// `\Flagged` on the server - the provider's equivalent of our star.
     pub flagged: bool,
 }
 
@@ -219,7 +219,7 @@ where
 /// Decodes modified UTF-7, the encoding IMAP mailbox names use (RFC 3501
 /// §5.1.3): `&` opens a base64 run (with `,` for `/`) closed by `-`, and `&-`
 /// is a literal `&`. Without this, "Éléments envoyés" reaches us as
-/// `&AMk-l&AOk-ments envoy&AOk-s` — unreadable in the sidebar, and unmatchable
+/// `&AMk-l&AOk-ments envoy&AOk-s` - unreadable in the sidebar, and unmatchable
 /// against the well-known folder names.
 pub fn decode_imap_utf7(name: &str) -> String {
     let bytes = name.as_bytes();
@@ -401,7 +401,7 @@ fn plan_fetches_with(
 }
 
 /// Bodies for an explicit list of UIDs of the currently selected mailbox.
-/// Callers pass one group at a time — the whole group is held in memory, so it
+/// Callers pass one group at a time - the whole group is held in memory, so it
 /// must have gone through [`plan_fetches`] first.
 pub async fn fetch_uids(session: &mut ImapSession, uids: &[u32]) -> Result<Vec<RawMessage>> {
     if uids.is_empty() {
@@ -439,7 +439,7 @@ where
             // CLAIMS. One that under-reports, or reports nothing at all, must
             // not be able to push an unbounded body down to the parser.
             if body.len() > MAX_MESSAGE_BYTES {
-                tracing::warn!(uid, size = body.len(), "Message IMAP hors limite de taille — ignoré");
+                tracing::warn!(uid, size = body.len(), "Message IMAP hors limite de taille - ignoré");
                 return None;
             }
             Some(RawMessage { uid, body: body.to_vec(), seen, flagged })

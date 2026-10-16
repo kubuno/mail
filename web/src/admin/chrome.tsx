@@ -11,7 +11,7 @@ import { Button, Tooltip } from '@ui'
 import type { Verdict } from './api'
 
 /** A titled block, matching the core admin `Card`. The title is 14px bold, not
- *  small caps — the shell's rule for every section heading. */
+ *  small caps - the shell's rule for every section heading. */
 export function Section({ icon, title, description, actions, children }: {
   icon:         ReactNode
   title:        string
@@ -53,7 +53,7 @@ export function verdictStyle(verdict: Verdict) {
   return VERDICT_STYLE[verdict] ?? VERDICT_STYLE.unknown
 }
 
-/** The light itself, with its word — colour alone never carries the meaning. */
+/** The light itself, with its word - colour alone never carries the meaning. */
 export function VerdictChip({ verdict }: { verdict: Verdict }) {
   const { t } = useTranslation('mail')
   const style = verdictStyle(verdict)
@@ -61,7 +61,7 @@ export function VerdictChip({ verdict }: { verdict: Verdict }) {
     ok:      t('diag_v_ok',      { defaultValue: 'Conforme' }),
     warn:    t('diag_v_warn',    { defaultValue: 'À surveiller' }),
     fail:    t('diag_v_fail',    { defaultValue: 'À corriger' }),
-    info:    t('diag_v_info',    { defaultValue: 'Publié — à votre appréciation' }),
+    info:    t('diag_v_info',    { defaultValue: 'Publié - à votre appréciation' }),
     unknown: t('diag_v_unknown', { defaultValue: 'Non vérifiable' }),
   }
   return (

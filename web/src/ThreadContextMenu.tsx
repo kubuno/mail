@@ -43,7 +43,7 @@ export default function ThreadContextMenu({
   const unread = thread.unread_count > 0
   const sender = thread.last_sender_email
 
-  // Only offered while the tasks module is installed and publishes its API —
+  // Only offered while the tasks module is installed and publishes its API -
   // modules must never assume a neighbour is there.
   const hasTasks = !!ModuleServiceRegistry.get('tasks', 'createTask')
 
@@ -161,7 +161,7 @@ function LabelPicker({
       </div>
       <div className="max-h-56 overflow-y-auto">
         {matches.length === 0 ? (
-          <div className="px-2 py-2 text-xs text-text-tertiary">—</div>
+          <div className="px-2 py-2 text-xs text-text-tertiary">-</div>
         ) : matches.map(l => (
           <a
             key={l.id}

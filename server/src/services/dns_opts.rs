@@ -1,5 +1,5 @@
-//! One place to build a DNS resolver, so every lookup this module makes —
-//! delivery, message authentication, avatars, the administrator's diagnostic —
+//! One place to build a DNS resolver, so every lookup this module makes -
+//! delivery, message authentication, avatars, the administrator's diagnostic -
 //! behaves the same way.
 //!
 //! ── Why this exists: truncation must fall back to TCP ────────────────────────
@@ -8,13 +8,13 @@
 //! at a domain's apex (which SPF reads) and a DKIM public key are routinely
 //! larger than the EDNS payload a resolver advertises.
 //!
-//! hickory 0.26 does retry over TCP — but only while it is querying ONE server
+//! hickory 0.26 does retry over TCP - but only while it is querying ONE server
 //! at a time. Its pool queries `num_concurrent_reqs` servers in parallel
 //! (default 2), and when a second server in the same batch also answers
 //! truncated, the pool returns `Truncated` to the caller instead of retrying:
 //! the truncation arm that re-queues the server is reached only for the first
 //! one, and the second falls through to the "give up" arm. The visible effect
-//! is a large TXT record that simply cannot be read — an SPF `temperror` on
+//! is a large TXT record that simply cannot be read - an SPF `temperror` on
 //! perfectly ordinary mail, or a diagnostic that reports a published record as
 //! missing.
 //!
@@ -43,7 +43,7 @@ pub fn system_resolver() -> Result<TokioResolver, NetError> {
     .build()
 }
 
-/// The system configuration, with that policy applied — for the callers that
+/// The system configuration, with that policy applied - for the callers that
 /// must hand the pair to another library rather than build the resolver here.
 pub fn system_conf() -> Result<(ResolverConfig, ResolverOpts), NetError> {
     let (config, mut opts) = hickory_resolver::system_conf::read_system_conf()?;

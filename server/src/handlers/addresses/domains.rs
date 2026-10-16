@@ -1,26 +1,26 @@
-//! `/admin/domains` — the per-domain view: what a domain holds, and the policy
+//! `/admin/domains` - the per-domain view: what a domain holds, and the policy
 //! it applies to new mailboxes.
 //!
 //! ⚠️ This is NOT where a domain becomes local. **The instance decides**: a
 //! domain is declared in the console and proven by DNS (`core.domains`), and
-//! this module serves the verified ones — plus the `server_domains` stop-gap
+//! this module serves the verified ones - plus the `server_domains` stop-gap
 //! list, for names DNS can never prove (`kubuno.local` on a laboratory machine).
 //! `mail.domain_policies` only holds what a domain may additionally SAY about
 //! itself. Two competing answers to "is this domain ours" is exactly the split
 //! that delivers mail nowhere, and it is the split this view now reports on.
 //!
-//! The overview is therefore a UNION of four sources — the served domains, the
+//! The overview is therefore a UNION of four sources - the served domains, the
 //! domains the instance declares (verified or not), the domains with a policy
-//! row, and the domains that actually hold an object — with `is_served` telling
+//! row, and the domains that actually hold an object - with `is_served` telling
 //! the truth about each. Two fields say *why*:
 //!
-//!   * `source` — `instance` (verified here), `extra` (only in the stop-gap
+//!   * `source` - `instance` (verified here), `extra` (only in the stop-gap
 //!     list, served with no proof behind it), `both`, or `null` when not served.
-//!   * `instance_state` — `verified`, `pending` (declared, DNS record not
+//!   * `instance_state` - `verified`, `pending` (declared, DNS record not
 //!     published yet) or `absent` (the instance has never heard of this name).
 //!
-//! `pending` and `absent` call for opposite advice — publish the record, versus
-//! declare the domain — which is the whole reason both are reported.
+//! `pending` and `absent` call for opposite advice - publish the record, versus
+//! declare the domain - which is the whole reason both are reported.
 
 use axum::{
     extract::{Path, State},
@@ -42,7 +42,7 @@ use crate::{
 #[derive(Debug, Serialize)]
 pub struct DomainView {
     pub domain: String,
-    /// True when this instance accepts mail for the domain — i.e. it is a
+    /// True when this instance accepts mail for the domain - i.e. it is a
     /// verified domain of the instance, or an entry of the stop-gap list.
     pub is_served: bool,
     /// Why it is served: `instance`, `extra`, `both`. `null` when it is not.
@@ -50,7 +50,7 @@ pub struct DomainView {
     /// What the instance's registry says: `verified`, `pending` (declared, DNS
     /// proof missing) or `absent` (never declared).
     pub instance_state: &'static str,
-    /// `primary`, `secondary` or `alias` — only when the instance declares it.
+    /// `primary`, `secondary` or `alias` - only when the instance declares it.
     pub instance_kind: Option<String>,
     /// For an alias, the domain whose addresses it lends its name to.
     pub instance_parent: Option<String>,
@@ -76,7 +76,7 @@ pub struct DomainView {
 #[derive(Debug, Serialize)]
 pub struct DomainsResponse {
     pub items: Vec<DomainView>,
-    /// Everything actually served — the union — so the panel can show it next
+    /// Everything actually served - the union - so the panel can show it next
     /// to the derived view.
     pub served_domains: Vec<String>,
     /// Every domain the instance declares, verified or not, in the console's
@@ -157,7 +157,7 @@ pub async fn list_domains(
             .map_err(db_error("attrape-tout par domaine"))?;
 
     // Union of every source, so a domain that exists only in one of them is
-    // still listed — that is how an inert domain becomes visible. The instance's
+    // still listed - that is how an inert domain becomes visible. The instance's
     // declared-but-unverified domains are in there too: an operator who has just
     // added a domain in the console must see it here, marked `pending`, rather
     // than wonder why the panel ignores it.
@@ -222,7 +222,7 @@ pub async fn list_domains(
 
 /// Creates or replaces the policy of one domain.
 ///
-/// A policy may be written for a domain that is not (or not yet) served — an
+/// A policy may be written for a domain that is not (or not yet) served - an
 /// operator prepares a domain before pointing its MX at us, and refusing that
 /// would make the panel useless during a migration. The response says plainly
 /// whether the domain is served, so nobody mistakes a saved policy for a working
@@ -309,7 +309,7 @@ pub async fn upsert_domain_policy(
     Ok(Json(body))
 }
 
-/// Removes the policy. The domain itself is untouched — it is served or not by
+/// Removes the policy. The domain itself is untouched - it is served or not by
 /// `server_domains`, and its mailboxes, aliases and lists stay exactly as they
 /// are. Only the defaults applied to FUTURE mailboxes go away.
 pub async fn delete_domain_policy(

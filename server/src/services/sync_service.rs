@@ -53,13 +53,13 @@ pub async fn sync_account(db: &DbPool, account: &EmailAccount, crypto: &MailCryp
         .await
         .map_err(|e| anyhow::anyhow!("IMAP connect: {e}"))?;
 
-    // Every mailbox the account owns — the five well-known ones AND the user's
-    // own folders — instead of the four hard-coded names we used to sync.
+    // Every mailbox the account owns - the five well-known ones AND the user's
+    // own folders - instead of the four hard-coded names we used to sync.
     let mailboxes = match imap_service::list_mailboxes(&mut session).await {
         Ok(m) if !m.is_empty() => m,
         Ok(_) => fallback_mailboxes(),
         Err(e) => {
-            tracing::warn!(account_id = %account.id, error = %e, "LIST dossiers échoué — repli sur les dossiers standard");
+            tracing::warn!(account_id = %account.id, error = %e, "LIST dossiers échoué - repli sur les dossiers standard");
             fallback_mailboxes()
         }
     };
@@ -82,7 +82,7 @@ pub async fn sync_account(db: &DbPool, account: &EmailAccount, crypto: &MailCryp
 
     for mb in &ordered {
         if started.elapsed() >= deadline {
-            tracing::info!(account_id = %account.id, "Budget de synchronisation atteint — la suite au prochain passage");
+            tracing::info!(account_id = %account.id, "Budget de synchronisation atteint - la suite au prochain passage");
             break;
         }
         if let Err(e) = sync_folder(db, account, &mut session, mb, mail_cfg, core_cfg, started, deadline).await {
@@ -136,7 +136,7 @@ fn fallback_mailboxes() -> Vec<imap_service::MailboxInfo> {
 /// Two passes over `mail.folder_sync`'s cursors: forward from `uid_high` for
 /// what arrived since last time, then backwards from `uid_low` to bring down
 /// the history. Both walk in batches of `max_fetch_per_sync`, newest batch
-/// first, and every batch commits its own cursor — so a run cut short by the
+/// first, and every batch commits its own cursor - so a run cut short by the
 /// time budget loses nothing and the next one picks up exactly where it
 /// stopped. Repeated runs converge on the whole mailbox being stored, without
 /// any single run holding more than one batch in memory.
@@ -160,7 +160,7 @@ async fn sync_folder(
     // Self-heal: a mailbox first taken for a user folder (server silent on
     // special-use, or its name only readable once decoded) and now recognised
     // as a system one moves its messages over. Only rows still marked 'custom'
-    // are touched — a message the classifier or a filter moved elsewhere keeps
+    // are touched - a message the classifier or a filter moved elsewhere keeps
     // where it was put.
     if folder_name != "custom" {
         match crate::db::query(
@@ -266,7 +266,7 @@ async fn sync_folder(
 /// over `imap_service::MAX_MESSAGE_BYTES` is then skipped without a single byte
 /// of its body crossing the wire, and the rest of the batch is split into
 /// groups small enough to hold in memory at once. Skipping is deliberate and
-/// final — the folder cursor moves past those UIDs — because retrying a message
+/// final - the folder cursor moves past those UIDs - because retrying a message
 /// we will never accept would stall the mailbox forever.
 #[allow(clippy::too_many_arguments)]
 async fn store_batch(
@@ -285,7 +285,7 @@ async fn store_batch(
             // No sizes means no pre-filter, not no limits: the planner then
             // budgets every UID at the worst case and the post-fetch guard in
             // `imap_service` still drops whatever comes back too big.
-            tracing::warn!(folder = imap_folder, error = %e, "RFC822.SIZE indisponible — repli sur le pire cas");
+            tracing::warn!(folder = imap_folder, error = %e, "RFC822.SIZE indisponible - repli sur le pire cas");
             std::collections::HashMap::new()
         }
     };
@@ -293,7 +293,7 @@ async fn store_batch(
     for &(uid, size) in &plan.oversized {
         tracing::warn!(
             uid, size, folder = imap_folder, limit = imap_service::MAX_MESSAGE_BYTES,
-            "Message hors limite de taille — non téléchargé"
+            "Message hors limite de taille - non téléchargé"
         );
     }
 
@@ -382,7 +382,7 @@ async fn save_folder_state(
 /// Ceilings on what ONE ingested message may contribute in attachments.
 ///
 /// Both the IMAP sync and the mailbox importer decode every attachment of a
-/// message into memory before the row is inserted — files can only be written
+/// message into memory before the row is inserted - files can only be written
 /// once the INSERT succeeded, otherwise a losing `ON CONFLICT DO NOTHING`
 /// leaves orphans on disk that every later sync re-creates. That ordering is
 /// worth keeping, so the buffer is bounded instead: without these, a crafted
@@ -404,8 +404,8 @@ fn attachment_fits(kept: usize, kept_bytes: usize, next_len: usize) -> bool {
 
 /// Shared with the migration importer (`services::import_service`): copying a
 /// mailbox in from another provider must go through the very same ingestion
-/// pipeline as a normal sync — parsing, threading, attachments, filters,
-/// spam scoring and the `(account_id, imap_folder, imap_uid)` dedup — so an
+/// pipeline as a normal sync - parsing, threading, attachments, filters,
+/// spam scoring and the `(account_id, imap_folder, imap_uid)` dedup - so an
 /// imported mailbox is indistinguishable from a synced one.
 #[allow(clippy::too_many_arguments)] // one message = envelope + flags + placement
 pub(crate) async fn store_message(
@@ -442,12 +442,12 @@ pub(crate) async fn store_message(
     let message_id  = parsed.message_id().map(str::to_string);
 
     // Sent folder: skip messages we already stored ourselves right after the
-    // SMTP send (services::sent_copy) — the server copy would be a duplicate.
+    // SMTP send (services::sent_copy) - the server copy would be a duplicate.
     if folder_name == "sent" {
         if let Some(mid) = message_id.as_deref().filter(|s| !s.is_empty()) {
             // The stored id may or may not carry its angle brackets: compare the
             // bare form against both spellings (the brackets are stripped in
-            // Rust — `TRIM(BOTH '<>' …)` trims a character SET on PostgreSQL
+            // Rust - `TRIM(BOTH '<>' …)` trims a character SET on PostgreSQL
             // but a whole STRING on MySQL, and SQLite has no such syntax).
             let bare = mid.trim_matches(|c| c == '<' || c == '>').to_string();
             let bracketed = format!("<{bare}>");
@@ -509,7 +509,7 @@ pub(crate) async fn store_message(
         .and_then(|a| a.address())
         .map(str::to_string);
 
-    // "Mailed by": the envelope sender's domain — Return-Path first, then the
+    // "Mailed by": the envelope sender's domain - Return-Path first, then the
     // domain SPF authenticated, and finally the From domain.
     let domain_of = |addr: &str| addr.rsplit('@').next().map(|d| d.trim_end_matches('>').to_string());
     let mailed_by = raw_header("Return-Path")
@@ -642,7 +642,7 @@ pub(crate) async fn store_message(
         tracing::warn!(
             uid, folder = imap_folder, skipped = att_skipped,
             kept = att_files.len(), kept_bytes = att_bytes,
-            "Pièces jointes hors limites — message stocké sans les excédentaires"
+            "Pièces jointes hors limites - message stocké sans les excédentaires"
         );
     }
     let has_attachments = !att_meta.is_empty();
@@ -674,7 +674,7 @@ pub(crate) async fn store_message(
     let category = crate::services::categorize::for_sender(&f_from);
 
     // OpenPGP: an encrypted or signed message must be decrypted / verified AT READ
-    // TIME with the reader's key, but the store never keeps original MIME — so for
+    // TIME with the reader's key, but the store never keeps original MIME - so for
     // PGP messages only we preserve the raw RFC 5322 bytes. NULL for ordinary mail.
     let pgp_raw: Option<&[u8]> =
         crate::services::pgp_mime::looks_like_pgp(raw).then_some(raw);
@@ -731,7 +731,7 @@ pub(crate) async fn store_message(
         crate::services::address_index::upsert(db, account.user_id, &index_entries, 1).await;
     }
 
-    // Write attachment files + flag the thread — only for genuinely new messages.
+    // Write attachment files + flag the thread - only for genuinely new messages.
     if inserted.rows_affected() > 0 && has_attachments {
         if let Err(e) = tokio::fs::create_dir_all(&msg_dir).await {
             tracing::error!(dir = %msg_dir.display(), error = %e, "Création répertoire pièces jointes échouée");
@@ -769,7 +769,7 @@ pub(crate) async fn store_message(
 
     // Autocrypt (Level 1): a message advertises the sender's public key in an
     // `Autocrypt:` header. Learn it passively (source='autocrypt') so we can
-    // encrypt back later — only on a genuinely new message.
+    // encrypt back later - only on a genuinely new message.
     if inserted.rows_affected() > 0 {
         let autocrypt_headers: Vec<String> = parsed
             .headers()
@@ -831,7 +831,7 @@ pub(crate) async fn store_message(
     // Thread roll-up. Counts are RECOMPUTED rather than incremented: backfill
     // stores messages out of order and a filter may already have marked one
     // read, so a running total would drift. The sender, snippet and date only
-    // move when this message really is the newest of the thread — otherwise
+    // move when this message really is the newest of the thread - otherwise
     // downloading a 2019 message would relabel the conversation with it.
     let msg_at = sent_at.unwrap_or_else(Utc::now);
     let newest = crate::db::greatest(db.backend(), &["t.last_message_at", "$6"]);
@@ -888,7 +888,7 @@ pub(crate) async fn store_message(
 
 /// Learn the sender's OpenPGP key from an `Autocrypt:` header (Level 1) and store
 /// it as a correspondent key (source='autocrypt'). Never overwrites a manually
-/// imported or WKD-fetched key — those are higher trust. Per the spec, a message
+/// imported or WKD-fetched key - those are higher trust. Per the spec, a message
 /// carrying more than one Autocrypt header, or whose `addr` does not match the
 /// From address, is ignored.
 ///
@@ -955,7 +955,7 @@ async fn find_or_create_thread(
     sender_email: &str,
 ) -> Result<Uuid> {
     // Graph threading: any stored message whose Message-ID appears in the
-    // References chain (or In-Reply-To) anchors this message to its thread —
+    // References chain (or In-Reply-To) anchors this message to its thread -
     // the most recently active thread wins if several match.
     let mut candidates: Vec<String> = references.to_vec();
     if let Some(r) = in_reply_to {
@@ -981,7 +981,7 @@ async fn find_or_create_thread(
         }
     }
 
-    // Subject fallback — ONLY for actual replies/forwards (Re:/Fwd: prefix).
+    // Subject fallback - ONLY for actual replies/forwards (Re:/Fwd: prefix).
     // A fresh subject with no prefix always starts its own thread; this stops
     // unrelated messages that merely share a subject («Facture», «Bonjour»…)
     // from being merged into one conversation.

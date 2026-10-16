@@ -1,10 +1,10 @@
 /**
- * Alias — an address that is not a place but a redirection.
+ * Alias - an address that is not a place but a redirection.
  *
  * ── The catch-all is the one dangerous object on this page ───────────────────
  * `@domaine` matches everything in a domain that nothing else matched. Before
- * it exists, an address nobody declared is resolved by the OLD mechanism — a
- * mailbox login, then an account's own address — and reaches whoever that
+ * it exists, an address nobody declared is resolved by the OLD mechanism - a
+ * mailbox login, then an account's own address - and reaches whoever that
  * resolves to. The moment a catch-all is created, all of that lands in the
  * catch-all's destinations instead. It is the only operation in this whole
  * panel that redirects mail that was already being delivered, so the form says
@@ -45,7 +45,7 @@ function CatchAllWarning() {
     >
       {t('addr_catchall_warn_body', {
         defaultValue:
-          '« @domaine » capture TOUT ce qui n’est ni une boîte, ni un alias, ni une liste — y compris les adresses qui, jusqu’ici, arrivaient par l’ancien mécanisme de résolution (identifiant de boîte, adresse d’un compte). Ce courrier-là changera de destination dès l’enregistrement. C’est le seul réglage de cette page qui redirige du courrier déjà distribué : déclarez d’abord les adresses qui doivent garder leur destinataire.',
+          '« @domaine » capture TOUT ce qui n’est ni une boîte, ni un alias, ni une liste - y compris les adresses qui, jusqu’ici, arrivaient par l’ancien mécanisme de résolution (identifiant de boîte, adresse d’un compte). Ce courrier-là changera de destination dès l’enregistrement. C’est le seul réglage de cette page qui redirige du courrier déjà distribué : déclarez d’abord les adresses qui doivent garder leur destinataire.',
       })}
     </Callout>
   )
@@ -118,7 +118,7 @@ export default function AliasesTab({ servedDomains }: { servedDomains: string[] 
         })
         : t('addr_al_delete_msg', {
           defaultValue:
-            'L’alias « {{address}} » ne sera plus distribué : le courrier qui y arrive sera refusé. Les messages déjà redirigés restent dans les boîtes de destination — supprimer un alias ne supprime aucun message.',
+            'L’alias « {{address}} » ne sera plus distribué : le courrier qui y arrive sera refusé. Les messages déjà redirigés restent dans les boîtes de destination - supprimer un alias ne supprime aucun message.',
           address: alias.address,
         }),
       variant:      'danger',
@@ -190,7 +190,7 @@ export default function AliasesTab({ servedDomains }: { servedDomains: string[] 
       headerText: t('addr_comment', { defaultValue: 'Commentaire' }),
       defaultHidden: true,
       minWidth: 160,
-      cell: r => <span className="text-text-tertiary">{r.comment ?? '—'}</span>,
+      cell: r => <span className="text-text-tertiary">{r.comment ?? '-'}</span>,
     },
   ]
 
@@ -512,7 +512,7 @@ function AliasRecord({ alias, domains, onBack, onDelete }: {
           title={t('addr_remote_title', { defaultValue: 'Renvoi vers l’extérieur' })}>
           {t('addr_remote_body', {
             defaultValue:
-              '{{list}} — hors des domaines de cette instance. Ce renvoi n’aboutit que si l’envoi sortant est activé, et le message reste soumis au SPF/DMARC du domaine d’origine.',
+              '{{list}} - hors des domaines de cette instance. Ce renvoi n’aboutit que si l’envoi sortant est activé, et le message reste soumis au SPF/DMARC du domaine d’origine.',
             list: alias.remote_destinations.join(', '),
           })}
         </Callout>

@@ -16,7 +16,7 @@ use std::time::Duration;
 use super::{Check, DkimTarget, Verdict};
 
 /// Builds a resolver from the system configuration. `None` when even that
-/// fails — reported once, as `Unknown`, rather than per check.
+/// fails - reported once, as `Unknown`, rather than per check.
 pub fn resolver() -> Option<TokioResolver> {
     match crate::services::dns_opts::system_resolver() {
         Ok(resolver) => Some(resolver),
@@ -34,13 +34,13 @@ pub fn resolver() -> Option<TokioResolver> {
 const FRESH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Public recursive resolvers the diagnostic queries instead of the machine's
-/// own — Cloudflare, Google and Quad9, several for redundancy so an unreachable
+/// own - Cloudflare, Google and Quad9, several for redundancy so an unreachable
 /// one just makes the pool try the next.
 ///
 /// Two reasons not to go to the domain's *own* authoritative servers directly:
 /// many hosts (OVH among them) answer `REFUSED` to queries that do not come
 /// through a recursive resolver, and a domain's in-zone NS records can be stale
-/// or wrong while the parent delegation is correct — a recursive resolver
+/// or wrong while the parent delegation is correct - a recursive resolver
 /// follows the real delegation, an ad-hoc authoritative query does not.
 const PUBLIC_RESOLVERS: [IpAddr; 5] = [
     IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), // Cloudflare
@@ -54,7 +54,7 @@ const PUBLIC_RESOLVERS: [IpAddr; 5] = [
 ///
 /// The point of a diagnostic is to show what is published *now*. The system
 /// resolver (systemd-resolved, a corporate forwarder…) hands back whatever it
-/// cached under the record's TTL — often an hour or more — so an operator who
+/// cached under the record's TTL - often an hour or more - so an operator who
 /// has just repointed their MX keeps seeing the old one long after the change is
 /// live. Querying a public recursive resolver, our positive cache disabled, is
 /// always reachable and reflects the zone as it currently stands.
@@ -64,7 +64,7 @@ const PUBLIC_RESOLVERS: [IpAddr; 5] = [
 /// an `Unknown`, never a hard `Fail`.
 pub fn fresh_resolver() -> Option<TokioResolver> {
     // Both UDP and TCP per IP, so a truncated large record (a DKIM key) retries
-    // over TCP — and `udp_and_tcp()` marks the group as trusted for negative
+    // over TCP - and `udp_and_tcp()` marks the group as trusted for negative
     // answers, which is what we want from a recursive resolver. `server_name`
     // and `path` are only read by the TLS/HTTPS transports, which we do not use.
     let group = ServerGroup { ips: &PUBLIC_RESOLVERS, server_name: "", path: "" };
@@ -72,11 +72,11 @@ pub fn fresh_resolver() -> Option<TokioResolver> {
     let mut builder = Resolver::builder_with_config(config, TokioRuntimeProvider::default());
     {
         let opts = builder.options_mut();
-        opts.cache_size = 0; // no positive cache — always the live record
+        opts.cache_size = 0; // no positive cache - always the live record
         opts.timeout = FRESH_TIMEOUT;
         opts.use_hosts_file = ResolveHosts::Never; // /etc/hosts must not shadow a zone
         // One server at a time, so a truncated answer really is retried over
-        // TCP — see `services::dns_opts`.
+        // TCP - see `services::dns_opts`.
         crate::services::dns_opts::harden(opts);
     }
     builder.build().ok()
@@ -91,7 +91,7 @@ pub fn resolver_for<'a, R>(fresh: &'a Option<R>, system: &'a R) -> &'a R {
 /// The outcome of one lookup, with absence and unavailability kept apart.
 pub enum Answer<T> {
     Records(Vec<T>),
-    /// NXDOMAIN or NODATA — the DNS answered, and the answer is "nothing".
+    /// NXDOMAIN or NODATA - the DNS answered, and the answer is "nothing".
     Absent,
     /// SERVFAIL, timeout, refused… The DNS did not answer.
     Unavailable,
@@ -120,12 +120,12 @@ pub trait IsNoRecords {
 }
 
 impl IsNoRecords for hickory_resolver::net::NetError {
-    /// True only for a genuine *absence* — NXDOMAIN (the name does not exist) or
+    /// True only for a genuine *absence* - NXDOMAIN (the name does not exist) or
     /// NODATA (it exists with no record of this type).
     ///
     /// hickory folds `REFUSED` and `SERVFAIL` into the same `NoRecordsFound`
     /// variant as a real absence, so `is_no_records_found()` on its own would
-    /// read a server that refused or failed to answer as "no such record" — and
+    /// read a server that refused or failed to answer as "no such record" - and
     /// a refusing name server (OVH answers `REFUSED` to direct queries) would
     /// then show up as an empty, failing check instead of an honest `Unknown`.
     /// Only NXDOMAIN and NODATA are absence; every other response code means the
@@ -144,7 +144,7 @@ impl IsNoRecords for hickory_resolver::net::NetError {
     }
 }
 
-/// TXT records of `name`, each record's character-strings concatenated — a long
+/// TXT records of `name`, each record's character-strings concatenated - a long
 /// SPF or DKIM record is split into 255-byte chunks on the wire and only means
 /// anything joined back together.
 pub async fn txt(resolver: &TokioResolver, name: &str) -> Answer<String> {
@@ -174,7 +174,7 @@ async fn addresses(resolver: &TokioResolver, name: &str) -> Answer<IpAddr> {
     Answer::from_result(resolver.lookup_ip(name).await, |lookup| lookup.iter().collect())
 }
 
-/// The first IPv4 address `name` resolves to — used to fill the A record and the
+/// The first IPv4 address `name` resolves to - used to fill the A record and the
 /// SPF `ip4:` mechanism with a concrete address. `None` when the name has no A
 /// record or the resolver did not answer: the generated records then fall back
 /// to a plain-text placeholder rather than inventing an address.
@@ -242,7 +242,7 @@ pub async fn check_mx(resolver: &TokioResolver, domain: &str, hostname: &str) ->
                     format!("Le courrier de ce domaine est dirigé vers {hostname}."))
                     .expected(expected).found(found)
             } else {
-                // Legitimate (a relay in front), so not a failure — but it is
+                // Legitimate (a relay in front), so not a failure - but it is
                 // the first thing to look at when mail never arrives.
                 Check::new("mx", domain, Verdict::Info,
                     format!("Les MX publiés ne citent pas {hostname} : le courrier de ce domaine \
@@ -275,7 +275,7 @@ pub async fn check_dkim(resolver: &TokioResolver, key: &DkimTarget) -> Check {
         }
         Answer::Absent => {
             // A key that is not the signing key is *supposed* to be unpublished
-            // at first — that is the first step of a rotation, not a fault.
+            // at first - that is the first step of a rotation, not a fault.
             let (verdict, msg) = if key.is_active {
                 (Verdict::Fail, "Aucun enregistrement publié pour la clé qui signe ce domaine : \
                                  les signatures sont invérifiables et le courrier échoue DMARC.")
@@ -318,7 +318,7 @@ pub async fn check_dkim(resolver: &TokioResolver, key: &DkimTarget) -> Check {
 ///
 /// `p=none` is the floor Gmail, Yahoo and Microsoft impose on bulk senders: it
 /// asks nothing of receivers, so it is reported as published fact rather than
-/// as a green — there is no "correct" policy this page could assert.
+/// as a green - there is no "correct" policy this page could assert.
 pub async fn check_dmarc(resolver: &TokioResolver, domain: &str) -> Check {
     let name = format!("_dmarc.{domain}");
     let expected = format!("{name}.  IN TXT  \"v=DMARC1; p=none; rua=mailto:dmarc@{domain}\"");
@@ -378,7 +378,7 @@ pub async fn check_dmarc(resolver: &TokioResolver, domain: &str) -> Check {
 ///
 /// Gmail and Yahoo require this of EVERY sender, not just bulk ones: the IP
 /// must have a PTR, and the name it gives must resolve back to that same IP.
-/// The IP checked is the one the announced hostname resolves to — that is the
+/// The IP checked is the one the announced hostname resolves to - that is the
 /// identity this server presents, and the only one it can know from the inside.
 pub async fn check_ptr(resolver: &TokioResolver, hostname: &str) -> Check {
     let expected = format!(
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn falls_back_to_the_system_resolver_when_no_fresh_one() {
         // The fallback the caller relies on: when no fresh resolver could be
-        // built, the system one is used — so the report still runs rather than
+        // built, the system one is used - so the report still runs rather than
         // failing hard. Checked on a stand-in type, the choice being
         // resolver-agnostic.
         let system = 1u8;
@@ -523,7 +523,7 @@ mod tests {
     #[tokio::test]
     async fn record_extraction_reads_the_answer_section() {
         // hickory 0.26 hands back raw records instead of typed lookups, so the
-        // rdata filtering is ours now — check it against a name whose MX set is
+        // rdata filtering is ours now - check it against a name whose MX set is
         // stable. Network-dependent: asserts only when an answer came.
         let Some(resolver) = fresh_resolver() else {
             panic!("fresh resolver should always build");
@@ -548,7 +548,7 @@ mod tests {
     #[tokio::test]
     async fn a_fresh_resolver_is_built_and_answers_from_public_recursors() {
         // Building must succeed, and a query must resolve against the public
-        // recursors with our cache off — the whole mechanism the diagnostic
+        // recursors with our cache off - the whole mechanism the diagnostic
         // relies on to bypass the machine's stale cache. Network-dependent, so it
         // asserts only that the resolver is usable, not any specific record.
         let Some(resolver) = fresh_resolver() else {

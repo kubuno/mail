@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Mail · Search — converted from SearchScreen.kt. A search header (back + field) and a results list (SearchRow:
+  Mail · Search - converted from SearchScreen.kt. A search header (back + field) and a results list (SearchRow:
   avatar + sender + subject + snippet). Shared vocabulary, light theme, logical px. Root is a Panel.
 -->
 <Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"

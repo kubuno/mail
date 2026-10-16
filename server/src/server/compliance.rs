@@ -3,7 +3,7 @@
 //! must clear before it is queued.
 //!
 //! Sender authentication (`authres`) answers "is this really from whom it
-//! claims?". It says nothing about what the message *carries* — an executable
+//! claims?". It says nothing about what the message *carries* - an executable
 //! renamed `facture.exe`, a password-protected archive no scanner can open, a
 //! phrase an organisation may not let out. That is this module's question, and
 //! it is asked in both directions:
@@ -31,7 +31,7 @@ use mail_parser::{MessageParser, MimeHeaders};
 use super::config::{PolicyAction, ServerConfig};
 
 /// Characters kept when a filename or an expression is quoted back in a log
-/// line or an SMTP reply. Anything else — control characters above all — would
+/// line or an SMTP reply. Anything else - control characters above all - would
 /// let a crafted attachment name inject a second reply line.
 const MAX_QUOTED: usize = 80;
 
@@ -140,7 +140,7 @@ pub fn extension_of(name: &str) -> Option<String> {
 /// True when the bytes are a ZIP archive whose first entry is encrypted.
 ///
 /// Bit 0 of the local file header's general-purpose flag says so (APPNOTE
-/// §4.4.4). A password-protected archive cannot be scanned by anything — which
+/// §4.4.4). A password-protected archive cannot be scanned by anything - which
 /// is exactly why malware travels in one.
 pub fn is_encrypted_archive(bytes: &[u8]) -> bool {
     if bytes.len() < 8 || &bytes[..4] != b"PK\x03\x04" {
@@ -151,7 +151,7 @@ pub fn is_encrypted_archive(bytes: &[u8]) -> bool {
 }
 
 /// Makes a filename or an expression safe to put in a log line or an SMTP
-/// reply: control characters — CR and LF above all — become spaces, and the
+/// reply: control characters - CR and LF above all - become spaces, and the
 /// result is bounded. Without this, an attachment named with a bare CRLF would
 /// inject a second SMTP reply line.
 fn quotable(raw: &str) -> String {

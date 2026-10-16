@@ -37,7 +37,7 @@ pub async fn send_message(
     // Account delegation: a delegate may send FROM the grantor's mailbox. The
     // request then scopes to the grantor (account lookup + Sent copy), while the
     // delegate's OWN address is stamped as `Sender:` (RFC 5322) so the recipient
-    // sees who materially sent it — the `From:` stays the grantor. Read access is
+    // sees who materially sent it - the `From:` stays the grantor. Read access is
     // not enough: `can_send` must be set on the accepted delegation. Resolved
     // BEFORE claiming an idempotency key so an unauthorized delegate is refused
     // without side effects.
@@ -89,8 +89,8 @@ pub async fn send_message(
             == 1;
 
         if !claimed {
-            // The key is already held: replay the memorised response, or — when
-            // the first send is still in flight (no response yet) — refuse,
+            // The key is already held: replay the memorised response, or - when
+            // the first send is still in flight (no response yet) - refuse,
             // rather than risk a second delivery.
             let stored: Option<serde_json::Value> =
                 crate::db::query_scalar::<Option<serde_json::Value>>(
@@ -198,7 +198,7 @@ pub(crate) async fn send_message_inner(
     .await?
     .ok_or_else(|| MailError::NotFound(format!("Compte {}", dto.account_id)))?;
 
-    // The module's own hardened policy, the one the reader applies too — not
+    // The module's own hardened policy, the one the reader applies too - not
     // bare `ammonia::clean`, which strips every `style` attribute and so sent
     // each message, invitations included, stripped of its formatting.
     let body_html = crate::services::html_sanitize::sanitize_email_html(&dto.body_html);
@@ -262,7 +262,7 @@ pub(crate) async fn send_message_inner(
             .map_err(|e| MailError::Smtp(e.to_string()))?
     };
 
-    // Local Sent copy — the message is already sent, so a storage failure must
+    // Local Sent copy - the message is already sent, so a storage failure must
     // not fail the request; log it instead. On success we get the thread the copy
     // was filed under, so the composer's labels can be attached to it.
     match crate::services::sent_copy::store_sent_copy(
@@ -287,7 +287,7 @@ pub(crate) async fn send_message_inner(
             .await;
     }
 
-    // Feed the recipient-autocomplete index — people the user WRITES TO rank
+    // Feed the recipient-autocomplete index - people the user WRITES TO rank
     // highest (weight 3 vs 1 for synced mail).
     let mut sent_to: Vec<(String, Option<String>)> = Vec::new();
     for a in dto.to_addresses.iter()
@@ -304,7 +304,7 @@ pub(crate) async fn send_message_inner(
 /// Attach the composer-picked labels to the Sent copy's thread. Only labels the
 /// user actually OWNS are applied (filtered in SQL by `user_id`), so a foreign
 /// or stale id is silently dropped rather than turning a successful send into an
-/// error. Best-effort: a labelling failure only gets logged — the mail already
+/// error. Best-effort: a labelling failure only gets logged - the mail already
 /// left. Uses `mail.thread_labels`, the same link table every other labelling
 /// path writes to (handlers::labels, filters, sync).
 async fn apply_sent_labels(db: &kubuno_db::DbPool, user_id: Uuid, thread_id: Uuid, requested: &[Uuid]) {

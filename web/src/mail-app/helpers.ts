@@ -20,7 +20,7 @@ export function formatDate(s: string, t: TFunction, lang: string) {
 }
 
 // Absolute date plus the relative hint Gmail shows: "3 août 2026 11:07 (il y a 3 jours)".
-/** "8 août 2026 à 18h08" — the long, spelled-out form we prefer everywhere a
+/** "8 août 2026 à 18h08" - the long, spelled-out form we prefer everywhere a
  *  date is shown to a reader. Other locales keep their usual separator. */
 export function longDateTime(d: Date, lang: string): string {
   const date = d.toLocaleDateString(lang, { day: 'numeric', month: 'long', year: 'numeric' })
@@ -82,7 +82,7 @@ export function plainKey(e: KeyboardEvent): boolean {
 /** The people a "reply all" would add on top of a plain reply: the original
  *  recipients (To + Cc) minus ourselves and minus the sender, who is already
  *  the reply's own recipient. Empty means "reply all" would send the exact same
- *  message as "reply" — so the action has nothing to offer and is hidden. */
+ *  message as "reply" - so the action has nothing to offer and is hidden. */
 export function replyAllExtras(
   message: { from_email: string; to_addresses?: { email: string; name?: string }[] | null; cc_addresses?: { email: string; name?: string }[] | null },
   myAddresses: string[],

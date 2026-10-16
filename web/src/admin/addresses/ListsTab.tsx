@@ -1,9 +1,9 @@
 /**
- * Listes de diffusion — an address that expands to a membership.
+ * Listes de diffusion - an address that expands to a membership.
  *
  * ── Why the posting policy is the centre of this screen ──────────────────────
  * A list is an alias with a membership plus ONE question an alias never asks:
- * who may post to it. Getting that wrong is not a cosmetic mistake — an
+ * who may post to it. Getting that wrong is not a cosmetic mistake - an
  * "ouverte" policy on an internal list turns the instance into a spam relay
  * with a ready-made recipient list, and the abuse arrives within days of the
  * address being scraped. So the four policies are radio buttons with a sentence
@@ -485,7 +485,7 @@ function ListRecord({ list, domains, onBack, onDelete }: {
       setError(null)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 2500)
-      // Server truth first, refetch second — see MailboxRecord.
+      // Server truth first, refetch second - see MailboxRecord.
       const next = splitAddress(updated.address)
       setLocal(next.local); setDomain(next.domain)
       setName(updated.name)

@@ -3,8 +3,8 @@
 //! The mail module was written against `sqlx::query(...).bind(..).fetch_one(&pool)`
 //! with a `PgPool`. `kubuno-db` executes through a run-time engine enum
 //! ([`DbPool`] / [`DbTx`]) that takes a finished SQL string plus a `Vec<DbValue>`.
-//! This module keeps the familiar builder shape — `db::query`, `db::query_as`,
-//! `db::query_scalar`, `.bind()`, `.execute()`, `.fetch_one()` … — and hands the
+//! This module keeps the familiar builder shape - `db::query`, `db::query_as`,
+//! `db::query_scalar`, `.bind()`, `.execute()`, `.fetch_one()` … - and hands the
 //! statement to the engine-agnostic executor, so the ~470 statements of the
 //! module read the same as before while running on PostgreSQL, MySQL/MariaDB
 //! and SQLite.
@@ -15,7 +15,7 @@
 //!   reused or out of order (`?` is positional on MySQL/SQLite). Statements here
 //!   may reuse `$1`: the bridge rewrites the text to strictly increasing `$n` and
 //!   duplicates the bound values to match, outside string literals, quoted
-//!   identifiers and comments. The SQL is otherwise passed through unchanged —
+//!   identifiers and comments. The SQL is otherwise passed through unchanged -
 //!   this is not a dialect translator; dialect differences are spelled with
 //!   `kubuno_db::dialect` at the call site.
 //! * **One terminal for pool and transaction.** A terminal accepts `&DbPool` or
@@ -447,11 +447,11 @@ use kubuno_db::Backend;
 /// bound pattern `$n` (the caller adds the `%` wildcards).
 ///
 /// * PostgreSQL: `unaccent(expr) ILIKE unaccent($n)` (the core installs the
-///   `unaccent` extension) — unchanged from the PostgreSQL-only code.
-/// * MySQL/MariaDB: `expr COLLATE utf8mb4_unicode_ci LIKE $n` — the pool's
+///   `unaccent` extension) - unchanged from the PostgreSQL-only code.
+/// * MySQL/MariaDB: `expr COLLATE utf8mb4_unicode_ci LIKE $n` - the pool's
 ///   default collation is binary, so the case/accent-insensitive Unicode
 ///   collation is named explicitly; it exists on both servers.
-/// * SQLite: `expr LIKE $n` — SQLite's `LIKE` folds ASCII case only; accents
+/// * SQLite: `expr LIKE $n` - SQLite's `LIKE` folds ASCII case only; accents
 ///   are not folded (no `unaccent` there). A documented limitation.
 pub fn ci_like(backend: Backend, expr: &str, n: usize) -> String {
     match backend {
@@ -461,7 +461,7 @@ pub fn ci_like(backend: Backend, expr: &str, n: usize) -> String {
     }
 }
 
-/// Case-insensitive (not accent-insensitive) pattern match — PostgreSQL's
+/// Case-insensitive (not accent-insensitive) pattern match - PostgreSQL's
 /// `ILIKE` without `unaccent`.
 pub fn ilike(backend: Backend, expr: &str, n: usize) -> String {
     match backend {
@@ -498,7 +498,7 @@ pub fn least(backend: Backend, parts: &[&str]) -> String {
 
 /// `FOR UPDATE SKIP LOCKED` for a queue claim. PostgreSQL and MySQL 8 /
 /// MariaDB 10.6+ have it; SQLite has neither row locks nor the clause, and needs
-/// none — its writers are serialised by the pool's single-writer gate, and the
+/// none - its writers are serialised by the pool's single-writer gate, and the
 /// claim runs inside a write transaction.
 pub fn for_update_skip_locked(backend: Backend) -> &'static str {
     match backend {

@@ -7,7 +7,7 @@ import {
 import { MAIL_FONTS, MAIL_SIZES, ToolBtn } from './parts'
 
 // The rich-text formatting toolbar (undo/redo, font family/size, B/I/U/S,
-// alignment dropdown, lists, indent). Extracted verbatim from ComposeWindow —
+// alignment dropdown, lists, indent). Extracted verbatim from ComposeWindow -
 // behaviour, classes and positioning are unchanged.
 export default function ComposeFormatToolbar({
   exec, fontName, setFontName, fontSz, setFontSz, applyFontSizePx, focusBody, setAlignMenu,
@@ -41,7 +41,7 @@ export default function ComposeFormatToolbar({
       <button
         onMouseDown={e => {
           e.preventDefault()
-          // Capture the rect BEFORE the state updater — e.currentTarget is null
+          // Capture the rect BEFORE the state updater - e.currentTarget is null
           // once React runs the updater callback.
           const r = e.currentTarget.getBoundingClientRect()
           setAlignMenu(p => (p ? null : { top: r.bottom + 4, left: r.left }))

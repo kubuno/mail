@@ -5,7 +5,7 @@
 //! SMTP client (`src/smtp/`): MX preference ordering with randomisation at equal
 //! preference, NULL-MX (RFC 7505) and implicit-MX (RFC 5321) handling, host/IP
 //! fallback, a configurable STARTTLS security level (`smtp_tls_security_level`),
-//! and — the central rule of Postfix's `smtp_trouble.c` — mapping the *first
+//! and - the central rule of Postfix's `smtp_trouble.c` - mapping the *first
 //! digit* of the server's reply to a permanent (5xx) or temporary (4xx) fate,
 //! with every network/DNS fault treated as temporary and never bounced.
 
@@ -46,7 +46,7 @@ const SMTP_PORT: u16 = 25;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Per-command / banner read budget.
 const CMD_TIMEOUT: Duration = Duration::from_secs(120);
-/// Budget for the reply to the final `.` — the server may fsync the whole
+/// Budget for the reply to the final `.` - the server may fsync the whole
 /// message before answering (Postfix `smtp_data_done_timeout` = 600s).
 const DATA_DONE_TIMEOUT: Duration = Duration::from_secs(600);
 /// TLS handshake budget for the opportunistic STARTTLS upgrade.
@@ -58,7 +58,7 @@ const MAX_LINE: usize = 8 * 1024;
 const MAX_REPLY_LINES: usize = 128;
 /// Reply code reported when the configured security level demands TLS and it
 /// could not be obtained. RFC 3207 gives 454 to "TLS not available due to
-/// temporary reason"; Postfix reports the same condition as an enhanced 4.7.x —
+/// temporary reason"; Postfix reports the same condition as an enhanced 4.7.x -
 /// temporary in both cases, so the message is retried, never sent in the clear.
 const TLS_REQUIRED_CODE: u16 = 454;
 
@@ -78,7 +78,7 @@ impl<'a> Policy<'a> {
     /// list on top of the general level.
     ///
     /// The list can only make a delivery STRICTER (`max`): a domain named there
-    /// is one the operator refuses to write to in the clear — the general level
+    /// is one the operator refuses to write to in the clear - the general level
     /// must never be able to soften that, and a level already stricter than
     /// `Encrypt` (i.e. `Verify`) must not be weakened either.
     pub fn for_domain(cfg: &'a ServerConfig, domain: &str) -> Self {
@@ -145,7 +145,7 @@ pub async fn deliver(
     let targets = match resolve(&resolver, domain).await {
         Resolved::NullMx => {
             // RFC 7505: a single "." MX means the domain refuses all mail. This
-            // is permanent — there is no fallback to A/AAAA.
+            // is permanent - there is no fallback to A/AAAA.
             tracing::info!("livraison {domain}: null MX (RFC 7505), rejet permanent");
             return DeliveryOutcome::Bounced {
                 code: 556,
@@ -160,7 +160,7 @@ pub async fn deliver(
         Resolved::NoTarget => {
             // The domain definitively resolves to nothing (NXDOMAIN / no A/AAAA
             // at all, with no transient error observed). Like Postfix's "Host or
-            // domain name not found", this is a permanent condition — distinct
+            // domain name not found", this is a permanent condition - distinct
             // from a SERVFAIL, which is handled as `Temporary` above.
             tracing::info!("livraison {domain}: aucun serveur de messagerie (introuvable)");
             return DeliveryOutcome::Bounced {
@@ -174,7 +174,7 @@ pub async fn deliver(
     // 3. Build the TLS connector the security level calls for. `None` at a level
     //    that mandates TLS means the crypto stack itself failed to start, which
     //    Postfix reports as "TLS is required, but our TLS engine is unavailable"
-    //    (4.7.5) — a deferral, never a cleartext delivery.
+    //    (4.7.5) - a deferral, never a cleartext delivery.
     let connector = tls_connector(del.tls);
     if connector.is_none() && del.tls.requires_tls() {
         tracing::error!("livraison {domain}: moteur TLS indisponible alors que le chiffrement est obligatoire");
@@ -184,8 +184,8 @@ pub async fn deliver(
         };
     }
 
-    // 4. Try each address in order. A TCP failure — or a host that cannot
-    //    satisfy the TLS policy — moves to the next candidate, exactly as
+    // 4. Try each address in order. A TCP failure - or a host that cannot
+    //    satisfy the TLS policy - moves to the next candidate, exactly as
     //    Postfix's `smtp_site_fail` does; once a usable session is open, its
     //    outcome is final for this attempt.
     let mut last_failure: Option<DeliveryOutcome> = None;
@@ -221,7 +221,7 @@ enum Resolved {
     /// Ordered `(address, host)` pairs to try. `host` is the MX (or the domain
     /// itself for implicit MX) and is used as the TLS server name and in logs.
     Targets(Vec<(IpAddr, String)>),
-    /// A single "." MX — the domain refuses mail (RFC 7505). Permanent.
+    /// A single "." MX - the domain refuses mail (RFC 7505). Permanent.
     NullMx,
     /// The domain definitively has no address (NXDOMAIN / NODATA on both MX and
     /// A/AAAA), with no transient error along the way. Permanent.
@@ -262,7 +262,7 @@ async fn resolve(resolver: &TokioResolver, domain: &str) -> Resolved {
             }
             if records.is_empty() {
                 // MX RRset present but unusable (or empty answer): fall back to
-                // the implicit MX — the domain's own A/AAAA.
+                // the implicit MX - the domain's own A/AAAA.
                 vec![domain.to_string()]
             } else {
                 order_by_preference(records)
@@ -308,7 +308,7 @@ async fn resolve(resolver: &TokioResolver, domain: &str) -> Resolved {
     // Delivering over IPv6 requires its own SPF `ip6:` mechanism AND a matching
     // IPv6 PTR; a host that publishes AAAA but neither (the common self-hosted
     // case) hits SPF softfail and a generic reverse name, which lands the mail in
-    // spam — Gmail is especially strict on IPv6. IPv4 therefore stays the default
+    // spam - Gmail is especially strict on IPv6. IPv4 therefore stays the default
     // path; IPv6 is kept only as a fallback for destinations that have nothing else.
     let (mut ordered, v6): (Vec<_>, Vec<_>) = targets.into_iter().partition(|(ip, _)| ip.is_ipv4());
     ordered.extend(v6);
@@ -344,7 +344,7 @@ fn order_by_preference(mut records: Vec<(u16, String)>) -> Vec<String> {
 enum Attempt {
     /// A verdict for this delivery. Stop here.
     Done(DeliveryOutcome),
-    /// This host is unusable — no TCP session, or it cannot satisfy the TLS
+    /// This host is unusable - no TCP session, or it cannot satisfy the TLS
     /// policy. Try the next candidate; the carried outcome (if any) is what to
     /// report should no candidate work.
     TryNext(Option<DeliveryOutcome>),
@@ -385,7 +385,7 @@ async fn attempt(
             Err(e) => return Attempt::Done(io_deferred("bannière", &e)),
         };
         if banner.class() != 2 {
-            tracing::warn!("{host}: accueil non-2xx ({}) — différé", banner.code);
+            tracing::warn!("{host}: accueil non-2xx ({}) - différé", banner.code);
             return Attempt::Done(DeliveryOutcome::Deferred {
                 code: 451,
                 reason: format!("Accueil du serveur refusé: {}", banner.summary()),
@@ -399,7 +399,7 @@ async fn attempt(
         };
 
         // A connector is present unless the level is `none` or this attempt has
-        // already downgraded — both of which mean cleartext is permitted.
+        // already downgraded - both of which mean cleartext is permitted.
         let Some(conn) = connector.filter(|_| allow_tls) else {
             log_cleartext(host, del.tls);
             return Attempt::Done(finish(&mut plain, del).await);
@@ -415,13 +415,13 @@ async fn attempt(
         }
 
         // The name we authenticate against and send as SNI is the MX host we are
-        // actually talking to — not the recipient's domain, and not a placeholder.
+        // actually talking to - not the recipient's domain, and not a placeholder.
         let Some(server_name) = server_name_of(host) else {
             let detail = "nom d'hôte MX inutilisable comme nom de serveur TLS";
             if let Some(outcome) = tls_unavailable(del.tls, host, detail) {
                 return Attempt::TryNext(Some(outcome));
             }
-            tracing::warn!("{host}: {detail} — livraison en clair");
+            tracing::warn!("{host}: {detail} - livraison en clair");
             log_cleartext(host, del.tls);
             return Attempt::Done(finish(&mut plain, del).await);
         };
@@ -429,9 +429,9 @@ async fn attempt(
         match send_cmd(&mut plain, "STARTTLS", CMD_TIMEOUT).await {
             Ok(reply) if reply.class() == 2 => {
                 // The server agreed. Anything the peer pipelined before the
-                // handshake would be smuggled cleartext — refuse it.
+                // handshake would be smuggled cleartext - refuse it.
                 if !plain.buffer().is_empty() {
-                    tracing::warn!("{host}: données pipelinées avant TLS — différé");
+                    tracing::warn!("{host}: données pipelinées avant TLS - différé");
                     return Attempt::Done(DeliveryOutcome::Deferred {
                         code: 451,
                         reason: "Données SMTP inattendues avant TLS".to_string(),
@@ -459,7 +459,7 @@ async fn attempt(
                         // Opportunistic TLS encrypts without authenticating, so a
                         // handshake failure is not fatal: reconnect and deliver in
                         // cleartext (Postfix level `may`).
-                        tracing::warn!("{host}: {detail} — repli en clair");
+                        tracing::warn!("{host}: {detail} - repli en clair");
                         allow_tls = false;
                         continue;
                     }
@@ -471,7 +471,7 @@ async fn attempt(
                     return Attempt::TryNext(Some(outcome));
                 }
                 // STARTTLS refused (4xx/5xx): keep the cleartext session.
-                tracing::info!("{host}: {detail} — livraison en clair");
+                tracing::info!("{host}: {detail} - livraison en clair");
                 log_cleartext(host, del.tls);
                 return Attempt::Done(finish(&mut plain, del).await);
             }
@@ -481,7 +481,7 @@ async fn attempt(
 }
 
 /// Performs the client-side TLS handshake toward `server_name`, which is both
-/// the SNI sent and — from security level `verify` up — the name the peer's
+/// the SNI sent and - from security level `verify` up - the name the peer's
 /// certificate must match.
 async fn handshake(
     connector: &TlsConnector,
@@ -530,7 +530,7 @@ async fn finish<S>(stream: &mut S, del: &Delivery<'_>) -> DeliveryOutcome
 where
     S: AsyncBufRead + AsyncWrite + Unpin,
 {
-    // MAIL FROM:<sender> — empty sender is the null return path `<>`.
+    // MAIL FROM:<sender> - empty sender is the null return path `<>`.
     let mail_from = format!("MAIL FROM:<{}>", del.envelope_from);
     match send_cmd(stream, &mail_from, CMD_TIMEOUT).await {
         Ok(reply) if reply.class() == 2 => {}
@@ -552,7 +552,7 @@ where
         Err(e) => return io_deferred("RCPT TO", &e),
     }
 
-    // DATA — the server answers 354 to invite the message.
+    // DATA - the server answers 354 to invite the message.
     match send_cmd(stream, "DATA", CMD_TIMEOUT).await {
         Ok(reply) if reply.class() == 3 => {}
         Ok(reply) => {
@@ -577,7 +577,7 @@ where
     outcome
 }
 
-/// Sends QUIT and drains its reply, ignoring all errors — the transaction is
+/// Sends QUIT and drains its reply, ignoring all errors - the transaction is
 /// already decided by the time we get here.
 async fn best_effort_quit<S>(stream: &mut S)
 where
@@ -614,7 +614,7 @@ impl SmtpReply {
     }
 }
 
-/// Maps a reply code's first digit onto the delivery outcome — the core of
+/// Maps a reply code's first digit onto the delivery outcome - the core of
 /// Postfix `smtp_trouble.c`: 2xx delivered, 5xx permanent (bounce), everything
 /// else (4xx and any unexpected class) temporary (defer).
 fn classify(code: u16, reason: String) -> DeliveryOutcome {
@@ -625,7 +625,7 @@ fn classify(code: u16, reason: String) -> DeliveryOutcome {
     }
 }
 
-/// Turns a session I/O error (timeout, EOF, reset) into a `Deferred` outcome —
+/// Turns a session I/O error (timeout, EOF, reset) into a `Deferred` outcome -
 /// network trouble is always temporary, never a bounce.
 fn io_deferred(stage: &str, err: &std::io::Error) -> DeliveryOutcome {
     tracing::warn!("erreur SMTP pendant « {stage} »: {err}");
@@ -852,7 +852,7 @@ fn level_name(level: OutboundTls) -> &'static str {
 /// 4.7.x-class code and retried later.
 ///
 /// Returns `None` when cleartext is permitted, `Some(outcome)` when the message
-/// must be deferred instead. Pure — this is the decision the whole feature
+/// must be deferred instead. Pure - this is the decision the whole feature
 /// hinges on, so it is tested on its own.
 fn tls_unavailable(level: OutboundTls, host: &str, detail: &str) -> Option<DeliveryOutcome> {
     if !level.requires_tls() {
@@ -861,7 +861,7 @@ fn tls_unavailable(level: OutboundTls, host: &str, detail: &str) -> Option<Deliv
     tracing::warn!(
         host,
         tls_level = level_name(level),
-        "Sortant : chiffrement obligatoire impossible ({detail}) — différé plutôt qu'en clair"
+        "Sortant : chiffrement obligatoire impossible ({detail}) - différé plutôt qu'en clair"
     );
     Some(DeliveryOutcome::Deferred {
         code:   TLS_REQUIRED_CODE,
@@ -913,13 +913,13 @@ fn log_cleartext(host: &str, level: OutboundTls) {
 }
 
 /// Builds the TLS connector the security level calls for, or `None` when no
-/// handshake should be attempted — either the level forbids it (`none`) or the
+/// handshake should be attempted - either the level forbids it (`none`) or the
 /// crypto stack could not be set up. The caller turns the latter into a deferral
 /// whenever the level mandates TLS.
 ///
 /// `may` and `encrypt` accept any certificate: RFC 3207 inter-MTA servers
 /// routinely present self-signed or mismatched certificates, and Postfix's own
-/// `encrypt` level likewise checks nothing — it only guarantees the bytes are
+/// `encrypt` level likewise checks nothing - it only guarantees the bytes are
 /// encrypted. `verify` checks the chain against the bundled Mozilla trust store
 /// AND the hostname against the MX name, which is what `with_root_certificates`
 /// installs (rustls's `WebPkiServerVerifier`).
@@ -953,7 +953,7 @@ fn tls_connector(level: OutboundTls) -> Option<TlsConnector> {
             let mut roots = rustls::RootCertStore::empty();
             roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
             if roots.is_empty() {
-                tracing::error!("magasin de confiance vide — vérification des certificats impossible");
+                tracing::error!("magasin de confiance vide - vérification des certificats impossible");
                 return None;
             }
             builder.with_root_certificates(roots).with_no_client_auth()
@@ -964,8 +964,8 @@ fn tls_connector(level: OutboundTls) -> Option<TlsConnector> {
 }
 
 /// A certificate verifier that accepts any server certificate. Sound ONLY at
-/// security levels `may` and `encrypt`, where confidentiality — not peer
-/// authentication — is the goal (see `tls_connector`).
+/// security levels `may` and `encrypt`, where confidentiality - not peer
+/// authentication - is the goal (see `tls_connector`).
 #[derive(Debug)]
 struct AcceptAnyServerCert;
 
@@ -1022,15 +1022,15 @@ impl rustls::client::danger::ServerCertVerifier for AcceptAnyServerCert {
 /// (smarthost) instead of resolving the recipient's MX.
 ///
 /// One connection carries one recipient (one message per queue row), matching
-/// how the worker already claims and delivers recipients individually — no
+/// how the worker already claims and delivers recipients individually - no
 /// batching, no shared connection to reason about. The relay speaks for the
 /// destination from here on: its 5xx to MAIL/RCPT/DATA is a real bounce, exactly
 /// as Postfix relays a smarthost's rejection back to the sender.
 ///
 /// The exceptions, both deferrals never bounces:
-///   * any connection/TLS/network failure — the relay (a tunnel to a VPS) may be
+///   * any connection/TLS/network failure - the relay (a tunnel to a VPS) may be
 ///     momentarily down, and the recipient is likely fine;
-///   * an AUTH failure — a credential/config problem on OUR side, not a property
+///   * an AUTH failure - a credential/config problem on OUR side, not a property
 ///     of the recipient; retried after the operator fixes it.
 ///
 /// DKIM is already applied by the worker to `raw` before this is called; the
@@ -1044,7 +1044,7 @@ pub async fn deliver_via_relay(
 ) -> DeliveryOutcome {
     let del = Delivery {
         hostname,
-        // Unused on the relay path — TLS is driven by `relay.security` below,
+        // Unused on the relay path - TLS is driven by `relay.security` below,
         // not by the MX policy. Carried only so `finish`/`ehlo_or_helo` can be
         // reused unchanged.
         tls: OutboundTls::None,
@@ -1142,9 +1142,9 @@ pub async fn deliver_via_relay(
             match send_cmd(&mut plain, "STARTTLS", CMD_TIMEOUT).await {
                 Ok(reply) if reply.class() == 2 => {
                     // Anything pipelined before the handshake would be smuggled
-                    // cleartext — refuse it, as the MX path does.
+                    // cleartext - refuse it, as the MX path does.
                     if !plain.buffer().is_empty() {
-                        tracing::warn!(host = %relay.host, "Relais : données pipelinées avant TLS — différé");
+                        tracing::warn!(host = %relay.host, "Relais : données pipelinées avant TLS - différé");
                         return DeliveryOutcome::Deferred {
                             code:   451,
                             reason: "Données SMTP inattendues avant TLS (relais)".to_string(),
@@ -1224,9 +1224,9 @@ where
 }
 
 /// Runs SMTP AUTH against the relay, choosing PLAIN (one round trip) over LOGIN
-/// from what EHLO advertised. Returns `Some(Deferred)` on ANY failure — an
+/// from what EHLO advertised. Returns `Some(Deferred)` on ANY failure - an
 /// authentication problem is ours to fix, so the message waits rather than
-/// bouncing — or `None` on success.
+/// bouncing - or `None` on success.
 async fn relay_authenticate<S>(
     stream: &mut S,
     ehlo: &SmtpReply,
@@ -1308,7 +1308,7 @@ where
 /// an operator problem, not a property of the recipient, so the queued mail
 /// waits for a fix rather than bouncing. Never logs the credential.
 fn relay_auth_failed(relay: &RelayTarget, code: u16, summary: &str) -> DeliveryOutcome {
-    tracing::error!(host = %relay.host, code, "Relais : authentification refusée ({summary}) — différé");
+    tracing::error!(host = %relay.host, code, "Relais : authentification refusée ({summary}) - différé");
     DeliveryOutcome::Deferred {
         code:   454,
         reason: format!("Authentification au relais {} refusée", relay.host),
@@ -1451,7 +1451,7 @@ mod tests {
         }
     }
 
-    /// A mandatory-TLS failure must never be reported as permanent — the
+    /// A mandatory-TLS failure must never be reported as permanent - the
     /// destination may well be fixed, or a sibling MX may work.
     #[test]
     fn mandatory_tls_failure_is_temporary() {
@@ -1470,7 +1470,7 @@ mod tests {
     }
 
     /// The per-destination TLS list may only tighten a delivery, never loosen
-    /// one — a domain listed there is one we refuse to write to in the clear.
+    /// one - a domain listed there is one we refuse to write to in the clear.
     #[test]
     fn a_listed_domain_is_never_delivered_to_in_the_clear() {
         let base = ServerConfig {

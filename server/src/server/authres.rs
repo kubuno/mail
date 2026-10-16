@@ -20,7 +20,7 @@ pub struct AuthVerdict {
     pub spf:   Option<String>,   // pass | fail | softfail | neutral | none | temperror | permerror
     pub dkim:  Option<String>,   // pass | fail | none | ...
     pub dmarc: Option<String>,   // pass | fail | none
-    /// The domain the DKIM signature validated for (`d=`), if any — mirrors the
+    /// The domain the DKIM signature validated for (`d=`), if any - mirrors the
     /// `signed_by` column the module already stores.
     pub dkim_domain: Option<String>,
     /// The full `Authentication-Results:` header value (without the field name),
@@ -36,7 +36,7 @@ pub struct AuthVerdict {
 /// `Authentication-Results` value stamped with `hostname`.
 ///
 /// ⚠️ The CALLER must strip any pre-existing `Authentication-Results` header from
-/// the message before prepending the value produced here — otherwise an attacker
+/// the message before prepending the value produced here - otherwise an attacker
 /// could forge `dmarc=pass`. This function only PRODUCES the value; it never
 /// touches the message.
 ///
@@ -44,7 +44,7 @@ pub struct AuthVerdict {
 /// When `peer_ip` belongs to one, the connection is a trusted forwarder and its
 /// IP is NOT the sender's: SPF is instead evaluated against the real client read
 /// from the message's `Received:` headers. If no real client IP can be extracted
-/// SPF is neutralised to `none` — the relay must never be the cause of an SPF
+/// SPF is neutralised to `none` - the relay must never be the cause of an SPF
 /// `fail`. DKIM and DMARC are unchanged: DKIM does not depend on the IP, and
 /// DMARC aligns on the recomputed SPF result plus DKIM.
 pub async fn verify(
@@ -55,10 +55,10 @@ pub async fn verify(
     raw: &[u8],
     hostname: &str,
 ) -> AuthVerdict {
-    // Build the authenticator over the host's resolv.conf — through `dns_opts`,
+    // Build the authenticator over the host's resolv.conf - through `dns_opts`,
     // so a truncated answer is retried over TCP (an SPF record often does not
     // fit in UDP). A transient failure here means we simply cannot authenticate
-    // this message — return an empty verdict rather than panicking.
+    // this message - return an empty verdict rather than panicking.
     let authenticator = match crate::services::dns_opts::system_conf()
         .and_then(|(config, opts)| MessageAuthenticator::new(config, opts))
     {
@@ -80,13 +80,13 @@ pub async fn verify(
     // Which IP SPF is actually evaluated against. Normally the peer's; but a
     // connection from a trusted upstream relay carries the relay's IP, so we
     // read the real client from the `Received:` header the relay stamped.
-    // `None` = trusted relay but no usable client IP — SPF becomes `none`.
+    // `None` = trusted relay but no usable client IP - SPF becomes `none`.
     let spf_ip: Option<IpAddr> = if trusted_upstreams.iter().any(|net| net.contains(peer_ip)) {
         let real = client_ip_from_received(raw, trusted_upstreams);
         if real.is_none() {
             tracing::warn!(
                 relay = %peer_ip,
-                "Réception via relais de confiance : IP client réelle introuvable dans les en-têtes Received — SPF neutralisé"
+                "Réception via relais de confiance : IP client réelle introuvable dans les en-têtes Received - SPF neutralisé"
             );
         }
         real
@@ -162,7 +162,7 @@ pub async fn verify(
             .with_dmarc_result(&dmarc_output);
     }
 
-    // `Display` renders `<hostname>; <results>` — exactly the header value we
+    // `Display` renders `<hostname>; <results>` - exactly the header value we
     // want, without the `Authentication-Results:` field name.
     verdict.header = auth_results.to_string();
     verdict
@@ -193,7 +193,7 @@ fn domain_of(address: &str) -> Option<&str> {
 /// …` means "this server received the message from `[ip]`". The headers are
 /// prepended, so the newest is on top. We walk them top-down and return the
 /// FIRST recorded source IP that is neither one of our own trusted relays (a hop
-/// inside the trusted chain) nor a private/reserved address — that is the real
+/// inside the trusted chain) nor a private/reserved address - that is the real
 /// external client. `None` when the chain yields nothing usable, in which case
 /// the caller neutralises SPF rather than blaming the relay.
 ///
@@ -258,7 +258,7 @@ fn received_headers(raw: &[u8]) -> Vec<String> {
 /// The connecting client's IP recorded in one `Received:` header value.
 ///
 /// Postfix writes it as the first bracketed token of the `from …` clause,
-/// optionally prefixed `IPv6:` — `from host (host [1.2.3.4]) by …` or
+/// optionally prefixed `IPv6:` - `from host (host [1.2.3.4]) by …` or
 /// `(unknown [IPv6:2001:db8::1])`. We take the first parseable bracketed
 /// address, then fall back to a bare parenthesised address for the MTAs that
 /// emit `from host (1.2.3.4)`.
@@ -313,7 +313,7 @@ fn first_parenthesised_ip(value: &str) -> Option<IpAddr> {
     None
 }
 
-/// True when `ip` is a routable public address — not private, loopback,
+/// True when `ip` is a routable public address - not private, loopback,
 /// link-local, unspecified, documentation or otherwise reserved. Used to reject
 /// an internal hop recorded in a `Received:` header as the "real" client.
 fn is_public_ip(ip: IpAddr) -> bool {
@@ -521,7 +521,7 @@ mod tests {
         );
     }
 
-    /// No `Received:` at all — nothing to extract.
+    /// No `Received:` at all - nothing to extract.
     #[test]
     fn no_received_header_yields_none() {
         let raw = b"From: Alice <alice@sender.example>\r\n\

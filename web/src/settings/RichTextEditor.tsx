@@ -39,7 +39,7 @@ function ToolBtn({ onClick, title, children }: {
  *
  * ⚠️ The editor is UNCONTROLLED: `value` seeds `innerHTML` ONCE on mount, then
  * changes are read back through `onChange` on input. Never re-write `innerHTML`
- * on every keystroke — it would collapse the caret. To reset the content
+ * on every keystroke - it would collapse the caret. To reset the content
  * externally, remount the editor with a new React `key`.
  */
 export function RichTextEditor({ value, onChange, placeholder, minHeight = 120 }: {
@@ -54,7 +54,7 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 120 }
   const [fontSz,   setFontSz]   = useState('13')
   const [colorOpen, setColorOpen] = useState(false)
 
-  // Seed the editable content once — see the class doc about staying uncontrolled.
+  // Seed the editable content once - see the class doc about staying uncontrolled.
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.innerHTML = value ?? ''
     // eslint-disable-next-line react-hooks/exhaustive-deps

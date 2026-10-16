@@ -1,10 +1,10 @@
-//! Sending FROM a local account — a hosted mailbox of this instance.
+//! Sending FROM a local account - a hosted mailbox of this instance.
 //!
 //! An external account relays through the provider's SMTP server
 //! (`services::smtp_service`). A local account (`mail.accounts.kind = 'local'`,
 //! created for every hosted mailbox by migration 000025) has no such relay: the
 //! instance itself is the server. So an outgoing message is delivered by the
-//! instance directly —
+//! instance directly -
 //!
 //!   * a LOCAL recipient (another hosted address of this instance) is filed
 //!     straight into its mailbox with `server::deliver::deliver_local`, exactly
@@ -46,7 +46,7 @@ pub async fn send_from_local_account(
 ) -> Result<String, MailError> {
     // The live server configuration: which domains are ours, whether outbound
     // delivery is switched on, and what the instance's compliance rules are.
-    // Read from the core rather than a local copy — and read FIRST, because the
+    // Read from the core rather than a local copy - and read FIRST, because the
     // administrator's footer belongs inside the body we are about to build (and
     // therefore inside the PGP signature, when there is one).
     let http = reqwest::Client::new();
@@ -61,7 +61,7 @@ pub async fn send_from_local_account(
     // builder, so one insertion covers both parts of the message.
     let body_html = compliance::with_footer(body_html, &cfg.append_footer_html);
 
-    // Build the RFC 5322 message once — the same bytes feed local delivery and
+    // Build the RFC 5322 message once - the same bytes feed local delivery and
     // the outbound queue. `sender` (a delegate's address) is stamped as the
     // `Sender:` header for a delegated send; None for a self-send.
     let (email, message_id) =
@@ -73,8 +73,8 @@ pub async fn send_from_local_account(
     // send. The same rules that keep a forbidden file OUT must keep it IN; a
     // rule enforced only on reception is half a rule.
     //
-    // Both non-trivial verdicts mean the same thing here — the message must not
-    // leave — so the user is told now, while they can still fix it, rather than
+    // Both non-trivial verdicts mean the same thing here - the message must not
+    // leave - so the user is told now, while they can still fix it, rather than
     // discovering it from a bounce.
     if let Some(verdict) = compliance::scan(&cfg, &raw) {
         tracing::warn!(
@@ -151,7 +151,7 @@ pub async fn send_from_local_account(
 
     // The delivery restriction, if the operator declared one. Naming the refused
     // address is deliberate: the sender chose it and can change it, and the list
-    // itself is not a secret — it is a policy they are subject to.
+    // itself is not a secret - it is a policy they are subject to.
     if let Some(refused) = remote.iter().find(|address| !cfg.outbound_recipient_allowed(address)) {
         return Err(MailError::Validation(format!(
             "Le domaine du destinataire « {refused} » ne fait pas partie des domaines autorisés par l'administrateur."
@@ -172,7 +172,7 @@ pub async fn send_from_local_account(
             Ok(_) => {}
             // A counting failure must not block legitimate mail; it is logged
             // and the send proceeds.
-            Err(e) => tracing::error!(error = %e, "Quota d'envoi : comptage impossible — envoi autorisé"),
+            Err(e) => tracing::error!(error = %e, "Quota d'envoi : comptage impossible - envoi autorisé"),
         }
     }
 
@@ -247,7 +247,7 @@ pub async fn send_from_local_account(
 
 /// Builds the `(recipient, domain)` pairs the outbound queue expects, splitting
 /// each address on its last `@`. A malformed address (no `@`) yields an empty
-/// domain rather than being dropped — the queue records it and the delivery
+/// domain rather than being dropped - the queue records it and the delivery
 /// worker bounces it, which is visible, whereas silently discarding it would
 /// lose the recipient without a trace.
 fn to_queue_list(remote: &[String]) -> Vec<(String, String)> {

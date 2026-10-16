@@ -2,7 +2,7 @@
  * Items of the shell's "New" button for the mail module.
  *
  * Contributed as DATA (`MenuItem[]` from @ui) to the `shell.new-actions`
- * extension point — the shell renders them with the project's MenuDropdown.
+ * extension point - the shell renders them with the project's MenuDropdown.
  * Full set of compose-related actions (Gmail-style « + » menu): a plain new
  * message, an encrypted one, one from a template, then the create-things
  * actions (label / filter / distribution list / scheduled).

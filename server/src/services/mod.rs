@@ -32,8 +32,8 @@ pub mod vacation;
 
 /// Hosts whose accounts authenticate with an app password (16 chars, shown by
 /// the provider in spaced groups). Whitespace in a stored password for these
-/// hosts can only come from a paste of that spaced display — real passwords
-/// play no role there since basic auth is refused — so it is safe to strip.
+/// hosts can only come from a paste of that spaced display - real passwords
+/// play no role there since basic auth is refused - so it is safe to strip.
 /// Repairs accounts saved before the client-side normalization existed.
 pub fn app_password_normalize(host: &str, password: &str) -> String {
     let h = host.to_ascii_lowercase();

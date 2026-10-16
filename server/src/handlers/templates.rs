@@ -1,4 +1,4 @@
-//! E-mail template endpoints — the user's reusable canned drafts.
+//! E-mail template endpoints - the user's reusable canned drafts.
 //!
 //! Every route is scoped to the authenticated user: a template is only ever
 //! visible or mutable by its owner, and an id that is not the user's yields
@@ -53,7 +53,7 @@ pub struct UpsertTemplateDto {
 
 // ── Endpoints ───────────────────────────────────────────────────────────────
 
-/// GET /templates — the user's templates, alphabetical.
+/// GET /templates - the user's templates, alphabetical.
 pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
@@ -64,7 +64,7 @@ pub async fn list(
     Ok(Json(rows.into_iter().map(TemplateDto::from).collect()))
 }
 
-/// POST /templates — create a template. Rejects an empty name and a name
+/// POST /templates - create a template. Rejects an empty name and a name
 /// already used by this user.
 pub async fn create(
     State(state): State<AppState>,
@@ -88,7 +88,7 @@ pub async fn create(
     Ok(Json(TemplateDto::from(row)))
 }
 
-/// PUT /templates/:id — rename / update subject and body. `NotFound` if the id
+/// PUT /templates/:id - rename / update subject and body. `NotFound` if the id
 /// is not the user's; `Conflict` if the new name collides with another template.
 pub async fn update(
     State(state): State<AppState>,
@@ -114,7 +114,7 @@ pub async fn update(
     Ok(Json(TemplateDto::from(row)))
 }
 
-/// DELETE /templates/:id — remove a template.
+/// DELETE /templates/:id - remove a template.
 pub async fn remove(
     State(state): State<AppState>,
     user: AuthUser,

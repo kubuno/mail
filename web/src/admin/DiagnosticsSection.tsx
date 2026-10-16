@@ -1,5 +1,5 @@
 /**
- * Deliverability diagnostic — the first thing on the page, on purpose.
+ * Deliverability diagnostic - the first thing on the page, on purpose.
  *
  * ── Why it comes before the settings ─────────────────────────────────────────
  * Mail-in-a-Box built its whole product around "Status Checks", and mailcow and
@@ -10,11 +10,11 @@
  * operator only opens the settings when a light is not green.
  *
  * ── Where this refuses to reassure ───────────────────────────────────────────
- * SPF and DMARC have no single correct value — what to `include:`, whether
+ * SPF and DMARC have no single correct value - what to `include:`, whether
  * `p=none` is enough, depends on who else sends for the domain. Those come back
  * as "published, your call": the record is shown, the ten-lookup count is
  * given, and the judgement is the operator's. And a DNS lookup that did not
- * answer is grey, never red — a resolver hiccup must not read as a broken
+ * answer is grey, never red - a resolver hiccup must not read as a broken
  * server.
  */
 import { useTranslation } from 'react-i18next'
@@ -53,7 +53,7 @@ export default function DiagnosticsSection() {
       title={t('diag_title', { defaultValue: 'Diagnostic de délivrabilité' })}
       description={t('diag_intro', {
         defaultValue:
-          'Ce que les fournisseurs destinataires voient de cette instance. Chaque ligne indique ce qui est attendu et ce qui est réellement publié. Un point gris signifie « non vérifiable » (résolveur muet) ou « publié, à votre appréciation » — pas une erreur.',
+          'Ce que les fournisseurs destinataires voient de cette instance. Chaque ligne indique ce qui est attendu et ce qui est réellement publié. Un point gris signifie « non vérifiable » (résolveur muet) ou « publié, à votre appréciation » - pas une erreur.',
       })}
       actions={
         <Button variant="secondary" size="sm" onClick={() => void refetch()} loading={isFetching}

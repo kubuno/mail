@@ -39,7 +39,7 @@ const SIGNED_HEADERS: [&str; 8] =
 /// Returns `raw` with a `DKIM-Signature:` header prepended, signed with `key`.
 ///
 /// On any error (bad key material, signing failure) the error is propagated so
-/// the delivery worker can defer — a message is NEVER returned unsigned.
+/// the delivery worker can defer - a message is NEVER returned unsigned.
 pub fn sign(raw: &[u8], key: &SigningKey) -> Result<Vec<u8>> {
     match key.algorithm.as_str() {
         "rsa-sha256" => {
@@ -72,7 +72,7 @@ pub fn sign(raw: &[u8], key: &SigningKey) -> Result<Vec<u8>> {
 ///
 /// relaxed/relaxed is the recommended pairing: relaxed header canonicalisation
 /// folds whitespace and lowercases names, and relaxed body canonicalisation
-/// tolerates trailing whitespace and line-ending rewrites — both survive the
+/// tolerates trailing whitespace and line-ending rewrites - both survive the
 /// benign reformatting that relays routinely apply, where `simple` would break.
 fn build_signer<T: mail_auth::common::crypto::SigningKey>(
     signer: DkimSigner<T, NeedDomain>,
@@ -101,7 +101,7 @@ fn render(signature: &Signature, raw: &[u8]) -> Vec<u8> {
 ///
 /// The private half is meant to be encrypted and stored; the public half is
 /// shown to the admin for the DNS TXT record `v=DKIM1; k=rsa; p=<base64>`
-/// (or `k=ed25519`). RSA keys are 2048-bit — verifiers ignore keys under 1024.
+/// (or `k=ed25519`). RSA keys are 2048-bit - verifiers ignore keys under 1024.
 pub fn generate(algorithm: &str) -> Result<(String, String)> {
     match algorithm {
         "rsa-sha256" => {

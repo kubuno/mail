@@ -166,7 +166,7 @@ export default function InlineCompose({
     refreshPlaceholder()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Subject is prefilled (Re:/Fwd:) but editable — a reply's subject is the
+  // Subject is prefilled (Re:/Fwd:) but editable - a reply's subject is the
   // user's to change like any other.
   const [subject, setSubject] = useState(mode === 'reply'
     ? (message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}`)
@@ -220,7 +220,7 @@ export default function InlineCompose({
       bcc_addresses: [],
       subject,
       body_html:     bodyRef.current?.innerHTML ?? '',
-      // Ties the draft to the message it answers — it shows in the thread AND
+      // Ties the draft to the message it answers - it shows in the thread AND
       // in the Drafts folder, as Gmail does.
       reply_to_id:   mode === 'reply' ? message.id : undefined,
     }
@@ -337,7 +337,7 @@ export default function InlineCompose({
           contentEditable
           suppressContentEditableWarning
           // overflow-x-auto + img clamp: the injected quote can carry fixed-width
-          // email tables — they must scroll inside the card, not widen the page.
+          // email tables - they must scroll inside the card, not widen the page.
           className="px-4 py-3 min-h-[100px] text-xs text-text-primary outline-none overflow-x-auto break-words
                      [&_img]:max-w-full [&_img]:h-auto"
           style={{ lineHeight: '1.6' }}
@@ -366,7 +366,7 @@ export default function InlineCompose({
       <AttachmentBar attachments={atts.attachments} onRemove={atts.remove} objectUrl={atts.objectUrl} />
 
       {/* ── Format toolbar ────────────────────────────────────────────────── */}
-      {/* Mobile: reduced one-line set (B/I/U, lists, clear) — the full bar with
+      {/* Mobile: reduced one-line set (B/I/U, lists, clear) - the full bar with
           font selects and alignment would wrap into several rows. */}
       {showFormat && isMobile && (
         <div className="flex items-center gap-0.5 px-3 py-1.5 border-t border-border bg-surface-1/40">

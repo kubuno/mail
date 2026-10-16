@@ -23,7 +23,7 @@ const MAX_BACKOFF_HOURS: i64 = 4;
 
 /// Bounds on the configured queue lifetime. A message that never expires can
 /// never be reported as undeliverable, and one that expires instantly is
-/// bounced before its first retry — so a mistaken setting is clamped, not obeyed.
+/// bounced before its first retry - so a mistaken setting is clamped, not obeyed.
 /// The fallback queue lifetime, the column default of migration 000019.
 const DEFAULT_LIFETIME_DAYS: i64 = 5;
 
@@ -55,7 +55,7 @@ impl Backoff {
     /// Delay before the next attempt: the minimum doubled once per failed
     /// attempt, capped at the maximum. `attempts` is clamped before shifting so
     /// the shift can never exceed the width of an `i64`, and the multiplication
-    /// saturates rather than wrapping — a large minimum must not roll over into
+    /// saturates rather than wrapping - a large minimum must not roll over into
     /// a tiny (or negative) delay.
     pub fn delay_secs(self, attempts: i32) -> i64 {
         let min = self.min_secs.max(1);
@@ -66,7 +66,7 @@ impl Backoff {
 }
 
 /// When a message enqueued now should stop being retried. `None` means "leave it
-/// to the column default" — the SQL safety net stays in place, we simply do not
+/// to the column default" - the SQL safety net stays in place, we simply do not
 /// override it. Migrations are frozen once applied, so the configured lifetime
 /// has to be applied here, by the code.
 fn expiry_from_now(lifetime_hours: i64) -> Option<DateTime<Utc>> {
@@ -119,7 +119,7 @@ pub async fn enqueue(
     .await
 }
 
-/// Same, with the queue lifetime stated in hours — Postfix's
+/// Same, with the queue lifetime stated in hours - Postfix's
 /// `maximal_queue_lifetime`, which the administrator sets in the console.
 ///
 /// `expires_at` is computed and written HERE rather than left to the column
@@ -192,13 +192,13 @@ pub async fn enqueue_with_lifetime(
 }
 
 /// How many remote recipients this user has had queued over the last rolling
-/// 24 hours — the count the administrator's daily sending allowance is measured
+/// 24 hours - the count the administrator's daily sending allowance is measured
 /// against.
 ///
 /// Counted on the QUEUE rather than on the Sent folder: what an allowance has to
 /// bound is what actually leaves the instance towards the internet, and a Sent
 /// copy exists for local-only mail too. Delivery reports (`is_dsn`) are excluded
-/// — a bounce is the instance writing, not the user.
+/// - a bounce is the instance writing, not the user.
 pub async fn recipients_queued_last_24h(db: &DbPool, user_id: Uuid) -> Result<i64> {
     let count: i64 = crate::db::query_scalar(format!(
         r#"SELECT {}
@@ -236,7 +236,7 @@ pub async fn claim_batch(
     // Leasing it immediately takes it out of the `status` filter, so the next
     // probe finds the next row. Portable where PostgreSQL's single
     // `WITH due … FOR UPDATE SKIP LOCKED … UPDATE … RETURNING` is not (MySQL has
-    // no UPDATE … RETURNING, SQLite no row locks — its writers are serialised by
+    // no UPDATE … RETURNING, SQLite no row locks - its writers are serialised by
     // the pool's single-writer gate instead).
     let now = Utc::now();
     let lease_secs = i64::try_from(lease.as_secs()).unwrap_or(i64::MAX);
@@ -381,7 +381,7 @@ pub async fn mark_deferred(
 }
 
 /// Marks a recipient permanently failed (5xx or expired). The worker then emits
-/// a DSN — except for a message that is itself a DSN.
+/// a DSN - except for a message that is itself a DSN.
 pub async fn mark_bounced(db: &DbPool, recipient_id: Uuid, code: u16, reason: &str) -> Result<()> {
     crate::db::query(
         "UPDATE mail.outbound_recipients
@@ -427,7 +427,7 @@ mod tests {
     }
 
     /// A nonsensical setting must never produce a zero, negative, or wrapped
-    /// delay — that would turn the queue into a tight retry loop against a
+    /// delay - that would turn the queue into a tight retry loop against a
     /// remote server.
     #[test]
     fn backoff_never_overflows_or_goes_backwards() {

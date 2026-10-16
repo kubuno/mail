@@ -1,6 +1,6 @@
 //! iMIP (RFC 6047 / iTIP RFC 5546) REPLY construction: when the user answers a
 //! calendar invitation (Yes / Maybe / No), we email the organizer a VCALENDAR
-//! with `METHOD:REPLY` carrying our ATTENDEE line with the chosen PARTSTAT —
+//! with `METHOD:REPLY` carrying our ATTENDEE line with the chosen PARTSTAT -
 //! exactly what Gmail and other clients emit so the organizer's calendar updates.
 
 use chrono::Utc;
@@ -94,7 +94,7 @@ fn ics_value(iso: &str) -> (String, bool) {
 /// and appending our single ATTENDEE line with the chosen PARTSTAT. Timing lines
 /// are reused VERBATIM so any TZID survives. `attendee_email` is our address.
 ///
-/// `comment` is the invitee's optional note (RFC 5545 COMMENT) — typically the
+/// `comment` is the invitee's optional note (RFC 5545 COMMENT) - typically the
 /// reason for a decline. `proposal` turns the message into an iTIP COUNTER
 /// (RFC 5546 §3.2.7): same event, but with the time the invitee suggests
 /// instead, which the organizer can accept or refuse.

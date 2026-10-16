@@ -60,7 +60,7 @@ function icsStamp(iso: string): { value: string; dateOnly: boolean } {
 const esc = (v: string) => v.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
 
 /** Build a minimal VCALENDAR for one event and hand it to the browser as a
- *  download — for adding to an external calendar app. */
+ *  download - for adding to an external calendar app. */
 export function downloadEventIcs(c: EventCard): void {
   if (!c.start) return
   const dt = icsStamp(c.start)

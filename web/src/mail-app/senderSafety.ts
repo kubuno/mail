@@ -1,19 +1,19 @@
 // ── Sender / filename display safety (anti-phishing) ─────────────────────────
 //
-// Everything a message carries — display name, address, attachment file name —
+// Everything a message carries - display name, address, attachment file name -
 // is attacker-controlled text. Rendering it as-is lets a sender impersonate
 // someone else in three ways this module defends against:
 //
 //   1. Bidi / invisible control characters. A single U+202E (RIGHT-TO-LEFT
 //      OVERRIDE) inside a name or a file name reverses everything after it, so
-//      "annexe_gpj.exe" is painted "annexe_exe.jpg" — the reader sees an image,
+//      "annexe_gpj.exe" is painted "annexe_exe.jpg" - the reader sees an image,
 //      the download is an executable. Isolates (U+2066-2069) and embeddings
 //      (U+202A-202D) can also swallow the surrounding text of the row.
 //   2. A display name that *is* an address. "Support <admin@banque.fr>" sent
 //      from attaquant@evil.tld renders exactly like the legitimate sender in
 //      any UI that shows the name and hides the address (mobile, list rows).
 //   3. IDN / punycode homographs. "xn--pypal-4ve.com" is "pаypal.com" with a
-//      Cyrillic а — visually identical to the real domain.
+//      Cyrillic а - visually identical to the real domain.
 //
 // These functions are PURE (no React, no DOM, no i18n) so they can be reasoned
 // about and tested in isolation; the components only consume their verdict.
@@ -23,7 +23,7 @@
 /**
  * Characters removed from any attacker-controlled text before display:
  *  - C0 controls (U+0000-U+0008, U+000B, U+000C, U+000E-U+001F) and DEL/C1
- *    (U+007F-U+009F) — invisible, and some terminals/renderers act on them;
+ *    (U+007F-U+009F) - invisible, and some terminals/renderers act on them;
  *  - zero-width and bidi marks: U+200B-U+200F (ZWSP/ZWNJ/ZWJ/LRM/RLM),
  *    U+202A-U+202E (LRE/RLE/PDF/LRO/RLO), U+2060-U+2064, U+2066-U+2069
  *    (isolates + PDI), U+FEFF (BOM).
@@ -36,7 +36,7 @@ const UNSAFE_CHARS =
 
 const LINE_BREAKS = /[\t\r\n]+/g
 
-/** True when the text carries at least one character we would strip — used to
+/** True when the text carries at least one character we would strip - used to
  *  tell the reader that what they see is not literally what was sent. */
 export function hasUnsafeChars(raw: string | null | undefined): boolean {
   if (!raw) return false
@@ -47,7 +47,7 @@ export function hasUnsafeChars(raw: string | null | undefined): boolean {
 /**
  * Text safe to drop into the DOM: control/bidi characters removed, line breaks
  * folded, runs of spaces collapsed. Naturally right-to-left names (Arabic,
- * Hebrew…) still render correctly — the bidi *algorithm* works on the
+ * Hebrew…) still render correctly - the bidi *algorithm* works on the
  * characters themselves; only the explicit override marks are dropped.
  */
 export function sanitizeDisplayText(raw: string | null | undefined): string {
@@ -127,7 +127,7 @@ function adaptBias(delta: number, numPoints: number, firstTime: boolean): number
 }
 
 /** Decodes one `xn--…` label to its Unicode form. Null on any malformed or
- *  overflowing input — a domain we cannot decode is displayed as it came. */
+ *  overflowing input - a domain we cannot decode is displayed as it came. */
 export function decodePunycodeLabel(label: string): string | null {
   if (!/^xn--/i.test(label)) return null
   const body = label.slice(4)
@@ -177,7 +177,7 @@ export function decodePunycodeLabel(label: string): string | null {
   return String.fromCodePoint(...output)
 }
 
-/** Scripts that look like Latin letter for letter — mixing them inside a single
+/** Scripts that look like Latin letter for letter - mixing them inside a single
  *  label is the homograph attack itself, never a real-world domain. */
 function mixesLookalikeScripts(text: string): boolean {
   const latin = /[A-Za-z]|\p{Script=Latin}/u.test(text)
@@ -191,7 +191,7 @@ export interface IdnDomain {
   /** Its readable form, e.g. "pаypal.com". Falls back to `ascii` when a label
    *  cannot be decoded. */
   unicode: string
-  /** The decoded form mixes Latin with Cyrillic/Greek — a homograph. */
+  /** The decoded form mixes Latin with Cyrillic/Greek - a homograph. */
   mixedScript: boolean
 }
 

@@ -4,9 +4,9 @@ import { avatarColor } from './helpers'
 
 // ── Sender avatar ─────────────────────────────────────────────────────────────
 // Three sources, in order of how much they say about the sender:
-//   1. the CONTACTS module — the picture the reader themselves filed, purely
+//   1. the CONTACTS module - the picture the reader themselves filed, purely
 //      local, and discovered dynamically (the module may not be installed);
-//   2. BIMI — the logo the sender's DOMAIN publishes about itself, resolved and
+//   2. BIMI - the logo the sender's DOMAIN publishes about itself, resolved and
 //      cached by our backend so the browser never talks to a third party;
 //   3. the coloured initial, which is always available.
 // No source is keyed on the address outside this instance: nothing tells an

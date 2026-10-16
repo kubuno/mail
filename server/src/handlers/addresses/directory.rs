@@ -1,15 +1,15 @@
-//! `/admin/directory/users` — the accounts an administrator may attach a mailbox
+//! `/admin/directory/users` - the accounts an administrator may attach a mailbox
 //! to.
 //!
 //! Why the module proxies instead of the panel asking the core directly: the
 //! panel is rendered inside the ADMIN console, whose caller is an administrator
-//! with a token the core would accept — so a direct call would work. It would
+//! with a token the core would accept - so a direct call would work. It would
 //! also make the mailbox form depend on two origins, and would answer a
 //! different set of accounts than the one this module validates against (the
 //! public directory route narrows its result by the caller's sharing policy).
 //! One door, one answer.
 //!
-//! The module has no user token — the proxy strips `Authorization` before a
+//! The module has no user token - the proxy strips `Authorization` before a
 //! module is reached, precisely so a module can never borrow a user's authority.
 //! It authenticates with the internal secret, which proves only that the caller
 //! is inside the instance. The route is therefore guarded here, by

@@ -1,5 +1,5 @@
 /**
- * Adresses — the page an operator opens to answer "who has an address here".
+ * Adresses - the page an operator opens to answer "who has an address here".
  *
  * ── Four tabs, one object ────────────────────────────────────────────────────
  * A mailbox, an alias and a list are three answers to the same question, and
@@ -11,7 +11,7 @@
  * ── Why the served domains are read here ─────────────────────────────────────
  * Every creation form needs them (a domain is picked, never typed), and every
  * list decorates its rows with them. Reading them once, in the parent, means
- * the four tabs cannot disagree about which domains are served — and it makes
+ * the four tabs cannot disagree about which domains are served - and it makes
  * "the settings could not be read" a single, honest failure rather than four
  * empty dropdowns.
  */

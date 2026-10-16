@@ -3,7 +3,7 @@
 //! made of.
 //!
 //! Nothing here touches the network or the database, which is the point: IMAP
-//! is where a server is most easily broken by a client that is merely unusual —
+//! is where a server is most easily broken by a client that is merely unusual -
 //! a literal in the middle of a LOGIN, a bracketed section inside a
 //! parenthesised fetch list, a `<0.2048>` partial whose announced length must
 //! match the bytes to the octet. Keeping that away from the session loop lets it
@@ -353,7 +353,7 @@ pub fn decode_plain(payload: &str) -> Option<(String, String)> {
 ///
 /// Order is fixed by RFC 3501: date, subject, from, sender, reply-to, to, cc,
 /// bcc, in-reply-to, message-id. Absent fields are the atom `NIL`, never an
-/// empty string — clients test for NIL.
+/// empty string - clients test for NIL.
 pub fn envelope(message: &StoredMessage) -> String {
     let date = message.sent_at.unwrap_or(message.received_at);
     let from = address_list_of(message.from_name.as_deref(), &message.from_email);
@@ -647,7 +647,7 @@ pub fn fetch_response(
 
 /// A `LABEL {n}\r\n<bytes>` item, honouring a `<origin.count>` partial fetch.
 /// Slicing is done on bytes so the announced length is the length actually sent
-/// — a mismatch there desynchronises the client for the rest of the session.
+/// - a mismatch there desynchronises the client for the rest of the session.
 pub fn literal_part(label: &str, data: &[u8], partial: Option<(usize, usize)>) -> Vec<u8> {
     let (slice, suffix) = match partial {
         Some((start, count)) => {
@@ -747,7 +747,7 @@ pub fn parse_fetch_modifiers(text: &str) -> FetchModifiers {
 }
 
 /// Whether a token is a FETCH/STORE modifier group rather than a fetch-item list
-/// or a STORE action — i.e. it names a CONDSTORE modifier. Lets the command
+/// or a STORE action - i.e. it names a CONDSTORE modifier. Lets the command
 /// dispatch tell `(UNCHANGEDSINCE 12)` apart from `(\Seen)`.
 pub fn is_modifier_group(text: &str) -> bool {
     let upper = text.to_ascii_uppercase();
@@ -825,7 +825,7 @@ fn matching_close(bytes: &[u8], open: usize) -> Option<usize> {
 }
 
 /// A `* VANISHED (EARLIER) <uidset>` line for QRESYNC, or `None` when nothing
-/// vanished. The UIDs are collapsed into ascending ranges — the compact form
+/// vanished. The UIDs are collapsed into ascending ranges - the compact form
 /// clients expect for a set that may span a whole mailbox.
 pub fn vanished_earlier_line(uids: &[i64]) -> Option<String> {
     if uids.is_empty() {
@@ -858,7 +858,7 @@ pub struct ResyncDiff {
 /// Messages are matched by `local_uid`, which is stable across the move that a
 /// flag change or a delivery represents. A message present before and gone after
 /// is an EXPUNGE at its *old* position; a `local_uid` that only appears after is
-/// a new arrival, which — like any change to the count — forces an EXISTS so the
+/// a new arrival, which - like any change to the count - forces an EXISTS so the
 /// client learns the true total after the expunges have shrunk its view.
 pub fn compute_resync(old: &[StoredMessage], new: &[StoredMessage]) -> ResyncDiff {
     let mut expunged: Vec<u32> = old
@@ -1232,7 +1232,7 @@ mod tests {
         let new = vec![a, c, d, e];
 
         let diff = compute_resync(&old, &new);
-        // UID 11 was at old sequence 2 — expunged, highest-first (just the one).
+        // UID 11 was at old sequence 2 - expunged, highest-first (just the one).
         assert_eq!(diff.expunged, vec![2]);
         // The count changed (one gone, one new) → EXISTS with the new total.
         assert_eq!(diff.exists, Some(4));

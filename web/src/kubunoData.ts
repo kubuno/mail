@@ -1,5 +1,5 @@
 /**
- * Cross-module data sharing (JSON envelopes over the clipboard) — thin typed
+ * Cross-module data sharing (JSON envelopes over the clipboard) - thin typed
  * facade over the platform service published by the core at runtime
  * (`ModuleServiceRegistry('core', …)`). No vendored logic: once
  * `@kubuno/sdk >= 0.1.3` is published on npm, these can become direct SDK
@@ -58,7 +58,7 @@ function escapeHtml(text: string): string {
  * Semantic HTML block for a pasted envelope. Deliberately restricted to
  * blockquote/b/br/a with an absolute http(s) href: the backend passes outgoing
  * bodies through ammonia's default sanitizer, which strips styles, data-*
- * attributes and exotic tags — this structure survives it end-to-end.
+ * attributes and exotic tags - this structure survives it end-to-end.
  */
 export function kubunoDataToEmailHtml(env: KubunoDataEnvelope): string {
   const parts: string[] = []

@@ -1,4 +1,4 @@
-// « Envoyer ce fichier par e-mail » — contributed to Drive's share menu (slot
+// « Envoyer ce fichier par e-mail » - contributed to Drive's share menu (slot
 // files-share-actions). Reads the target file from the drive context, fetches
 // its bytes and opens the mail composer with the file pre-attached.
 import { useTranslation } from 'react-i18next'

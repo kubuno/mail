@@ -4,7 +4,7 @@
  * password panel.
  *
  * They live here rather than in each tab because the four tabs are read as ONE
- * panel — a domain that is "not served" must look identical whether it is seen
+ * panel - a domain that is "not served" must look identical whether it is seen
  * from a mailbox, an alias or a list, otherwise the operator has to learn three
  * vocabularies for one fact.
  */
@@ -17,7 +17,7 @@ import type { DirectoryUser } from './api'
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
-/** Debounces a value — the search fields hit paginated routes on every key. */
+/** Debounces a value - the search fields hit paginated routes on every key. */
 export function useDebounced<T>(value: T, delay = 300): T {
   const [held, setHeld] = useState(value)
   useEffect(() => {
@@ -32,7 +32,7 @@ export function quotaLabel(bytes: number, unlimited: string): string {
   return bytes > 0 ? formatSize(bytes) : unlimited
 }
 
-/** One destination per line — how the operator types a set of addresses. */
+/** One destination per line - how the operator types a set of addresses. */
 export function linesToAddresses(text: string): string[] {
   return text
     .split(/[\n,;]+/)
@@ -123,8 +123,8 @@ export function Field({ label, hint, htmlFor, children }: {
  * refuses it anyway. Offering the list is the only way to make that
  * impossible-by-construction rather than caught-after-the-fact.
  *
- * `allowCatchAll` lets the local part be empty, which is how `@domaine` — the
- * catch-all — is written. Only the alias form allows it.
+ * `allowCatchAll` lets the local part be empty, which is how `@domaine` - the
+ * catch-all - is written. Only the alias form allows it.
  */
 export function AddressField({
   local, domain, domains, onLocal, onDomain, allowCatchAll = false, disabled = false, id,
@@ -242,7 +242,7 @@ export function QuotaField({ bytes, onChange, id }: {
  * The owner picker, fed by the core directory through the module.
  *
  * A `user_id` typed by hand is a mailbox filed into an account that may not
- * exist — the module cannot read `core.users`, so nothing downstream would
+ * exist - the module cannot read `core.users`, so nothing downstream would
  * catch it; it would surface months later as `owner_known: false`. So the field
  * only ever offers accounts the directory returned.
  */
@@ -293,12 +293,12 @@ export function OwnerField({ value, onChange, users, loading, error, id }: {
 /**
  * The IMAP/SMTP password, shown once and never again.
  *
- * The server does not store it — only its Argon2 hash and SCRAM secret — so
+ * The server does not store it - only its Argon2 hash and SCRAM secret - so
  * this panel is the ONLY moment it exists in readable form. Three consequences
  * are designed in: it is never auto-dismissed (a click beside it must not
  * destroy it), it is selectable and copyable in one gesture, and it says in so
- * many words that closing is final. Losing it is not fatal — the credential can
- * be re-issued — but that changes the password already configured in a mail
+ * many words that closing is final. Losing it is not fatal - the credential can
+ * be re-issued - but that changes the password already configured in a mail
  * client, which is a support call.
  */
 export function CredentialPanel({ username, password, note, onDone }: {
@@ -325,7 +325,7 @@ export function CredentialPanel({ username, password, note, onDone }: {
       <div className="mb-2 flex items-center gap-2">
         <KeyRound size={16} className="text-warning" />
         <h3 className="text-sm font-bold text-text-primary">
-          {t('addr_cred_title', { defaultValue: 'Mot de passe IMAP/SMTP — affiché une seule fois' })}
+          {t('addr_cred_title', { defaultValue: 'Mot de passe IMAP/SMTP - affiché une seule fois' })}
         </h3>
       </div>
 
@@ -377,7 +377,7 @@ export function CredentialPanel({ username, password, note, onDone }: {
 /**
  * Said once, above the table: there is no byte figure, and why.
  *
- * The alternative — a progress bar at 0 % next to every quota — reads as "this
+ * The alternative - a progress bar at 0 % next to every quota - reads as "this
  * mailbox is empty", which is false for a mailbox holding ten years of mail.
  */
 export function UsageNote({ note }: { note: string }) {

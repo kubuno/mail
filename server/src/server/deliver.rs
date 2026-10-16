@@ -12,8 +12,8 @@
 //!
 //! Resolving WHO the message is for is not done here: a client addresses a
 //! person, and an address may be a mailbox, an alias, a catch-all or a
-//! distribution list. `server::resolve` answers that question — including the
-//! expansion limits it needs — and hands this module an already-resolved
+//! distribution list. `server::resolve` answers that question - including the
+//! expansion limits it needs - and hands this module an already-resolved
 //! [`LocalTarget`].
 
 use anyhow::{Context, Result};
@@ -41,7 +41,7 @@ pub struct LocalTarget {
 ///
 /// The caller knows things this function cannot: whether the sending domain's
 /// own DMARC policy said to quarantine, for one. Without this, a `quarantine`
-/// verdict had nowhere to go and quietly degraded into a mark — a setting that
+/// verdict had nowhere to go and quietly degraded into a mark - a setting that
 /// claimed to protect and did not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Disposition {
@@ -55,8 +55,8 @@ pub enum Disposition {
 
 /// Stores one incoming message for one local recipient and returns its id.
 ///
-/// `recipient` is the address that RESOLVED to `target` — the envelope
-/// recipient itself, or the alias destination / list member it expanded to —
+/// `recipient` is the address that RESOLVED to `target` - the envelope
+/// recipient itself, or the alias destination / list member it expanded to -
 /// and `target` is what `server::resolve` decided. Resolution happens at RCPT
 /// time, not here: refusing a recipient after DATA is refusing it too late.
 ///
@@ -83,7 +83,7 @@ pub async fn deliver_local(
     // authenticated" and withholds brand logos.
     auth_dmarc: Option<&str>,
 ) -> Result<Uuid> {
-    // Input validation first — nothing reaches the database unchecked.
+    // Input validation first - nothing reaches the database unchecked.
     if raw.is_empty() {
         anyhow::bail!("Message vide");
     }
@@ -96,7 +96,7 @@ pub async fn deliver_local(
     if hops >= hygiene::HOPCOUNT_LIMIT {
         tracing::error!(
             hops, limit = hygiene::HOPCOUNT_LIMIT, recipient = %recipient,
-            "Boucle de courrier détectée (trop d'en-têtes Received) — dépôt refusé"
+            "Boucle de courrier détectée (trop d'en-têtes Received) - dépôt refusé"
         );
         anyhow::bail!(
             "Boucle de courrier détectée : {hops} en-têtes Received (limite {})",
@@ -107,7 +107,7 @@ pub async fn deliver_local(
     // Bounded address validation: a recipient that could not be a real address
     // (empty, too long, control characters, no `@`) never reaches the database.
     if !hygiene::valid_envelope_address(recipient) {
-        tracing::error!(recipient = %recipient, "Adresse destinataire invalide — dépôt refusé");
+        tracing::error!(recipient = %recipient, "Adresse destinataire invalide - dépôt refusé");
         anyhow::bail!("Adresse destinataire invalide : {recipient}");
     }
 
@@ -120,7 +120,7 @@ pub async fn deliver_local(
     // TODO(quota): `mail.mailboxes.quota_bytes` is read by the resolver and
     // carried on `resolve::LocalDelivery`, but it is NOT enforced here, because
     // enforcing it needs the size of what the mailbox already holds and
-    // `mail.messages` has no size column — bodies are stored parsed apart, so
+    // `mail.messages` has no size column - bodies are stored parsed apart, so
     // anything computed from them is an estimate, and an estimate means
     // refusing legitimate mail on a mailbox that is not actually full. When a
     // size becomes available, the refusal must be TEMPORARY (`452 4.2.2`, see
@@ -130,7 +130,7 @@ pub async fn deliver_local(
     // Stamp this local-delivery stage's own trace header before parsing and
     // storing. When the message arrives over SMTP the network peer is already
     // recorded by the front-end's own Received line; this one marks that the
-    // message passed through local delivery on this host — and, standing on its
+    // message passed through local delivery on this host - and, standing on its
     // own, keeps the trace honest when `deliver_local` is driven from another
     // entry point. Both inserted values are sanitised, so neither the peer label
     // nor the hostname can smuggle in a second header.
@@ -206,7 +206,7 @@ pub async fn deliver_local(
     let mailed_by = domain_of(envelope_from).or_else(|| raw_header("Return-Path").and_then(|rp| domain_of(&rp)));
 
     // "Signed by": the d= tag of the DKIM signature. The signature itself is
-    // NOT verified here — the column records a claim, not a verdict.
+    // NOT verified here - the column records a claim, not a verdict.
     let signed_by = raw_header("DKIM-Signature").and_then(|dkim| {
         dkim.split(';')
             .map(str::trim)
@@ -329,7 +329,7 @@ pub async fn deliver_local(
     let quarantined = disposition == Disposition::Spam;
     let folder = if blocked || quarantined { "spam" } else { "inbox" };
 
-    // The operator's spam prefix, applied to what we STORE — never to the bytes
+    // The operator's spam prefix, applied to what we STORE - never to the bytes
     // we keep on disk. Rewriting the raw subject would invalidate the message's
     // DKIM signature, which matters the moment the recipient forwards it.
     let subject = match cfg.spam_subject_prefix.trim() {
@@ -500,7 +500,7 @@ pub async fn deliver_local(
         "Message déposé localement"
     );
 
-    // Push notification — a message that actually reached the inbox rings the
+    // Push notification - a message that actually reached the inbox rings the
     // recipient's registered devices through the core. Best-effort, after the
     // commit, and only for genuine inbox arrivals: a spam-filed message must not
     // notify. A publish failure never fails a delivery that already succeeded.
@@ -547,7 +547,7 @@ pub async fn deliver_local(
         }
     }
 
-    // Vacation auto-reply — the single choke point every local delivery passes
+    // Vacation auto-reply - the single choke point every local delivery passes
     // through. Best-effort and last: it must never fail or delay a delivery that
     // already succeeded. It applies the RFC 3834 guard, the active window, the
     // contacts scope and the per-sender rate-limit before sending anything.
@@ -571,7 +571,7 @@ pub async fn deliver_local(
     )
     .await;
 
-    // Automatic forwarding — the same choke point as the vacation responder, and
+    // Automatic forwarding - the same choke point as the vacation responder, and
     // just as best-effort. If the recipient configured active forwarding rules,
     // re-send a copy of the stored message (with the anti-loop marker) to each
     // destination, and archive the local copy when asked. The marker on the copy
@@ -602,9 +602,9 @@ pub async fn deliver_local(
 ///
 /// Same configuration as the IMAP sync path (`services::sync_service`): mail
 /// HTML relies on presentational attributes no modern sanitiser allows by
-/// default, and dropping them turns legitimate mail into unreadable soup —
+/// default, and dropping them turns legitimate mail into unreadable soup -
 /// while scripts, event handlers and unknown URL schemes stay out.
-/// The message body sanitiser — the SAME policy as every other ingestion path
+/// The message body sanitiser - the SAME policy as every other ingestion path
 /// (`services::html_sanitize`). It used to be a second, hand-copied builder
 /// here, which is how a hardening applied on one side silently missed the
 /// other; local delivery now goes through the shared one.
@@ -659,7 +659,7 @@ async fn find_or_create_thread(
         }
     }
 
-    // Subject fallback — ONLY for actual replies/forwards, so that unrelated
+    // Subject fallback - ONLY for actual replies/forwards, so that unrelated
     // messages sharing a subject do not get merged into one conversation.
     let normalized = normalize_subject(subject);
     let had_prefix = normalized != subject.to_lowercase().trim();
@@ -756,7 +756,7 @@ mod tests {
 
     #[test]
     fn scripts_are_stripped_but_mail_layout_survives() {
-        // NB : ammonia assainit un FRAGMENT — <body> est absorbé par l'analyseur
+        // NB : ammonia assainit un FRAGMENT - <body> est absorbé par l'analyseur
         // HTML, d'où les attributs legacy portés ici par <table>/<td>.
         let dirty = r##"<table cellpadding="4" bgcolor="#ffffff"><tr><td align="center">
              <font color="red">Bonjour</font><script>alert(1)</script>

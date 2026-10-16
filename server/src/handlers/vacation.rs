@@ -3,7 +3,7 @@
 //!
 //! The wire shape is the client's `VacationResponder` verbatim (camelCase), so
 //! the settings tab round-trips it without a mapping layer. Dates travel as
-//! `YYYY-MM-DD` strings, with `""` meaning "no bound" — the empty end-date the
+//! `YYYY-MM-DD` strings, with `""` meaning "no bound" - the empty end-date the
 //! UI already supports.
 
 use axum::{extract::State, Json};
@@ -33,7 +33,7 @@ pub struct VacationDto {
     pub contacts_only: bool,
 }
 
-/// GET /vacation — the current user's responder, or empty defaults when unset.
+/// GET /vacation - the current user's responder, or empty defaults when unset.
 pub async fn get_vacation(
     State(state): State<AppState>,
     user: AuthUser,
@@ -61,7 +61,7 @@ pub async fn get_vacation(
     Ok(Json(dto))
 }
 
-/// PUT /vacation — insert or replace the current user's responder.
+/// PUT /vacation - insert or replace the current user's responder.
 pub async fn put_vacation(
     State(state): State<AppState>,
     user: AuthUser,
@@ -72,7 +72,7 @@ pub async fn put_vacation(
     let end = parse_optional_date(&body.end_date)?;
 
     // A responder that is turned ON needs a body to send and a start day to
-    // begin — an empty active responder would answer nothing yet claim to be on.
+    // begin - an empty active responder would answer nothing yet claim to be on.
     if body.enabled {
         if start.is_none() {
             return Err(MailError::Validation(

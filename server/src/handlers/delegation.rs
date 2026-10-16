@@ -1,4 +1,4 @@
-//! Account delegation endpoints — Gmail-style "grant access to your account".
+//! Account delegation endpoints - Gmail-style "grant access to your account".
 //!
 //! A grantor invites a delegate (`POST /delegations`), lists what they granted
 //! (`GET /delegations`) and revokes (`DELETE /delegations/:id`). A delegate lists
@@ -7,8 +7,8 @@
 //!
 //! Every route is scoped to the caller (`X-Kubuno-User-Id`): a grantor route
 //! filters by `grantor_user_id`, a delegate route by `delegate_user_id`. The
-//! delegate of a new grant is resolved through the core's INTERNAL directory —
-//! the module cannot read `core.users` — and no response ever distinguishes
+//! delegate of a new grant is resolved through the core's INTERNAL directory -
+//! the module cannot read `core.users` - and no response ever distinguishes
 //! "unknown address" from "cannot be granted", so the routes leak nothing about
 //! who does or does not have an account here.
 //!
@@ -37,7 +37,7 @@ pub struct GrantDto {
     pub email: String,
 }
 
-/// GET /delegations — the delegations I have granted (as grantor), any status.
+/// GET /delegations - the delegations I have granted (as grantor), any status.
 pub async fn list_granted(
     State(state): State<AppState>,
     user: AuthUser,
@@ -48,7 +48,7 @@ pub async fn list_granted(
     Ok(Json(rows))
 }
 
-/// GET /delegations/incoming — delegations addressed to me: pending invitations
+/// GET /delegations/incoming - delegations addressed to me: pending invitations
 /// (to accept/decline) and accepted delegations (accounts I may act on).
 pub async fn list_incoming(
     State(state): State<AppState>,
@@ -60,7 +60,7 @@ pub async fn list_incoming(
     Ok(Json(rows))
 }
 
-/// POST /delegations { email } — grant a user of this instance access to my
+/// POST /delegations { email } - grant a user of this instance access to my
 /// mailbox. The invitation starts `pending`; the delegate must accept it.
 pub async fn grant(
     State(state): State<AppState>,
@@ -73,7 +73,7 @@ pub async fn grant(
     }
 
     // Resolve the address to an account of THIS instance, through the core's
-    // internal directory. A generic error on no match — never "unknown user".
+    // internal directory. A generic error on no match - never "unknown user".
     let delegate = resolve_user_by_email(&state, &email)
         .await?
         .ok_or_else(|| {
@@ -103,7 +103,7 @@ pub async fn grant(
     }
 }
 
-/// DELETE /delegations/:id — I (the grantor) revoke a delegation I granted.
+/// DELETE /delegations/:id - I (the grantor) revoke a delegation I granted.
 pub async fn revoke(
     State(state): State<AppState>,
     user: AuthUser,
@@ -119,7 +119,7 @@ pub async fn revoke(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// POST /delegations/:id/accept — I (the delegate) accept an invitation.
+/// POST /delegations/:id/accept - I (the delegate) accept an invitation.
 pub async fn accept(
     State(state): State<AppState>,
     user: AuthUser,
@@ -129,14 +129,14 @@ pub async fn accept(
         .await
         .map_err(MailError::Internal)?;
     if affected == 0 {
-        // Unknown id, not mine, or not pending — one generic answer.
+        // Unknown id, not mine, or not pending - one generic answer.
         return Err(MailError::NotFound("Invitation introuvable".into()));
     }
     tracing::info!(delegate = %user.id, delegation = %id, "Délégation acceptée");
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// POST /delegations/:id/decline — I (the delegate) decline an invitation or
+/// POST /delegations/:id/decline - I (the delegate) decline an invitation or
 /// step away from an accepted delegation.
 pub async fn decline(
     State(state): State<AppState>,
@@ -167,7 +167,7 @@ struct DirectoryUser {
 ///
 /// The core is asked with the internal secret (a module holds no user token).
 /// A core that cannot be reached is an INTERNAL error (503-class), distinct from
-/// "no match" (a validation refusal) — so "I could not ask" never masquerades as
+/// "no match" (a validation refusal) - so "I could not ask" never masquerades as
 /// "that address is not here".
 async fn resolve_user_by_email(
     state: &AppState,

@@ -10,7 +10,7 @@ use crate::{errors::MailError, middleware::AuthUser, services::spam_classifier, 
 /// runtime on large mailboxes. The most recent messages are the most relevant.
 const REBUILD_CAP: i64 = 3000;
 
-/// GET /spam/stats — corpus size, distinct tokens, and auto-classify settings.
+/// GET /spam/stats - corpus size, distinct tokens, and auto-classify settings.
 pub async fn stats(
     State(state): State<AppState>,
     user: AuthUser,
@@ -44,7 +44,7 @@ pub async fn stats(
     })))
 }
 
-/// PATCH /spam/settings — update auto-classify flag and/or threshold.
+/// PATCH /spam/settings - update auto-classify flag and/or threshold.
 pub async fn update_settings(
     State(state): State<AppState>,
     user: AuthUser,
@@ -84,7 +84,7 @@ pub async fn update_settings(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// POST /spam/train — rebuild the model from scratch using the existing corpus:
+/// POST /spam/train - rebuild the model from scratch using the existing corpus:
 /// messages currently in `spam` are spam examples, read messages in `inbox` are
 /// ham examples. Idempotent (settings are preserved, counts are reset first).
 pub async fn train(

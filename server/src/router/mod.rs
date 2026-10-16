@@ -52,7 +52,7 @@ pub fn build(state: AppState) -> Router {
         .route("/accounts/:id",          get(accounts::get_account).patch(accounts::update_account).delete(accounts::delete_account))
         .route("/accounts/:id/test",     post(accounts::test_existing_account))
         .route("/accounts/:id/sync",     post(accounts::trigger_sync))
-        // OpenPGP / GPG — key management (Wave 1)
+        // OpenPGP / GPG - key management (Wave 1)
         .route("/pgp/status",            get(pgp::status))
         .route("/pgp/keys",              get(pgp::list_keys))
         .route("/pgp/keys/generate",     post(pgp::generate_key))
@@ -60,7 +60,7 @@ pub fn build(state: AppState) -> Router {
         .route("/pgp/keys/:id",          delete(pgp::delete_key))
         .route("/pgp/contacts",          get(pgp::list_contacts).post(pgp::add_contact))
         .route("/pgp/contacts/:id",      delete(pgp::delete_contact))
-        // Web Key Directory — serving OUR local mailboxes' public keys. A real
+        // Web Key Directory - serving OUR local mailboxes' public keys. A real
         // WKD client hits the root `/.well-known/openpgpkey/...`, which the core
         // does not proxy to modules; these are reachable at `/api/v1/mail/wkd/...`
         // and become the WKD endpoint once the root path is routed here (see the

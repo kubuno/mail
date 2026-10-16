@@ -1,21 +1,21 @@
-//! `/admin/mailboxes` — the local addresses this instance files into a Kubuno
+//! `/admin/mailboxes` - the local addresses this instance files into a Kubuno
 //! account, and the IMAP/SMTP login that goes with one.
 //!
 //! ── What the module cannot know about the owner ──────────────────────────────
 //! A mailbox names a Kubuno account by its `user_id`, but the module owns no
 //! access to `core.users` (schema `mail` only, and the core exposes no internal
-//! route that lists or resolves a user — see the module's README of this change
+//! route that lists or resolves a user - see the module's README of this change
 //! and the report of this work). So `user_id` is accepted as given, and what CAN
 //! be checked is checked: it is a UUID, and `owner_known` reports whether that
 //! id is one the mail schema has ever seen (an account, a credential, or stored
-//! messages). A mailbox whose owner is unknown is not refused — the account may
-//! simply never have used mail — it is flagged, which is what the migration
+//! messages). A mailbox whose owner is unknown is not refused - the account may
+//! simply never have used mail - it is flagged, which is what the migration
 //! asked the panel to do rather than silently swallowing mail.
 //!
 //! ── Why occupancy is a count and not a size ──────────────────────────────────
 //! `mail.messages` stores no message size: no raw RFC 5322 bytes, no
 //! `rfc822_size` column, only parsed fields (see migration 000003). Any byte
-//! figure would therefore be an invention, so none is returned — `used_bytes` is
+//! figure would therefore be an invention, so none is returned - `used_bytes` is
 //! `null` and the list says so once. Worse, a message records `user_id` and
 //! `account_id` but never the local address it was delivered TO, so even a size
 //! column would not be attributable to one mailbox among several of the same
@@ -90,7 +90,7 @@ pub struct MailboxView {
     /// Messages stored for the OWNER account (all its addresses together),
     /// excluding those already flagged deleted.
     pub owner_message_count: i64,
-    /// Always `null` — see `USAGE_NOTE`.
+    /// Always `null` - see `USAGE_NOTE`.
     pub used_bytes: Option<i64>,
 }
 
@@ -109,7 +109,7 @@ pub struct MailboxPage {
 }
 
 /// A freshly issued IMAP/SMTP login. The password appears here and nowhere else
-/// — it is not stored (only its Argon2 hash and SCRAM secret are) and it is
+/// - it is not stored (only its Argon2 hash and SCRAM secret are) and it is
 /// never logged.
 #[derive(Debug, Serialize)]
 pub struct CreatedCredential {
@@ -162,7 +162,7 @@ pub struct UpdateMailboxDto {
 
 #[derive(Debug, Deserialize)]
 pub struct DeleteMailboxQuery {
-    /// Also delete the IMAP/SMTP login bearing this address. Off by default —
+    /// Also delete the IMAP/SMTP login bearing this address. Off by default -
     /// see `CreateMailboxDto::replace_credential` for why.
     pub delete_credential: Option<bool>,
 }
@@ -343,7 +343,7 @@ pub async fn create_mailbox(
     // takes a pool rather than a transaction. Rather than leave a mailbox whose
     // requested login was never issued, a failure here undoes the mailbox AND its
     // local account: the administrator asked for one object, not half of one.
-    // The account is deleted first — it references the mailbox `ON DELETE SET
+    // The account is deleted first - it references the mailbox `ON DELETE SET
     // NULL`, so removing the mailbox first would orphan it rather than remove it.
     let credential = if wants_credential {
         match issue_credential(&state.db, row.user_id, &row.address, dto.credential_label.as_deref())
@@ -495,8 +495,8 @@ pub async fn delete_mailbox(
     let kept = owner_message_count(&state.db, row.user_id).await?;
 
     // Deactivate the local account BEFORE dropping the mailbox. Deleting the
-    // mailbox only sets `accounts.mailbox_id` to NULL (ON DELETE SET NULL) — the
-    // account, and every message filed into it, is KEPT — but its owner must stop
+    // mailbox only sets `accounts.mailbox_id` to NULL (ON DELETE SET NULL) - the
+    // account, and every message filed into it, is KEPT - but its owner must stop
     // composing from an address that no longer accepts mail, so it is disabled.
     if let Err(e) = crate::db::query("UPDATE mail.accounts SET is_active = FALSE WHERE mailbox_id = $1")
         .bind(id)
@@ -573,13 +573,13 @@ pub async fn issue_mailbox_credential(
 /// IMAP/SMTP configuration is needed because the instance itself is the server.
 /// The eight NOT NULL external-transport columns are never read for it (the sync
 /// worker skips it, sending goes through the instance's outbound queue), so they
-/// carry harmless sentinels — empty host, `security = 'none'`, an encrypted empty
+/// carry harmless sentinels - empty host, `security = 'none'`, an encrypted empty
 /// password. It is told apart from an external account by `kind`. See migration
 /// 000025.
 /// Attributes an automatic address to one account, resolving a name clash.
 ///
 /// The counterpart of [`create_mailbox`] for the provisioning worker: no
-/// `AuthUser` (it is internal), no credential, and it NEVER overwrites — an
+/// `AuthUser` (it is internal), no credential, and it NEVER overwrites - an
 /// account that already holds any mailbox on this domain is left exactly as it
 /// is, so a manually chosen address, or a previous run, is never disturbed. That
 /// is what makes the reconcile safe to run on every tick.
@@ -597,7 +597,7 @@ pub(crate) async fn provision_mailbox(
     local_base: &str,
     display_name: Option<&str>,
 ) -> Result<Option<String>, MailError> {
-    // Already served on this domain? Then there is nothing to do — and nothing
+    // Already served on this domain? Then there is nothing to do - and nothing
     // to overwrite. This is the idempotency the worker relies on.
     let has: Option<Uuid> = crate::db::query_scalar(
         "SELECT id FROM mail.mailboxes WHERE user_id = $1 AND domain = $2 LIMIT 1",
@@ -693,7 +693,7 @@ pub(crate) async fn create_local_account(
 
     // Display name for the "From" identity: the mailbox's own display name when
     // set, else the address's local part (e.g. "test001") rather than the whole
-    // address — a name equal to the address would render as `x@y <x@y>`.
+    // address - a name equal to the address would render as `x@y <x@y>`.
     let name = mailbox.display_name.clone().unwrap_or_else(|| {
         mailbox
             .address
@@ -769,7 +769,7 @@ pub(crate) async fn create_local_account(
 /// Idempotent: it only touches active mailboxes with no linked account, so
 /// re-running it on every boot is a no-op once the backlog is cleared (the
 /// partial unique index on `accounts.mailbox_id` is the ultimate guarantee). A
-/// failure on one mailbox is logged and skipped — it must not strand the others
+/// failure on one mailbox is logged and skipped - it must not strand the others
 /// nor block the process from serving.
 pub async fn ensure_local_accounts(state: &AppState) -> Result<(), MailError> {
     // NOT EXISTS keeps `mail.mailboxes` the only table in the FROM, so the

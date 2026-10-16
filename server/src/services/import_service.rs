@@ -8,7 +8,7 @@
 //! just many short calls that can be paused, resumed or replayed.
 //!
 //! Ingestion goes through `sync_service::store_message`, exactly like a regular
-//! IMAP sync — same parsing, threading, attachment handling and, crucially, the
+//! IMAP sync - same parsing, threading, attachment handling and, crucially, the
 //! same `(account_id, imap_folder, imap_uid)` dedup, which is what makes
 //! replaying a chunk harmless.
 
@@ -54,7 +54,7 @@ pub struct FolderProbe {
     /// Raw name, as the server spells it (this is what must be sent back in
     /// `exclude_folders`, though the display name is accepted too).
     pub name:         String,
-    /// Same name, modified-UTF-7 decoded — readable by a human.
+    /// Same name, modified-UTF-7 decoded - readable by a human.
     pub display_name: String,
     /// Local bucket it will feed: inbox, sent, drafts, spam, trash, archive, custom.
     pub kind:         String,
@@ -168,7 +168,7 @@ pub async fn run_chunk(
     )
     .await;
 
-    // Always log out — error path included — or a failed migration would pile
+    // Always log out - error path included - or a failed migration would pile
     // up sessions on the source server until it refuses new ones.
     imap_service::logout(session).await;
     outcome
@@ -221,7 +221,7 @@ async fn copy_chunk(
             match imap_service::select_folder(session, &name).await {
                 Ok(_) => selected = Some(name.clone()),
                 Err(e) => {
-                    tracing::warn!(folder = %name, error = %e, "Migration : SELECT échoué — dossier ignoré");
+                    tracing::warn!(folder = %name, error = %e, "Migration : SELECT échoué - dossier ignoré");
                     selected = None;
                     cur.fi = fi + 1;
                     continue;
@@ -235,7 +235,7 @@ async fn copy_chunk(
                 // Skip the batch rather than the folder: the next one may well
                 // go through. `pos` still advances, otherwise the migration
                 // would retry the same failing batch for ever.
-                tracing::warn!(folder = %name, error = %e, "Migration : FETCH échoué — lot ignoré");
+                tracing::warn!(folder = %name, error = %e, "Migration : FETCH échoué - lot ignoré");
                 if let Some(f) = cur.folders.get_mut(fi) {
                     f.pos = end;
                 }
@@ -296,7 +296,7 @@ async fn copy_chunk(
 /// First call of a migration: decide, once, what is to be copied.
 ///
 /// The whole UID plan is computed here and then carried in the cursor, so the
-/// following chunks cost one SELECT and one FETCH each — and so the total shown
+/// following chunks cost one SELECT and one FETCH each - and so the total shown
 /// to the operator stops moving once the migration has started.
 async fn build_cursor(
     session: &mut ImapSession,
@@ -354,7 +354,7 @@ async fn uids_to_copy(session: &mut ImapSession, since: Option<chrono::NaiveDate
     if let Some(day) = since {
         // IMAP SEARCH keys given in sequence are ANDed (RFC 3501 §6.4.4), so
         // `UID 1:* SINCE <dd-Mon-yyyy>` narrows the very command `uid_list`
-        // already issues — no new IMAP verb and no new helper to get wrong.
+        // already issues - no new IMAP verb and no new helper to get wrong.
         let range = format!("1:* SINCE {}", day.format("%d-%b-%Y"));
         match imap_service::uid_list(session, &range).await {
             Ok(uids) => return Ok(uids),
@@ -362,8 +362,8 @@ async fn uids_to_copy(session: &mut ImapSession, since: Option<chrono::NaiveDate
                 // Trade-off: a server that refuses the compound criterion makes
                 // us list everything and drop what is too old only after the
                 // fetch, from the `Date:` header. Costs bandwidth, but it never
-                // loses a message — and correctness wins here.
-                tracing::warn!(error = %e, "Migration : UID SEARCH SINCE refusé — repli sur un filtrage après récupération");
+                // loses a message - and correctness wins here.
+                tracing::warn!(error = %e, "Migration : UID SEARCH SINCE refusé - repli sur un filtrage après récupération");
             }
         }
     }
@@ -391,7 +391,7 @@ fn is_older_than(raw: &[u8], limit: chrono::NaiveDate) -> bool {
 /// The hosted mailbox the messages land in: the destination user's default
 /// local account.
 ///
-/// Columns are enumerated rather than `SELECT *` — the table also holds the
+/// Columns are enumerated rather than `SELECT *` - the table also holds the
 /// encrypted IMAP/SMTP passwords, which must never be read into memory here.
 async fn load_target_account(db: &DbPool, user_id: Uuid) -> Result<EmailAccount> {
     let found = crate::db::query_as::<EmailAccount>(

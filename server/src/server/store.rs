@@ -4,7 +4,7 @@
 //! The module stores messages parsed apart (envelope in columns, bodies in
 //! `body_text`/`body_html`, attachments as files) and never keeps the original
 //! MIME. Serving IMAP or POP3 therefore means REBUILDING a message, not
-//! replaying one — see `render`. It is faithful in content, not byte for byte:
+//! replaying one - see `render`. It is faithful in content, not byte for byte:
 //! a client that re-downloads a message gets our rendering of it, not the
 //! original bytes, so signatures over the raw body will not verify.
 
@@ -55,7 +55,7 @@ pub fn folder_of(mailbox: &str) -> Option<&'static str> {
     }
 }
 
-/// Messages of one folder, oldest first — the order both protocols number
+/// Messages of one folder, oldest first - the order both protocols number
 /// their sequence numbers in.
 pub async fn list(db: &DbPool, user_id: Uuid, folder: &str) -> Result<Vec<StoredMessage>> {
     crate::db::query_as::<StoredMessage>(
@@ -139,7 +139,7 @@ pub async fn set_starred(db: &DbPool, user_id: Uuid, message_id: Uuid, starred: 
 }
 
 /// Moves a message to another folder (IMAP MOVE, RFC 6851). The message keeps its
-/// `local_uid` — which is globally unique — so the UID reported in the
+/// `local_uid` - which is globally unique - so the UID reported in the
 /// destination is unchanged. Returns that UID, for the MOVE/UIDPLUS response.
 pub async fn move_to(db: &DbPool, user_id: Uuid, message_id: Uuid, folder: &str) -> Result<Option<i64>> {
     let moved = crate::db::query(
@@ -210,7 +210,7 @@ pub async fn copy_to(db: &DbPool, user_id: Uuid, message_id: Uuid, folder: &str)
 
 /// The folder's HIGHESTMODSEQ: the greatest modification sequence a client could
 /// have seen for it. That is the max over the messages currently in the folder
-/// AND over its tombstones — a message that VANISHED still advanced the sequence
+/// AND over its tombstones - a message that VANISHED still advanced the sequence
 /// as it left, and a reconnecting client must be told about it. Never zero for a
 /// folder that has ever changed; a folder that never changed reports the RFC's
 /// floor of 1.
@@ -262,8 +262,8 @@ pub async fn vanished_since(
 /// Inserts a client-uploaded message into `folder` and returns its new
 /// `local_uid` (the APPENDUID a client caches to find the message again).
 ///
-/// The raw RFC 5322 bytes are parsed apart the way a synced message is — the
-/// store never keeps original MIME — but without the sync path's threading and
+/// The raw RFC 5322 bytes are parsed apart the way a synced message is - the
+/// store never keeps original MIME - but without the sync path's threading and
 /// categorisation: an appended message (a draft, a Sent copy) gets its own fresh
 /// thread. The whole insert is one transaction so a message never exists without
 /// the thread it belongs to. `\Seen` / `\Flagged` from the command map onto
@@ -280,7 +280,7 @@ pub async fn append(
 
     // Every message row hangs off an account (NOT NULL). A mailbox that a client
     // can log into may still have no account configured, in which case there is
-    // nowhere to file the upload — surfaced to the client as a plain failure.
+    // nowhere to file the upload - surfaced to the client as a plain failure.
     let account_id: Uuid = crate::db::query_scalar(
         "SELECT id FROM mail.accounts WHERE user_id = $1 ORDER BY is_default DESC, created_at ASC LIMIT 1",
     )
@@ -403,7 +403,7 @@ fn address_json(addrs: Option<&mail_parser::Address>) -> Value {
 }
 
 /// The UIDVALIDITY announced for a folder. It must be stable for the life of the
-/// mailbox — a client that sees it change throws away its whole cache. We derive
+/// mailbox - a client that sees it change throws away its whole cache. We derive
 /// it deterministically from the folder name, so it never changes across
 /// restarts. (Folders here are fixed system folders; there is no recreation that
 /// would warrant bumping it.)
@@ -422,7 +422,7 @@ pub fn uidvalidity(folder: &str) -> u32 {
 
 /// Rebuilds a full message: headers, then the body, then the attachments read
 /// back from disk. `attachments_dir` is the module's configured directory; a
-/// file that has gone missing is skipped rather than failing the whole fetch —
+/// file that has gone missing is skipped rather than failing the whole fetch -
 /// a client asking for its mail should get the mail, not an error.
 pub fn render(message: &StoredMessage) -> String {
     let mut out = String::with_capacity(2048);
@@ -463,7 +463,7 @@ pub fn render(message: &StoredMessage) -> String {
             match std::fs::read(&att.path) {
                 Ok(bytes) => out.push_str(&base64_wrapped(&bytes)),
                 Err(e) => {
-                    tracing::warn!(path = %att.path, error = %e, "Pièce jointe illisible — partie vide servie");
+                    tracing::warn!(path = %att.path, error = %e, "Pièce jointe illisible - partie vide servie");
                 }
             }
         }
@@ -566,7 +566,7 @@ fn format_address_list(value: &Value) -> String {
         .unwrap_or_default()
 }
 
-/// RFC 2047 encoding, applied only when the value is not plain ASCII — an
+/// RFC 2047 encoding, applied only when the value is not plain ASCII - an
 /// unencoded accent in a Subject is what makes it arrive as mojibake.
 fn encode_header_value(value: &str) -> String {
     if value.is_ascii() {

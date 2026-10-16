@@ -15,7 +15,7 @@ export type MailCategory = typeof TABS[number]['id']
  * Tab a conversation belongs to.
  *
  * The category is decided by the server when the message is stored (Rust
- * `services::categorize`) and simply read back here — the client no longer
+ * `services::categorize`) and simply read back here - the client no longer
  * classifies anything, so there is a single source of truth and listing a tab
  * costs an indexed lookup instead of a scan. `main` only covers rows stored
  * before the column existed.

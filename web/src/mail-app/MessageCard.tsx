@@ -37,7 +37,7 @@ function ReplyPill({ onClick, icon, label }: {
 
 /** One-line preview for a collapsed row: the NEW content only, with the quoted
  *  history stripped (attribution line, "> " quotes, forwarded "De:/From:" header)
- *  — like Gmail, which never shows the quote in the snippet. */
+ *  - like Gmail, which never shows the quote in the snippet. */
 function previewSnippet(text: string | null | undefined): string {
   if (!text) return ''
   const kept: string[] = []
@@ -115,7 +115,7 @@ export default function MessageCard({
   /** Open state, owned by the thread so "expand/collapse all" always agrees
    *  with what the reader did by hand. */
   expanded:     boolean
-  /** The thread is flagged important — shown in the details card. */
+  /** The thread is flagged important - shown in the details card. */
   important?:   boolean
   onToggle:     (open: boolean) => void
   /** False for a thread holding a single message: there is nothing to collapse
@@ -138,7 +138,7 @@ export default function MessageCard({
 
   // ── Remote images ──────────────────────────────────────────────────────────
   // Fetching one tells its host the message was opened, so an unknown sender's
-  // images are held back until the reader asks — Gmail's behaviour.
+  // images are held back until the reader asks - Gmail's behaviour.
   const imagePolicy = useImagePolicy()
   const qcImages = useQueryClient()
   const [showImagesOnce, setShowImagesOnce] = useState(false)
@@ -150,7 +150,7 @@ export default function MessageCard({
     mutationFn: () => mailApi.allowImageSender(message.from_email.toLowerCase()),
     onSuccess: () => qcImages.invalidateQueries({ queryKey: ['mail-image-senders'] }),
   })
-  // Mobile: lighter header — short date, no raw address, star + "⋮" only
+  // Mobile: lighter header - short date, no raw address, star + "⋮" only
   // (Reply stays as the big button under the message).
   const isMobile = useIsMobile()
   const [starred,       setStarred]       = useState(message.is_starred)
@@ -213,10 +213,10 @@ export default function MessageCard({
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(true) } }}
         className="w-full flex items-center gap-3 py-5 hover:bg-[#f1f3f4] text-left cursor-pointer"
       >
-        {/* Same avatar metrics as the expanded header — the picture must not
+        {/* Same avatar metrics as the expanded header - the picture must not
             resize when a message is collapsed or opened. */}
         <SenderAvatar email={message.from_email} name={message.from_name} size={40} dmarc={message.auth_dmarc} />
-        {/* Sender and preview on their own line each — one block per line. */}
+        {/* Sender and preview on their own line each - one block per line. */}
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-[#202124] truncate" title={sender.full}>{senderDisplay}</div>
           <div className="text-sm text-[#5f6368] truncate">{previewSnippet(message.body_text).substring(0, 100)}</div>
@@ -260,14 +260,14 @@ export default function MessageCard({
               </span>
               {/* The real address is normally desktop-only chrome, but a display
                   name claiming ANOTHER address is exactly the case where hiding
-                  it completes the impersonation — so it stays on mobile too, in
+                  it completes the impersonation - so it stays on mobile too, in
                   the warning colour, when the name is deceptive. */}
               {sender.name && (!isMobile || !!sender.spoofedAddress) && (
                 <span className={`text-xs ml-1.5 ${sender.spoofedAddress ? 'text-[#c5221f] font-medium' : 'text-[#5f6368]'}`}>
                   &lt;{sender.email}&gt;
                 </span>
               )}
-              {/* "Unsubscribe" — only when the message exposes List-Unsubscribe. */}
+              {/* "Unsubscribe" - only when the message exposes List-Unsubscribe. */}
               {message.list_unsubscribe && unsubscribeTarget(message.list_unsubscribe) && (
                 <>
                   <span className="text-xs text-[#5f6368] mx-1.5">·</span>
@@ -321,7 +321,7 @@ export default function MessageCard({
               </div>
             </div>
           </div>
-          {/* Recipients — collapsed, unfolded from the chevron like Gmail does */}
+          {/* Recipients - collapsed, unfolded from the chevron like Gmail does */}
           <div className="mt-0.5 flex items-start gap-1 relative">
             <button
               onClick={e => { e.stopPropagation(); setDetailsOpen(v => !v) }}
@@ -332,7 +332,7 @@ export default function MessageCard({
               className="flex items-center gap-1 text-xs text-[#5f6368] hover:text-text-primary rounded px-1 -ml-1"
             >
               <span className="truncate max-w-[420px]">
-                {/* Recipient names are attacker-controlled too — same treatment
+                {/* Recipient names are attacker-controlled too - same treatment
                     as the sender's: neutralized, and replaced by the address
                     when they impersonate a different one. */}
                 {t('mail_to_prefix')} {(message.to_addresses as Array<{name?:string;email:string}>).map(a => analyzeSender(a.name, a.email).label).join(', ')}
@@ -353,7 +353,7 @@ export default function MessageCard({
           </div>
 
           {/* Impersonation warnings (deceptive display name, IDN domain), then
-              the OpenPGP trust chips — same chip language, same row. */}
+              the OpenPGP trust chips - same chip language, same row. */}
           <SenderWarningBadges safety={sender} />
           <PgpBadges message={message} />
 
@@ -368,11 +368,11 @@ export default function MessageCard({
             <button onClick={() => setShowOriginal(false)} className="p-0.5 rounded hover:bg-surface-2 text-text-tertiary"><X size={14} /></button>
           </div>
           <pre className="p-3 text-[11px] leading-relaxed text-text-secondary overflow-x-auto max-h-80 whitespace-pre-wrap break-all">
-{`Message-ID: ${message.message_id ?? '—'}
+{`Message-ID: ${message.message_id ?? '-'}
 From: ${sender.full}
 Date: ${new Date(message.sent_at ?? message.received_at).toISOString()}
-Folder: ${message.folder}  ·  Spam score: ${message.spam_score ?? '—'}
-List-Unsubscribe: ${message.list_unsubscribe ?? '—'}
+Folder: ${message.folder}  ·  Spam score: ${message.spam_score ?? '-'}
+List-Unsubscribe: ${message.list_unsubscribe ?? '-'}
 
 ${message.body_html ?? message.body_text ?? ''}`}
           </pre>

@@ -1,7 +1,7 @@
 //! The IMAP4rev1 service this module offers (RFC 3501).
 //!
 //! It serves the module's own store, not an upstream account: the five folders
-//! of `store::FOLDERS`, with `local_uid` as the IMAP UID — that column exists
+//! of `store::FOLDERS`, with `local_uid` as the IMAP UID - that column exists
 //! precisely so a mail client can keep a stable handle on a message across
 //! sessions.
 //!
@@ -53,7 +53,7 @@ use imap_parse::{
 };
 
 /// Longest command line accepted. Most commands are tens of bytes, but a
-/// `UID FETCH` over a few thousand UIDs is a single long line — Dovecot's
+/// `UID FETCH` over a few thousand UIDs is a single long line - Dovecot's
 /// `imap_max_line_length` is 64 KiB for exactly that reason, and 8 KiB
 /// disconnected clients doing legitimate bulk work.
 const MAX_LINE: u64 = 64 * 1024;
@@ -85,8 +85,8 @@ type Reader = BufReader<MailStream>;
 /// `STARTTLS` (and, per RFC 2595, `LOGINDISABLED` to steer conformant clients
 /// away from sending credentials in the clear) is offered only on a plaintext
 /// connection of a STARTTLS listener that actually holds a certificate. Once the
-/// connection is encrypted — an implicit-TLS port, or after a successful
-/// STARTTLS — neither is advertised and `AUTH=PLAIN` stands on its own.
+/// connection is encrypted - an implicit-TLS port, or after a successful
+/// STARTTLS - neither is advertised and `AUTH=PLAIN` stands on its own.
 fn capability_line(tls_mode: TlsMode, has_acceptor: bool, tls: bool) -> String {
     // The modern extensions are advertised unconditionally: they are stateless
     // for the client to discover and cost nothing to a client that ignores them.
@@ -100,7 +100,7 @@ fn capability_line(tls_mode: TlsMode, has_acceptor: bool, tls: bool) -> String {
     caps.push_str(" AUTH=SCRAM-SHA-256");
     // PLAIN sends the password: advertise it only where it cannot be read off
     // the wire. Announcing LOGINDISABLED while still offering AUTH=PLAIN in the
-    // clear was contradictory — a client that trusts the advertisement would
+    // clear was contradictory - a client that trusts the advertisement would
     // hand over the password anyway.
     if !upgradable {
         caps.push_str(" AUTH=PLAIN");
@@ -145,8 +145,8 @@ struct Session {
     settings: PopImapSettings,
     selected: Option<Selected>,
     commands: i32,
-    /// CONDSTORE (RFC 7162) is on for this session: once enabled — by `ENABLE
-    /// CONDSTORE/QRESYNC`, or a `SELECT (CONDSTORE)`/`(QRESYNC ...)` — every FETCH
+    /// CONDSTORE (RFC 7162) is on for this session: once enabled - by `ENABLE
+    /// CONDSTORE/QRESYNC`, or a `SELECT (CONDSTORE)`/`(QRESYNC ...)` - every FETCH
     /// response carries a MODSEQ item for the rest of the session.
     condstore: bool,
     /// QRESYNC (RFC 7162) is on: the client asked for `ENABLE QRESYNC`, which is
@@ -315,8 +315,8 @@ impl Session {
 
     /// True when credentials must not travel in the clear: the channel is
     /// unencrypted AND this listener could have upgraded it (STARTTLS with a
-    /// certificate). A plaintext-only listener — a LAN deployment with no
-    /// certificate — keeps working, since refusing there would lock everyone out.
+    /// certificate). A plaintext-only listener - a LAN deployment with no
+    /// certificate - keeps working, since refusing there would lock everyone out.
     fn cleartext_login_refused(&self) -> bool {
         !self.tls && self.tls_mode == TlsMode::StartTls && self.acceptor.is_some()
     }
@@ -435,8 +435,8 @@ impl Session {
     }
 
     /// Loads the mailbox's policy and, if IMAP is disabled for it, refuses the
-    /// session with a tagged `NO [ALERT]` (Gmail's wording) — the auth WAS valid,
-    /// so no tarpit — leaving the session unauthenticated. On success the policy
+    /// session with a tagged `NO [ALERT]` (Gmail's wording) - the auth WAS valid,
+    /// so no tarpit - leaving the session unauthenticated. On success the policy
     /// is stashed and the mailbox becomes the session's, and the caller sends its
     /// own OK. Returns `true` when the login may proceed.
     ///
@@ -522,7 +522,7 @@ impl Session {
             }
             Err(UpgradeError::Pipelined) => {
                 tracing::warn!(peer = %self.peer,
-                    "STARTTLS IMAP : octets envoyés avant le handshake — connexion fermée");
+                    "STARTTLS IMAP : octets envoyés avant le handshake - connexion fermée");
                 Ok(false)
             }
             Err(UpgradeError::Handshake(e)) => {
@@ -568,7 +568,7 @@ impl Session {
         let Some(user_id) = self.mailbox.as_ref().map(|m| m.user_id) else {
             return self.no(tag, "Please log in first").await;
         };
-        // Minimal form is `<tag> APPEND <mailbox> {<literal>}` — four tokens.
+        // Minimal form is `<tag> APPEND <mailbox> {<literal>}` - four tokens.
         let (Some(mailbox), true) = (tokens.get(2), tokens.len() >= 4) else {
             self.write(&format!("{tag} BAD APPEND requires a mailbox and a message\r\n")).await?;
             return Ok(());
@@ -615,7 +615,7 @@ impl Session {
         };
         let Some(folder) = store::folder_of(&requested.text) else {
             // Selecting the wrong mailbox must leave the previous one selected
-            // per RFC 3501; it does not here — the client is told plainly.
+            // per RFC 3501; it does not here - the client is told plainly.
             self.selected = None;
             return self.no(tag, "[NONEXISTENT] Mailbox does not exist").await;
         };
@@ -664,7 +664,7 @@ impl Session {
             .await?;
 
         // CONDSTORE: announce the folder's HIGHESTMODSEQ so the client can sync
-        // incrementally from this point. A read error must not fail the SELECT —
+        // incrementally from this point. A read error must not fail the SELECT -
         // it is logged and the line simply omitted.
         if self.condstore {
             match store::highest_modseq(&self.db, user_id, folder).await {
@@ -684,7 +684,7 @@ impl Session {
 
         // QRESYNC reconnection catch-up (RFC 7162): the client remembers a folder
         // by its UIDVALIDITY and modseq. If the UIDVALIDITY still matches, push
-        // what changed since — VANISHED (EARLIER) for departures, FETCH for flag
+        // what changed since - VANISHED (EARLIER) for departures, FETCH for flag
         // changes. A mismatch means the client's cache is void, so QRESYNC is
         // skipped and it will resync in full (not an error, RFC 7162 3.2.5.2).
         if let Some(q) = qresync {
@@ -848,7 +848,7 @@ impl Session {
         let folder = selected.folder;
 
         let mut requested = split_fetch_items(&items.text);
-        // A CONDSTORE session — or any CHANGEDSINCE fetch — carries MODSEQ in
+        // A CONDSTORE session - or any CHANGEDSINCE fetch - carries MODSEQ in
         // every FETCH response, even when the client did not name it.
         if (self.condstore || mods.changed_since.is_some())
             && !requested.iter().any(|i| i.eq_ignore_ascii_case("MODSEQ"))
@@ -963,7 +963,7 @@ impl Session {
             .collect();
 
         // The keys (sequence numbers, or UIDs for UID STORE) of messages skipped
-        // because they changed since UNCHANGEDSINCE — reported back in MODIFIED.
+        // because they changed since UNCHANGEDSINCE - reported back in MODIFIED.
         let mut modified: Vec<i64> = Vec::new();
         let mut applied: Vec<Uuid> = Vec::new();
         for (seq, id, modseq, uid) in &targets {
@@ -1029,8 +1029,8 @@ impl Session {
 
         // Auto-expunge (Gmail): when the policy commits `\Deleted` immediately
         // rather than waiting for the client's EXPUNGE, and this STORE just added
-        // the flag, remove those messages now — routed to the purge destination
-        // — emitting the untagged EXPUNGE responses the client needs to resync.
+        // the flag, remove those messages now - routed to the purge destination
+        // - emitting the untagged EXPUNGE responses the client needs to resync.
         if self.settings.imap_expunge_mode == ImapExpungeMode::Auto
             && mode.apply(deleted) == Some(true)
             && !applied.is_empty()
@@ -1147,7 +1147,7 @@ impl Session {
             Some(selected) => selected.read_only,
             None => return self.no(tag, "No mailbox selected").await,
         };
-        // CLOSE expunges silently — untagged EXPUNGE responses are forbidden
+        // CLOSE expunges silently - untagged EXPUNGE responses are forbidden
         // here, because the client is leaving the mailbox anyway.
         if !read_only {
             self.expunge_silently().await;
@@ -1169,7 +1169,7 @@ impl Session {
 
     /// Commits one expunged message to its configured destination
     /// (`imap_purge_mode`): archived (kept out of the inbox), or moved to Trash.
-    /// `delete` maps to Trash too — this store is a soft-delete model shared with
+    /// `delete` maps to Trash too - this store is a soft-delete model shared with
     /// the web UI, which never erases a row either; Trash is the terminal state.
     async fn purge_message(&self, user_id: Uuid, id: Uuid) -> anyhow::Result<()> {
         match self.settings.imap_purge_mode {
@@ -1205,7 +1205,7 @@ impl Session {
             collect_targets(selected, &spec.text, by_uid)
         };
         let Some(dest_folder) = store::folder_of(&dest.text) else {
-            // UIDPLUS TRYCREATE: the copy would work if the mailbox existed —
+            // UIDPLUS TRYCREATE: the copy would work if the mailbox existed -
             // though here the folder set is fixed and the client cannot make one.
             return self.no(tag, "[TRYCREATE] Mailbox does not exist").await;
         };
@@ -1381,7 +1381,7 @@ impl Session {
 
         let mut source = ChangeSource::open(&self.db).await;
         // What the poller compares against (MySQL/SQLite only). Taken now, so a
-        // change between SELECT and IDLE is not reported twice — nor lost: the
+        // change between SELECT and IDLE is not reported twice - nor lost: the
         // snapshot the session holds is what resync diffs against.
         let poll_target = match (
             self.mailbox.as_ref().map(|m| m.user_id),
@@ -1580,7 +1580,7 @@ impl Session {
     }
 
     /// The single buffered stream, for read and write. Absent only during a
-    /// STARTTLS swap, which returns before the next I/O — hence the guard.
+    /// STARTTLS swap, which returns before the next I/O - hence the guard.
     fn conn_mut(&mut self) -> Result<&mut Reader> {
         self.conn.as_mut().context("Flux IMAP indisponible")
     }
@@ -1590,10 +1590,10 @@ impl Session {
     ///
     /// This is the session's autologout, NOT the bound on an IDLE command:
     /// `IDLE_MAX` stays a constant because RFC 2177 fixes it, and a client
-    /// parked in IDLE is not silent — it is being kept alive by `IDLE_KEEPALIVE`
+    /// parked in IDLE is not silent - it is being kept alive by `IDLE_KEEPALIVE`
     /// and served notifications. RFC 3501 §5.4 asks for at least 30 minutes of
     /// tolerated inactivity here; a shorter value is the operator's call, but it
-    /// makes Thunderbird/Outlook reconnect in a loop. Never zero — a 0-minute
+    /// makes Thunderbird/Outlook reconnect in a loop. Never zero - a 0-minute
     /// timeout would drop every connection before its first command.
     fn idle_timeout(&self) -> Duration {
         Duration::from_secs(self.cfg.imap_idle_minutes.max(1) * 60)
@@ -1640,7 +1640,7 @@ impl Session {
     async fn write_bytes(&mut self, data: &[u8]) -> Result<()> {
         // The stream reads and writes through one BufReader, whose AsyncWrite
         // passes straight to the inner (TLS or plain) stream; flush so each
-        // turn-based reply reaches the client — and clears the TLS record layer.
+        // turn-based reply reaches the client - and clears the TLS record layer.
         let conn = self.conn_mut()?;
         conn.write_all(data).await.context("Écriture de la réponse IMAP")?;
         conn.flush().await.context("Vidage de la réponse IMAP")
@@ -1670,7 +1670,7 @@ fn star_of(selected: &Selected, by_uid: bool) -> u64 {
 }
 
 /// Resolves a sequence/UID set against the selected snapshot into the messages
-/// it names, as `(sequence number, id, uid)` in sequence order — the shape
+/// it names, as `(sequence number, id, uid)` in sequence order - the shape
 /// MOVE and COPY both need to act on and report.
 fn collect_targets(selected: &Selected, spec: &str, by_uid: bool) -> Vec<(u64, Uuid, i64)> {
     let star = star_of(selected, by_uid);
@@ -1710,7 +1710,7 @@ enum ChangeSource {
         every: tokio::time::Interval,
         last: Option<(i64, i64)>,
     },
-    /// A failed subscription: IDLE degrades to "wait for DONE" — never spins.
+    /// A failed subscription: IDLE degrades to "wait for DONE" - never spins.
     Nothing,
 }
 
@@ -1878,7 +1878,7 @@ mod tests {
     #[test]
     fn capability_advertises_starttls_only_when_upgradable() {
         // Plaintext STARTTLS listener with a certificate: offer the upgrade, and
-        // withhold the password-carrying mechanism entirely — LOGINDISABLED only
+        // withhold the password-carrying mechanism entirely - LOGINDISABLED only
         // covers LOGIN, so leaving AUTH=PLAIN advertised would still invite a
         // client to hand over a password in the clear.
         assert_eq!(

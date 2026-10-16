@@ -24,7 +24,7 @@ export function FiltersTab() {
     if (f.to_contains)      parts.push(`${t('mail_filter_to', { defaultValue: 'À' })}: ${f.to_contains}`)
     if (f.subject_contains) parts.push(`${t('subject', { defaultValue: 'Objet' })}: ${f.subject_contains}`)
     if (f.query_contains)   parts.push(`${t('mail_filter_has_words', { defaultValue: 'Contient' })}: ${f.query_contains}`)
-    return parts.join(' · ') || '—'
+    return parts.join(' · ') || '-'
   }
   const actChips = (f: typeof filters[number]) => {
     const c: string[] = []

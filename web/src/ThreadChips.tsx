@@ -14,7 +14,7 @@ const FOLDER_CHIPS: { folder: string; key: string; fallback: string }[] = [
 /**
  * Chips shown ahead of a row's subject: which system folders the thread sits
  * in, then its user labels. The chip describing the view you are already in is
- * dropped — inside the inbox every row would otherwise say "Inbox", and inside
+ * dropped - inside the inbox every row would otherwise say "Inbox", and inside
  * a label every row would repeat that label.
  */
 export default function ThreadChips({

@@ -11,7 +11,7 @@ const fmtSize = (n: number) =>
 // admin size limit, a scrollable list (name + size + upload progress bar + × to
 // cancel that file), and a « Annuler » button that cancels every upload and
 // closes. It opens as soon as a file exceeds the limit and closes once every
-// large upload has finished (or been cancelled) — the parent renders it only
+// large upload has finished (or been cancelled) - the parent renders it only
 // while `files` is non-empty.
 export default function LargeFilesModal({ files, maxMb, onCancelOne, onCancelAll }: {
   files:       ComposeAttachment[]

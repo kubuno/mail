@@ -59,7 +59,7 @@ export default function ThreadItem({
 
   // Optimistic: the star/marker flips on the next frame. Waiting for the
   // response and then for a full list refetch made these feel like they were
-  // talking to the mail server — they are one UPDATE away.
+  // talking to the mail server - they are one UPDATE away.
   const starMut = useMutation({
     mutationFn: () => mailApi.starThread(thread.id),
     onMutate:   () => patchThreadCaches(qc, [thread.id], toggleStar),
@@ -74,12 +74,12 @@ export default function ThreadItem({
     onSettled:  () => qc.invalidateQueries({ queryKey: ['mail-threads'] }),
   })
 
-  // A single click opens the conversation — no double-click debounce. Touch and
+  // A single click opens the conversation - no double-click debounce. Touch and
   // mouse behave the same way.
   //
   // ONE exception, on touch: while a selection is under way, tapping a row adds
   // it to (or removes it from) that selection rather than opening it. There is
-  // no modifier key to hold on a phone, so the selection itself is the mode —
+  // no modifier key to hold on a phone, so the selection itself is the mode -
   // and it lasts until the last conversation is unselected.
   function handleClick(e?: React.MouseEvent | React.KeyboardEvent) {
     if (isMobile && selectionActive) {
@@ -97,7 +97,7 @@ export default function ThreadItem({
   const swipe = useSwipeActions({ onRight: onArchive, onLeft: onDelete })
   const isMobile = useIsMobile()
 
-  // Mobile: Gmail-style two-line row — avatar (tap = select), sender + date,
+  // Mobile: Gmail-style two-line row - avatar (tap = select), sender + date,
   // subject/snippet + star. Hover actions are replaced by the swipe gestures.
   if (isMobile) {
     return (
@@ -112,8 +112,8 @@ export default function ThreadItem({
           ${swipe.dx > 0 ? 'bg-[#1e8e3e]' : swipe.dx < 0 ? 'bg-[#d93025]' :
             opened ? 'bg-blue-50' : checked ? 'bg-[#e8f0fe]' : 'bg-white'}`}
       >
-        {/* Avatar — tap toggles selection */}
-        {/* Avatar — kept on MOBILE (it is also the selection control here), while
+        {/* Avatar - tap toggles selection */}
+        {/* Avatar - kept on MOBILE (it is also the selection control here), while
             the desktop list stays text-only. A tap toggles selection. */}
         <button
           onClick={e => { e.stopPropagation(); onCheck(e) }}
@@ -180,7 +180,7 @@ export default function ThreadItem({
         pl-4 pr-4 gap-0 cursor-pointer select-none group ${hovered ? 'z-[2]' : ''}`}
       // Backgrounds and separator follow Gmail exactly: READ rows carry the
       // blue-grey tint and UNREAD ones stay white (not the other way round), the
-      // row line is an inset shadow, and hovering only lifts the row — the
+      // row line is an inset shadow, and hovering only lifts the row - the
       // background never changes under the pointer.
       style={{
         ...(swipe.dx !== 0
@@ -195,7 +195,7 @@ export default function ThreadItem({
         boxShadow: hovered ? ROW_HOVER_SHADOW : ROW_SEPARATOR_SHADOW,
       }}
     >
-      {/* Drag grip — appears on hover in the 13px slot left of the checkbox,
+      {/* Drag grip - appears on hover in the 13px slot left of the checkbox,
           and really drags the conversation onto a sidebar label. */}
       <span
         draggable
@@ -214,7 +214,7 @@ export default function ThreadItem({
         <DragGrip />
       </span>
 
-      {/* Gutter — glyph centres at 26/56/86 like Gmail, each in its own
+      {/* Gutter - glyph centres at 26/56/86 like Gmail, each in its own
           circular hover pill (28px) that never shifts the layout. */}
       <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center">
         <SelectBox
@@ -245,7 +245,7 @@ export default function ThreadItem({
         <ImportanceMarker active={!!thread.is_important} opacity={markOpacity(!!thread.is_important, hovered)} />
       </button>
 
-      {/* Sender — 200px column with 32px of breathing room, text starting at 106 */}
+      {/* Sender - 200px column with 32px of breathing room, text starting at 106 */}
       <div title={sender.full} className={`flex-shrink-0 truncate text-sm w-[200px] ml-[6px] pr-8
         ${unread ? 'font-bold text-text-primary' : 'font-normal text-text-primary'}`}>
         {senderDisplay}

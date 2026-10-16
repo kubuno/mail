@@ -1,7 +1,7 @@
 // Pure "From" (sender) selection logic, shared by the new-message composer and
-// the inline reply/forward composer. Kept free of React so the rules — only
+// the inline reply/forward composer. Kept free of React so the rules - only
 // active accounts may send, and a reply defaults to the account that received
-// the message — live in one place and stay easy to reason about.
+// the message - live in one place and stay easy to reason about.
 
 /** The minimal shape both composers need from an account. */
 export interface SenderAccount {
@@ -27,7 +27,7 @@ export function defaultComposeSender<A extends SenderAccount>(accounts: A[]): A 
 /**
  * Default sender for a reply/forward: the account that RECEIVED the message
  * when it is still active, so a reply to mail delivered to address X leaves
- * from X — else the ordinary compose default (default active, then first
+ * from X - else the ordinary compose default (default active, then first
  * active).
  */
 export function defaultReplySender<A extends SenderAccount>(

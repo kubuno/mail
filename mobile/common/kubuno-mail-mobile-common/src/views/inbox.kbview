@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Mail · Inbox — converted from mail/mobile .../ui/InboxScreen.kt (+ MailApp shell). The folder's thread list
+  Mail · Inbox - converted from mail/mobile .../ui/InboxScreen.kt (+ MailApp shell). The folder's thread list
   with the top app bar (menu, search, bell, settings, account) and the bottom nav (4 folders). Rows inlined
   (ThreadRow): sender avatar + sender/date + subject + snippet + star; the first thread is unread (bold).
   Shared vocabulary, light theme, logical px (~390 wide). Screen root is a Panel.

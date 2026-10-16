@@ -1,4 +1,4 @@
-/** Bundle MODULE mail — chargé à l'exécution (cf. vite.module.config). */
+/** Bundle MODULE mail - chargé à l'exécution (cf. vite.module.config). */
 import { lazy } from 'react'
 import { Inbox, Star, Send, FileText } from 'lucide-react'
 import { ExtensionRegistry, ModuleServiceRegistry, RouteRegistry, WaffleAppRegistry, ModuleSettingsRegistry, NotificationRegistry, FaviconRegistry, SlotRegistry, useSidebarStore, useToolbarStore, useSearchStore, SDK_VERSION } from '@kubuno/sdk'
@@ -26,8 +26,8 @@ export function register() {
 
   // Writing to someone, offered to the whole instance.
   //
-  // Anywhere a person is shown — a guest on a calendar event, a contact, an
-  // author — the obvious act is "write to them", and until now that meant a
+  // Anywhere a person is shown - a guest on a calendar event, a contact, an
+  // author - the obvious act is "write to them", and until now that meant a
   // `mailto:` handed to whatever the operating system happens to open. On an
   // instance that HAS a mailbox, sending the reader outside to write is the
   // wrong answer: the composer already mounts above every module (see
@@ -54,7 +54,7 @@ export function register() {
 
 
   // Mail's own admin sections (deliverability diagnostic + DKIM keys), each
-  // declaring which page of `/admin/modules/mail` it belongs to — in the
+  // declaring which page of `/admin/modules/mail` it belongs to - in the
   // vocabulary this module's own `module.toml` defines. The core places them
   // from that declaration and never names `mail` anywhere.
   registerMailAdmin()
@@ -80,7 +80,7 @@ export function register() {
     // the 'shell.new-actions' extension point above.
     newButtonLabelKey: 'mail:new_message',
     // Bottom nav (portrait) / left rail (landscape) rendered by the shell on
-    // mobile — the main folders, with short labels (nav_* keys).
+    // mobile - the main folders, with short labels (nav_* keys).
     mobileTabs: [
       { id: 'inbox',   labelKey: 'mail:nav_inbox',   Icon: Inbox,    path: '/mail', end: true },
       { id: 'starred', labelKey: 'mail:nav_starred', Icon: Star,     path: '/mail/starred' },

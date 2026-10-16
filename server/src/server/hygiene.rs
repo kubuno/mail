@@ -40,8 +40,8 @@ fn starts_with_ignore_ascii_case(hay: &[u8], needle: &[u8]) -> bool {
 
 /// Counts the `Received:` header lines in the message's header block.
 ///
-/// Only the header block counts: scanning stops at the first empty line — the
-/// blank line that separates headers from body — so a line that merely starts
+/// Only the header block counts: scanning stops at the first empty line - the
+/// blank line that separates headers from body - so a line that merely starts
 /// with "Received:" inside the body is never mistaken for a hop. Both CRLF and
 /// bare-LF framing are accepted; the match is anchored at the start of the line
 /// and case-insensitive; folded continuation lines (leading space or tab)
@@ -68,8 +68,8 @@ pub fn hop_count(raw: &[u8]) -> usize {
 
 /// Neutralises a string before it is spliced into a header value.
 ///
-/// Any control character — CR and LF above all, but also NUL and the rest of the
-/// C0 range — becomes a space, so an inserted value can never close its own
+/// Any control character - CR and LF above all, but also NUL and the rest of the
+/// C0 range - becomes a space, so an inserted value can never close its own
 /// header and open another (header injection). The result is also bounded in
 /// length to keep a single value from bloating the header block.
 pub fn sanitize_header_value(value: &str) -> String {
@@ -130,7 +130,7 @@ pub fn prepend_received(raw: &[u8], peer: &str, hostname: &str) -> Vec<u8> {
 //
 // ⚠️ The name is NEVER resolved. Postfix keeps that as a separate, explicitly
 // discouraged restriction (`reject_unknown_helo_hostname`) precisely because a
-// large share of legitimate senders announce a name with no DNS record — a
+// large share of legitimate senders announce a name with no DNS record - a
 // receiver that resolves HELO rejects real mail and pays a DNS round-trip per
 // connection to do it.
 
@@ -165,7 +165,7 @@ pub fn is_fqdn_helo(name: &str) -> bool {
 }
 
 /// The body of an address literal, brackets already removed: a dotted-quad IPv4
-/// address, or an IPv6 address — with the RFC 5321 §4.1.3 `IPv6:` tag, which we
+/// address, or an IPv6 address - with the RFC 5321 §4.1.3 `IPv6:` tag, which we
 /// also tolerate missing since some senders omit it.
 fn is_address_literal(addr: &str) -> bool {
     if addr.is_empty() {
@@ -188,7 +188,7 @@ fn strip_ipv6_tag(addr: &str) -> Option<&str> {
 
 /// Postfix's `valid_hostname()`, minus the wildcard option we have no use for.
 ///
-/// Letters, digits, dots, hyphens and — as Postfix puts it, "grr.." —
+/// Letters, digits, dots, hyphens and - as Postfix puts it, "grr.." -
 /// underscores; no empty label, no label over 63 octets, no leading or trailing
 /// hyphen in a label, nothing over 255 octets, and never an all-numeric name
 /// (that is an address written without its brackets).

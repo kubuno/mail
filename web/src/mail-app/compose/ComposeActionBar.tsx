@@ -8,7 +8,7 @@ import SendButton from './SendButton'
 // Bottom action row of the composer: the « Envoyer » split button, the format
 // toggle, text colour, attach/link/emoji/image, confidential mode, the PGP
 // shield, the signature pen, the « ⋯ » menu, the autosave status and discard.
-// Extracted verbatim from ComposeWindow — classes, positioning and behaviour
+// Extracted verbatim from ComposeWindow - classes, positioning and behaviour
 // are unchanged. The colour/emoji popovers and the PGP/signature/more menus own
 // their open state locally; their menu ITEMS are built by the parent (they
 // depend on the whole compose state) and passed in.
@@ -64,7 +64,7 @@ export default function ComposeActionBar({
           autoOpen={scheduleAutoOpen}
         />
 
-        {/* Aa toggle — hidden in plain-text mode (no formatting to reveal) */}
+        {/* Aa toggle - hidden in plain-text mode (no formatting to reveal) */}
         {!plainText && (
           <button
             onClick={() => setShowFmt(v => !v)}

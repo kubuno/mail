@@ -8,7 +8,7 @@ import { prompt, useConfirm } from '@kubuno/sdk'
 import { mailApi, apiErrorMessage, type MailTemplate } from './api'
 import { useMailStore } from './store'
 
-// « Modèles » manager — reachable from the New menu (« À partir d'un modèle »).
+// « Modèles » manager - reachable from the New menu (« À partir d'un modèle »).
 // One modal does both jobs: pick a template to start a message from, and manage
 // the list (create / rename / delete). Mounted globally (MailComposeGlobal) so
 // it survives the New dropdown closing.
@@ -24,7 +24,7 @@ export default function MailTemplatesModal({ onClose }: { onClose: () => void })
   })
 
   // Inline create form (name + subject + body). Body is stored as HTML; a plain
-  // textarea is enough here — rich templates are usually captured from the
+  // textarea is enough here - rich templates are usually captured from the
   // composer's « Enregistrer comme modèle » instead.
   const [creating, setCreating] = useState(false)
   const [name,    setName]    = useState('')

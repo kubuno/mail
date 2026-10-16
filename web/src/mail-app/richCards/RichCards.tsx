@@ -27,7 +27,7 @@ function useFmt() {
 }
 /** The day an event falls on, said the way a person would: «Aujourd'hui»,
  *  «Demain», otherwise the full weekday and date. This is what a calendar
- *  invitation leads with — the hour matters only once you know the day. */
+ *  invitation leads with - the hour matters only once you know the day. */
 function relativeDay(iso: string | undefined, loc: string, today: string, tomorrow: string, yesterday: string): string | undefined {
   if (!iso) return undefined
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso)
@@ -62,7 +62,7 @@ function Shell({ icon, accent, children }: { icon: React.ReactNode; accent: stri
 }
 /** "Itinéraire": opens the Maps module in a NEW TAB, already carrying the
  *  destination, so the reader keeps the invitation in front of them. Same pill
- *  shape as the answers, quieter fill — it is not an answer. */
+ *  shape as the answers, quieter fill - it is not an answer. */
 function DirectionsButton({ href, label }: { href: string; label: string }) {
   return (
     <a
@@ -77,7 +77,7 @@ function DirectionsButton({ href, label }: { href: string; label: string }) {
   )
 }
 
-/** One fact of an event card: a fixed icon column and text that WRAPS — an
+/** One fact of an event card: a fixed icon column and text that WRAPS - an
  *  address or a guest list must stay readable rather than be cut short. */
 function Row({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -147,7 +147,7 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
   }
 
   // RSVP to an invitation: email the organizer our answer (iMIP reply, backend)
-  // and — for Yes/Maybe — mirror it into the calendar. Optimistic: the chosen
+  // and - for Yes/Maybe - mirror it into the calendar. Optimistic: the chosen
   // button lights up immediately; a failure reverts it. Declining opens a panel
   // first, where a reason and/or another time can be offered.
   const respond = async (answer: Rsvp, opts?: { comment?: string; proposedStart?: string; proposedEnd?: string }) => {
@@ -168,7 +168,7 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
     }
   }
 
-  // Declining: the answer alone is enough, so the panel is entirely optional —
+  // Declining: the answer alone is enough, so the panel is entirely optional -
   // "Envoyer le refus" with both fields empty behaves like a plain No.
   const onPick = (answer: Rsvp) => {
     if (answer === 'declined') {
@@ -188,7 +188,7 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
   return (
     <>
       {/* An invitation is read the way a calendar entry is: the day first, then
-          what it is, then where and with whom — and only then the answer.
+          what it is, then where and with whom - and only then the answer.
           Same shell for a plain event, whose actions differ. */}
       <div className="my-2 rounded-xl bg-surface-2 px-6 py-5">
         <div className="flex items-start gap-4">
@@ -246,7 +246,7 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
             </div>
 
             {/* Declining: say why, and/or suggest another time (iTIP counter).
-                Both are optional — sending with empty fields is a plain refusal. */}
+                Both are optional - sending with empty fields is a plain refusal. */}
             {declineOpen && (
               <div className="mt-3 p-3 rounded-lg border border-border bg-surface-1 max-w-lg space-y-2.5">
                 <textarea
@@ -309,9 +309,9 @@ function EventCardView({ c, ctx }: { c: EventCard; ctx?: CardCtx }) {
             {rsvp && !declineOpen && (
               <div className="flex items-center gap-1.5 text-xs text-text-tertiary mt-2">
                 <Check size={13} className="text-success" />
-                {rsvp === 'accepted'  && t('rc_replied_yes',   { defaultValue: 'Vous avez accepté — l\'organisateur a été prévenu.' })}
+                {rsvp === 'accepted'  && t('rc_replied_yes',   { defaultValue: 'Vous avez accepté - l\'organisateur a été prévenu.' })}
                 {rsvp === 'tentative' && t('rc_replied_maybe', { defaultValue: 'Réponse « peut-être » envoyée à l\'organisateur.' })}
-                {rsvp === 'declined'  && t('rc_replied_no',    { defaultValue: 'Vous avez refusé — l\'organisateur a été prévenu.' })}
+                {rsvp === 'declined'  && t('rc_replied_no',    { defaultValue: 'Vous avez refusé - l\'organisateur a été prévenu.' })}
               </div>
             )}
           </div>
@@ -351,7 +351,7 @@ function FlightCardView({ c }: { c: FlightCard }) {
   const { t } = useTranslation('mail')
   const f = useFmt()
   const num = [c.iata, c.flightNumber].filter(Boolean).join(' ')
-  const airport = (a: FlightCard['from']) => a.code || a.name || '—'
+  const airport = (a: FlightCard['from']) => a.code || a.name || '-'
   return (
     <Shell icon={<Plane size={18} />} accent="#5b3fd6">
       <div className="flex items-center gap-2 flex-wrap">
@@ -415,9 +415,9 @@ function TransitCardView({ c }: { c: TransitCard }) {
         {c.number && <span className="text-xs text-text-secondary">{c.number}</span>}
       </div>
       <div className="flex items-center gap-2 mt-1 text-sm text-text-primary">
-        <span className="font-medium truncate">{c.from.name || '—'}</span>
+        <span className="font-medium truncate">{c.from.name || '-'}</span>
         <span className="text-text-tertiary">→</span>
-        <span className="font-medium truncate">{c.to.name || '—'}</span>
+        <span className="font-medium truncate">{c.to.name || '-'}</span>
       </div>
       <div className="grid grid-cols-2 gap-x-4">
         <Line icon={<Clock size={13} className="flex-shrink-0" />}>{f.dateTime(c.from.time)}</Line>

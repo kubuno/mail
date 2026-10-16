@@ -8,7 +8,7 @@ import { TABS } from './categories'
 
 export type CategoryInfo = Record<string, { count: number; preview: string }>
 
-// ── Category tabs — inbox only ────────────────────────────────────────────────
+// ── Category tabs - inbox only ────────────────────────────────────────────────
 
 export default function CategoryTabs({
   visible, isMobile, activeTab, catInfo, onCategorized,

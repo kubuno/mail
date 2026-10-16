@@ -1,6 +1,6 @@
-//! OpenPGP primitives for the mail module — key generation, import, and the
+//! OpenPGP primitives for the mail module - key generation, import, and the
 //! encrypt / decrypt / sign / verify operations, built on rPGP (pure Rust, no C
-//! bindings, RustCrypto backend — consistent with the rest of the module).
+//! bindings, RustCrypto backend - consistent with the rest of the module).
 //!
 //! This is the "server-side" half of the hybrid GPG design: the crypto runs in
 //! the backend and the (armored) secret key is held encrypted at rest via
@@ -48,7 +48,7 @@ pub struct KeyMaterial {
     pub emails: Vec<String>,
 }
 
-/// Uppercase hex of a fingerprint, no spaces — the stable identifier we store.
+/// Uppercase hex of a fingerprint, no spaces - the stable identifier we store.
 /// Robust to whatever `Fingerprint`'s Display happens to be by keeping hex only.
 fn fp_hex(fp: Fingerprint) -> String {
     fp.to_string()
@@ -62,7 +62,7 @@ fn fp_hex(fp: Fingerprint) -> String {
 
 /// Generate a modern Ed25519/Curve25519 identity for `user_id` (e.g.
 /// `"Jane Doe <jane@example.com>"`). The primary key certifies and signs; a
-/// single Curve25519 subkey encrypts — the layout every OpenPGP client expects.
+/// single Curve25519 subkey encrypts - the layout every OpenPGP client expects.
 pub fn generate(user_id: &str) -> Result<KeyMaterial> {
     let mut enckey = SubkeyParamsBuilder::default();
     enckey
@@ -92,7 +92,7 @@ pub fn generate(user_id: &str) -> Result<KeyMaterial> {
 
 /// Import an armored secret key. A passphrase-protected key is accepted; we keep
 /// it as given and rely on `MailCrypto` for protection at rest. (Deeper passphrase
-/// handling — re-locking / per-session unlock — comes with the E2E wave.)
+/// handling - re-locking / per-session unlock - comes with the E2E wave.)
 pub fn import_secret(armored: &str, _passphrase: Option<&str>) -> Result<KeyMaterial> {
     let (secret, _) = SignedSecretKey::from_string(armored).map_err(err)?;
     secret.verify_bindings().map_err(err)?;
@@ -110,7 +110,7 @@ pub fn import_public(armored: &str) -> Result<(String, String, Vec<String>)> {
     Ok((re_armored, fp, emails))
 }
 
-/// Import a public key from its BINARY (non-armored) OpenPGP serialization —
+/// Import a public key from its BINARY (non-armored) OpenPGP serialization -
 /// the form a Web Key Directory serves and an Autocrypt `keydata` attribute
 /// carries (after base64-decoding). Returns the same triple as
 /// [`import_public`]: re-armored certificate, fingerprint, covered e-mails.
@@ -123,7 +123,7 @@ pub fn import_public_bytes(bytes: &[u8]) -> Result<(String, String, Vec<String>)
     Ok((re_armored, fp, emails))
 }
 
-/// Serialize an armored public certificate to its BINARY OpenPGP form — what a
+/// Serialize an armored public certificate to its BINARY OpenPGP form - what a
 /// Web Key Directory must serve (`application/octet-stream`) and what an
 /// Autocrypt `keydata` attribute base64-encodes. The full certificate is
 /// emitted (no Autocrypt-style minimization); a full public key is still valid

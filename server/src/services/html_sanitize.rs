@@ -1,14 +1,14 @@
-//! One HTML sanitiser for every incoming e-mail body, wherever it comes from —
+//! One HTML sanitiser for every incoming e-mail body, wherever it comes from -
 //! a synced message or the plaintext of a just-decrypted PGP/MIME part. Keeping
 //! it in one place means decrypted mail is cleaned by the SAME policy as ordinary
 //! mail, instead of a second, drifting copy.
 //!
 //! The policy is permissive on presentation (legacy HTML-email tags/attributes,
-//! inline `<style>`, `data:`/`cid:` images) and strict on anything active —
+//! inline `<style>`, `data:`/`cid:` images) and strict on anything active -
 //! ammonia drops scripts, event handlers and unknown protocols regardless.
 
 /// CSS an e-mail may not carry, whatever the browser would make of it today:
-/// `@import` pulls a remote stylesheet (Gmail strips those — it leaks the read
+/// `@import` pulls a remote stylesheet (Gmail strips those - it leaks the read
 /// and injects unreviewed rules), and `expression()`, `behavior:` and
 /// `-moz-binding` are the legacy script-in-CSS hooks. Ammonia does not parse
 /// CSS at all, so every `<style>` block and every `style=` value goes through
@@ -18,7 +18,7 @@
 /// `@\69 mport` and `@\000069mport` are valid CSS that browsers parse as
 /// `@import`, yet neither contains the substring "@import". Every `\<hex>` (1–6
 /// digits, optional trailing space) becomes the character it denotes, and a
-/// `\<char>` escape becomes that character — the result is only ever scanned,
+/// `\<char>` escape becomes that character - the result is only ever scanned,
 /// never served, so an approximate decoding is exactly what is needed.
 fn unescape_css(css: &str) -> String {
     let mut out = String::with_capacity(css.len());
@@ -56,7 +56,7 @@ fn clean_css(css: &str) -> String {
     // Scan the UNESCAPED form, but cut the ORIGINAL text: rewriting the CSS we
     // serve would change legitimate declarations. Escapes only ever lengthen a
     // token, so a hazard found at index `i` of the decoded text starts at or
-    // after `i` in the source — hence the conservative rule below: as soon as
+    // after `i` in the source - hence the conservative rule below: as soon as
     // the decoded form carries a hazard the whole declaration is dropped.
     let decoded = unescape_css(css);
     if !HAZARDS.iter().any(|h| decoded.to_ascii_lowercase().contains(h)) {
@@ -65,7 +65,7 @@ fn clean_css(css: &str) -> String {
     // The plain path handles the common (unescaped) case precisely; an escaped
     // hazard is rare enough that dropping the whole block is the safe answer.
     if !HAZARDS.iter().any(|h| css.to_ascii_lowercase().contains(h)) {
-        tracing::debug!("CSS d'e-mail contenant un danger échappé — bloc entier retiré");
+        tracing::debug!("CSS d'e-mail contenant un danger échappé - bloc entier retiré");
         return String::new();
     }
     let lower = css.to_ascii_lowercase();
@@ -146,7 +146,7 @@ pub fn sanitize_email_html(html: &str) -> String {
         .add_url_schemes(&["data", "cid"])
         // …but ONLY as an image source. Ammonia applies allowed schemes to every
         // URL attribute, so without this a link could carry
-        // `href="data:text/html;base64,<script>…"` — an inline document, i.e.
+        // `href="data:text/html;base64,<script>…"` - an inline document, i.e.
         // script delivery, which is exactly what the scheme list is not for.
         // The same filter cleans inline CSS, which ammonia passes through raw.
         .attribute_filter(|element, attribute, value| {

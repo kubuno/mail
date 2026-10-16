@@ -108,7 +108,7 @@ export interface ThreadLabelRef {
 }
 
 /** A raw schema.org node as extracted by the backend (JSON-LD or an ICS invite
- *  normalized to an Event). Loosely typed on purpose — the rich-card layer maps
+ *  normalized to an Event). Loosely typed on purpose - the rich-card layer maps
  *  the recognized shapes and ignores the rest. */
 export type SchemaNode = Record<string, unknown>
 
@@ -181,7 +181,7 @@ export interface Draft {
   updated_at:    string
 }
 
-/** An OpenPGP identity owned by the user (public view — never the secret key). */
+/** An OpenPGP identity owned by the user (public view - never the secret key). */
 export interface PgpKey {
   id:          string
   email:       string | null
@@ -278,7 +278,7 @@ export interface MailCounts {
 
 /** A provider folder that is not one of the well-known system ones. */
 export interface CustomFolder {
-  /** Raw provider name — what listings filter on. */
+  /** Raw provider name - what listings filter on. */
   name:    string
   /** Readable name (modified UTF-7 decoded, "INBOX." prefix dropped). */
   display: string
@@ -286,7 +286,7 @@ export interface CustomFolder {
   unread:  number
 }
 
-/** A mailbox credential, as listed — never the secret itself. */
+/** A mailbox credential, as listed - never the secret itself. */
 export interface MailboxCredential {
   id:           string
   username:     string
@@ -360,7 +360,7 @@ export interface VacationConfig {
 }
 
 /**
- * A "send mail as" identity — an address the user has proven they own.
+ * A "send mail as" identity - an address the user has proven they own.
  * The confirmation code never reaches the client; only the verified flag does.
  */
 export interface SendAsAddress {
@@ -374,9 +374,9 @@ export interface SendAsAddress {
 
 /**
  * An account delegation (Gmail-style "grant access to your account").
- * 'pending'  — invited, not yet accepted (no access).
- * 'accepted' — active (the delegate may read and, if canSend, send).
- * 'revoked'  — ended by either party (no access).
+ * 'pending'  - invited, not yet accepted (no access).
+ * 'accepted' - active (the delegate may read and, if canSend, send).
+ * 'revoked'  - ended by either party (no access).
  */
 export interface Delegation {
   id:             string
@@ -518,7 +518,7 @@ export const mailApi = {
   listCustomFolders: () =>
     api.get<CustomFolder[]>('/mail/folders').then(r => r.data),
 
-  // Mailbox credentials — what a mail client uses to reach the SMTP/IMAP/POP3
+  // Mailbox credentials - what a mail client uses to reach the SMTP/IMAP/POP3
   // services this instance offers. The password only exists in the create call.
   listMailboxCredentials: () =>
     api.get<MailboxCredential[]>('/mail/mailbox-credentials').then(r => r.data),
@@ -624,7 +624,7 @@ export const mailApi = {
   deleteDraft: (id: string) =>
     api.delete(`/mail/drafts/${id}`).then(r => r.data),
 
-  // OpenPGP / GPG — key management (Wave 1)
+  // OpenPGP / GPG - key management (Wave 1)
   pgpStatus: () =>
     api.get<{ enabled: boolean }>('/mail/pgp/status').then(r => r.data),
   pgpListKeys: () =>
@@ -686,7 +686,7 @@ export const mailApi = {
   saveVacation: (dto: VacationConfig) =>
     api.put<{ ok: boolean }>('/mail/vacation', dto).then(r => r.data),
 
-  // « Envoyer en tant que » — identités expéditeur vérifiées par propriété.
+  // « Envoyer en tant que » - identités expéditeur vérifiées par propriété.
   listSendAs: () =>
     api.get<SendAsAddress[]>('/mail/send-as').then(r => r.data),
 

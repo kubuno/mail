@@ -217,7 +217,7 @@ export function AccountsTab() {
   const openAdd  = () => { setEditAccount(null); setShowForm(true) }
   const openEdit = (a: EmailAccount) => { setEditAccount(a); setShowForm(true) }
 
-  // Deletion is confirmed through the core dialog — browser dialogs are banned.
+  // Deletion is confirmed through the core dialog - browser dialogs are banned.
   async function askDelete(a: EmailAccount) {
     if (a.kind === 'local') return
     const ok = await confirm({

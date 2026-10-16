@@ -141,7 +141,7 @@ type ScramColumns = (Option<Vec<u8>>, Option<i32>, Option<Vec<u8>>, Option<Vec<u
 
 /// Loads the SCRAM secret for a username, for the SCRAM-SHA-256 auth path.
 /// Returns `None` when the mailbox has no SCRAM secret (created before SCRAM
-/// existed, or unknown user) — the caller then uses a decoy so the failure is
+/// existed, or unknown user) - the caller then uses a decoy so the failure is
 /// indistinguishable.
 pub async fn scram_secret(db: &DbPool, username: &str) -> Option<super::scram::Secret> {
     let username = username.trim().to_ascii_lowercase();

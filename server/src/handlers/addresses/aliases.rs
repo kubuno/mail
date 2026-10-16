@@ -1,12 +1,12 @@
-//! `/admin/aliases` — an address that is not a place but a redirection.
+//! `/admin/aliases` - an address that is not a place but a redirection.
 //!
 //! `address` is either a whole address (`contact@example.com`) or `@example.com`
-//! — the catch-all, which matches anything in that domain that nothing else
+//! - the catch-all, which matches anything in that domain that nothing else
 //! matched. The database allows at most one catch-all per domain (a partial
 //! unique index); two would make delivery depend on the order rows come back in.
 //!
 //! Destinations may be local or remote. A remote destination only leaves the
-//! instance if outbound delivery is enabled — an alias forwarding outside is an
+//! instance if outbound delivery is enabled - an alias forwarding outside is an
 //! outgoing message and obeys the same switch. The panel says so rather than
 //! letting an operator believe forwarding works when the outbound queue is off.
 
@@ -47,7 +47,7 @@ pub struct AliasRow {
 pub struct AliasView {
     #[serde(flatten)]
     pub alias: AliasRow,
-    /// `null` when the core was unreachable — see `mailboxes::MailboxView`.
+    /// `null` when the core was unreachable - see `mailboxes::MailboxView`.
     pub domain_served: Option<bool>,
     /// Destinations outside every local domain. They are only actually
     /// forwarded when outbound delivery is enabled.
@@ -349,7 +349,7 @@ fn decorate(alias: AliasRow, served: Option<&[String]>) -> AliasView {
 }
 
 /// A catch-all whose destination is in its own domain re-enters the catch-all
-/// whenever that destination is not itself a mailbox, an alias or a list — the
+/// whenever that destination is not itself a mailbox, an alias or a list - the
 /// loop the migration warns about, in its least obvious form. The exact
 /// self-reference is caught by `parse_destinations`; this catches the shape it
 /// cannot see.

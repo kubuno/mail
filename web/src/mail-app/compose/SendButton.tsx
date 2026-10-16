@@ -5,7 +5,7 @@ import { ChevronDown } from 'lucide-react'
 
 // The « Envoyer » split button: immediate send + a chevron opening the
 // "schedule send" menu (presets + custom date/time dialog). Extracted verbatim
-// from ComposeWindow — positioning, classes and behaviour are unchanged.
+// from ComposeWindow - positioning, classes and behaviour are unchanged.
 export default function SendButton({
   onSendNow, onSchedule, disabled, pending, autoOpen,
 }: {
@@ -23,7 +23,7 @@ export default function SendButton({
   const [customDT, setCustomDT] = useState<string | null>(null)
 
   // Position of the "Schedule send" menu: below the send group and left-aligned
-  // with the « Envoyer » button when there is room, otherwise flipped above it —
+  // with the « Envoyer » button when there is room, otherwise flipped above it -
   // never covering the button, always kept on-screen.
   const scheduleMenuPos = (): MenuDropdownPos => {
     const group = scheduleBtnRef.current?.parentElement

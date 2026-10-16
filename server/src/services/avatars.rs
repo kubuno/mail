@@ -1,4 +1,4 @@
-//! Sender avatars from BIMI — the logo a DOMAIN publishes about itself.
+//! Sender avatars from BIMI - the logo a DOMAIN publishes about itself.
 //!
 //! ── Why BIMI, and nothing keyed on the address ──────────────────────────────
 //! There is no public way to turn an e-mail address into someone's photo, and
@@ -9,8 +9,8 @@
 //!
 //! ── What is fetched, and what is refused ────────────────────────────────────
 //! The `l=` URL of `default._bimi.<domain>`, over HTTPS only, capped in size and
-//! restricted to image content types. The result — including the ABSENCE of a
-//! record — is cached in `mail.sender_avatars`, so a domain without BIMI is not
+//! restricted to image content types. The result - including the ABSENCE of a
+//! record - is cached in `mail.sender_avatars`, so a domain without BIMI is not
 //! looked up again for every message. Nothing here can fail loudly: an avatar
 //! is decoration, and the reader keeps the coloured initial when it is missing.
 
@@ -41,12 +41,12 @@ pub struct Avatar {
 }
 
 /// The avatar for `domain`, from cache when possible. `Ok(None)` means "this
-/// domain publishes none" — a normal, cached outcome, not an error.
+/// domain publishes none" - a normal, cached outcome, not an error.
 ///
 /// `allow_brand` is the authentication gate: a BIMI logo is the brand SAYING
 /// "this is us", so it may only be shown on a message that actually passed
-/// DMARC. On anything else the brand logo is withheld — a phishing mail
-/// spoofing `paypal.com` must never borrow PayPal's logo — while neutral marks
+/// DMARC. On anything else the brand logo is withheld - a phishing mail
+/// spoofing `paypal.com` must never borrow PayPal's logo - while neutral marks
 /// (a mailbox provider, a favicon) stay allowed since they claim no identity.
 pub async fn for_domain(
     db: &DbPool,
@@ -92,7 +92,7 @@ pub async fn for_domain(
 }
 
 /// Every name to try for `domain`, itself first, then its parents down to the
-/// registrable one — `services.ovhcloud.com` → `ovhcloud.com` → `com`.
+/// registrable one - `services.ovhcloud.com` → `ovhcloud.com` → `com`.
 ///
 /// Senders very often use a subdomain (`services.ovhcloud.com`,
 /// `email.apple.com`) while the BIMI record sits on the organisational domain,
@@ -153,7 +153,7 @@ async fn resolve(http: &reqwest::Client, domain: &str) -> Result<Option<Avatar>>
     }
     let mut source = "bimi";
     // Failing a published logo: the provider's own icon, then the domain's
-    // favicon — both name a DOMAIN only, exactly like the BIMI lookup above.
+    // favicon - both name a DOMAIN only, exactly like the BIMI lookup above.
     let url = match logo {
         Some(url) => url,
         None => {
@@ -197,7 +197,7 @@ async fn resolve(http: &reqwest::Client, domain: &str) -> Result<Option<Avatar>>
 }
 
 /// The `l=` (logo) URL of `default._bimi.<domain>`, when the record has one.
-/// Only HTTPS is accepted — the spec requires it, and it keeps us from being
+/// Only HTTPS is accepted - the spec requires it, and it keeps us from being
 /// pointed at a plaintext host.
 async fn bimi_logo_url(resolver: &TokioResolver, domain: &str) -> Option<String> {
     let name = format!("default._bimi.{domain}");

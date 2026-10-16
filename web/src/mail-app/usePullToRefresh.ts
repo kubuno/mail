@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 //
 //  • it may only start when the list is ALREADY at the top (scrollTop <= 0),
 //    otherwise an ordinary scroll would arm it;
-//  • the finger moves further than the indicator — a resistance factor — so the
+//  • the finger moves further than the indicator - a resistance factor - so the
 //    pull feels elastic and cannot be triggered by a careless flick;
 //  • it must lose to a HORIZONTAL gesture: the rows carry swipe actions, so the
 //    drag only counts once it is clearly vertical;
@@ -99,7 +99,7 @@ export function usePullToRefresh(
       }
       busy.current = true
       setRefreshing(true)
-      // Hold the indicator out while the data comes back, then snap home — a
+      // Hold the indicator out while the data comes back, then snap home - a
       // refresh that flickers away instantly reads as "nothing happened".
       offsetRef.current = THRESHOLD * RESISTANCE
       setOffset(THRESHOLD * RESISTANCE)

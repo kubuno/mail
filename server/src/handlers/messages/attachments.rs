@@ -14,13 +14,13 @@ use crate::{errors::MailError, middleware::AuthUser, state::AppState};
 const ATTACHMENT_CSP: &str =
     "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox; frame-ancestors 'none'";
 
-/// The MIME types an attachment may keep — everything a viewer needs to preview
+/// The MIME types an attachment may keep - everything a viewer needs to preview
 /// a file, and nothing that can execute or carry markup.
 ///
 /// The sender chooses the `Content-Type` of a MIME part, so honouring it turns
 /// an attachment into a document served from Kubuno's own origin: `text/html`
 /// renders, and a companion part declared `application/javascript` then loads
-/// same-origin — which is precisely how `script-src 'self'` gets defeated. Only
+/// same-origin - which is precisely how `script-src 'self'` gets defeated. Only
 /// this list is echoed back; the rest becomes `application/octet-stream`.
 fn safe_inline_mime(claimed: &str) -> Option<&'static str> {
     // Compare on the essence only: parameters (charset, name…) are the sender's too.
@@ -40,7 +40,7 @@ fn safe_inline_mime(claimed: &str) -> Option<&'static str> {
         "video/webm"               => "video/webm",
         // Deliberately absent: image/svg+xml (carries script), text/html,
         // text/xml, application/xhtml+xml, application/javascript, and every
-        // text/* — a text preview is fetched and rendered by the app itself.
+        // text/* - a text preview is fetched and rendered by the app itself.
         _ => return None,
     })
 }
@@ -72,7 +72,7 @@ pub async fn download_attachment(
 
     // The stored MIME is the one the SENDER wrote in the message: never trust it
     // to decide how the browser treats the bytes. Only the few types that can be
-    // shown safely keep their own Content-Type — everything else is handed over
+    // shown safely keep their own Content-Type - everything else is handed over
     // as an opaque download. See `safe_inline_mime`.
     let claimed_mime = att.get("mime").and_then(|v| v.as_str()).unwrap_or("");
     let (mime_type, inline_ok) = match safe_inline_mime(claimed_mime) {
@@ -86,7 +86,7 @@ pub async fn download_attachment(
         .unwrap_or("attachment")
         .to_string();
 
-    // Stream from disk rather than slurping the whole file into memory — a large
+    // Stream from disk rather than slurping the whole file into memory - a large
     // attachment must not cost its full size in RAM per download.
     let mut file = tokio::fs::File::open(storage_path)
         .await
@@ -100,7 +100,7 @@ pub async fn download_attachment(
     // `inline` only for the handful of types the viewer previews; anything else
     // is `attachment`, so an HTML/SVG/XML part can never be rendered AS A
     // DOCUMENT in Kubuno's own origin (which would run with the reader's
-    // session). Control characters — bidi overrides above all — are stripped
+    // session). Control characters - bidi overrides above all - are stripped
     // from the filename so `facture\u{202e}exe.pdf` cannot masquerade.
     let safe_name: String = name
         .chars()
@@ -120,7 +120,7 @@ pub async fn download_attachment(
             .header(header::CONTENT_DISPOSITION, disposition)
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             // Belt and braces: even served as a document, this response gets an
-            // opaque origin and no scripting — it cannot reach the session.
+            // opaque origin and no scripting - it cannot reach the session.
             .header(header::CONTENT_SECURITY_POLICY, ATTACHMENT_CSP)
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::CONTENT_LENGTH, total)
@@ -230,8 +230,8 @@ mod attachment_mime_tests {
 
     /// Anything that can execute or carry markup loses its Content-Type, so the
     /// browser downloads opaque bytes instead of rendering a document in our
-    /// origin. The two-part trick — an HTML part plus a JS part passing nosniff
-    /// — is what defeats `script-src 'self'`, so `application/javascript` must
+    /// origin. The two-part trick - an HTML part plus a JS part passing nosniff
+    /// - is what defeats `script-src 'self'`, so `application/javascript` must
     /// never be echoed back either.
     #[test]
     fn active_types_are_never_echoed() {

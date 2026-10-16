@@ -3,7 +3,7 @@
 //
 // Two merged sources:
 //  1. the mail module's own address index (senders/recipients of synced mail,
-//     ranked by usage — GET /mail/addresses) ;
+//     ranked by usage - GET /mail/addresses) ;
 //  2. the contacts module, discovered DYNAMICALLY: we just call its API and
 //     silently ignore any failure (module absent, not running…), per the
 //     polyrepo rule « ne jamais supposer qu'un module est installé ».
@@ -39,7 +39,7 @@ type Contact = { display_name?: string | null; emails?: ContactField[] }
 
 /** `Toto <toto@toto.com>` → `{ email, name }`; anything else comes back whole. */
 /**
- * Does this read as an address at all? `@m` holds an `@` and is not one — it is
+ * Does this read as an address at all? `@m` holds an `@` and is not one - it is
  * someone half-way through naming a person.
  */
 export function looksLikeAddress(raw: string): boolean {
@@ -72,7 +72,7 @@ async function fromContacts(q: string): Promise<AddressSuggestion[]> {
  * Debounced suggestions for a typed prefix. Contacts first, then the mail
  * index, deduplicated.
  *
- * Two letters are needed before asking anyone — one matches half the address
+ * Two letters are needed before asking anyone - one matches half the address
  * book. An input that OPENS with `@` is the exception: it has already said it
  * is reaching for someone rather than typing an address, so the first letter
  * after it is enough. The `@` itself is not part of what is searched.
@@ -141,7 +141,7 @@ export function RecipientField({ chips, onChange, placeholder }: {
       setInput(''); setActive(-1)
       return
     }
-    // `Toto <toto@toto.com>` — the form every mail client copies. Stored whole
+    // `Toto <toto@toto.com>` - the form every mail client copies. Stored whole
     // it becomes an address nobody can write to and a name nobody can read.
     const typed = parseAddress(input)
     // An address, not merely something holding an `@`: committing the `@mar`
@@ -238,7 +238,7 @@ export function AddressSuggestList({ items, activeIndex, onPick }: {
 }
 
 /** Single-value address input with Gmail-style suggestions (avatar, name,
- *  address) — used by the advanced search panel's De / À / cc… fields. Unlike
+ *  address) - used by the advanced search panel's De / À / cc… fields. Unlike
  *  RecipientField there are no chips: picking a suggestion fills the field
  *  with the picked address. */
 export function AddressSuggestInput({ value, onChange, placeholder, className, style }: {

@@ -24,7 +24,7 @@ export default function MailSettingsPage() {
   // Land directly on the accounts tab when returning from an OAuth flow. The
   // signatures section now lives inside the General tab, so `#signatures`
   // (still used by the composer's "Gérer les signatures" link) opens General
-  // and scrolls to that section — handled in the effect below.
+  // and scrolls to that section - handled in the effect below.
   const [activeTab, setActiveTab] = useState<TabId>(() =>
     window.location.hash === '#signatures' ? 'general'
       : window.location.search.includes('oauth=') ? 'accounts'

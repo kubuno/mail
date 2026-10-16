@@ -1,16 +1,16 @@
-//! Web Key Directory (WKD) — GnuPG/Sequoia-compatible OpenPGP key discovery.
+//! Web Key Directory (WKD) - GnuPG/Sequoia-compatible OpenPGP key discovery.
 //!
 //! WKD maps an e-mail address to a URL that serves the owner's public key as a
 //! BINARY OpenPGP certificate over HTTPS, so a sender can encrypt to a
 //! correspondent it has never exchanged keys with. The mapping is defined by
 //! `draft-koch-openpgp-webkey-service` (the GnuPG spec) and mirrored on
-//! Sequoia's `net::wkd` module — we do NOT hand-roll the wire format:
+//! Sequoia's `net::wkd` module - we do NOT hand-roll the wire format:
 //!
 //!   * the local-part is ASCII-down-cased (upper-case ASCII → lower-case,
 //!     non-ASCII unchanged), then hashed with **SHA-1**;
 //!   * the 160-bit digest is encoded with **z-base-32** (RFC 6189 §5.1.6,
 //!     alphabet `ybndrfg8ejkmcpqxot1uwisza345h769`) to a fixed 32-char string;
-//!   * two URL forms locate the key —
+//!   * two URL forms locate the key -
 //!     advanced `https://openpgpkey.<domain>/.well-known/openpgpkey/<domain>/hu/<hash>?l=<localpart>`
 //!     and direct `https://<domain>/.well-known/openpgpkey/hu/<hash>?l=<localpart>`.
 //!
@@ -22,7 +22,7 @@ use sha1::{Digest, Sha1};
 
 /// z-base-32 alphabet (Zooko's, RFC 6189 §5.1.6): 32 symbols, no vowels except
 /// what avoids visual confusion. This EXACT ordering is what makes the WKD hash
-/// interoperable — the test vectors below fail loudly if it is wrong.
+/// interoperable - the test vectors below fail loudly if it is wrong.
 const ZBASE32_ALPHABET: &[u8; 32] = b"ybndrfg8ejkmcpqxot1uwisza345h769";
 
 /// Encode bytes with z-base-32 (big-endian bit order, no padding). For a 20-byte
@@ -54,7 +54,7 @@ pub fn zbase32_encode(data: &[u8]) -> String {
 /// The WKD hash of a local-part: z-base-32(SHA-1(ascii-down-cased local-part)).
 pub fn local_part_hash(local_part: &str) -> String {
     // `to_ascii_lowercase` maps upper-case ASCII to lower-case and leaves
-    // non-ASCII untouched — exactly the spec's mapping.
+    // non-ASCII untouched - exactly the spec's mapping.
     let mapped = local_part.to_ascii_lowercase();
     let digest = Sha1::digest(mapped.as_bytes());
     zbase32_encode(&digest)
@@ -140,7 +140,7 @@ mod tests {
 
     // Canonical vectors from draft-koch-openpgp-webkey-service and Sequoia's
     // wkd tests. If the z-base-32 alphabet or the down-casing rule were wrong,
-    // these would not match — this is the guard the mission asked for.
+    // these would not match - this is the guard the mission asked for.
     #[test]
     fn hash_matches_spec_vector_joe_doe() {
         // "Joe.Doe" down-cased to "joe.doe" → this exact hash (GnuPG WKD spec).

@@ -4,7 +4,7 @@
  *
  * The registry EXISTS at runtime already: `@kubuno/sdk` is `external`, the host
  * resolves it through its import map to its own instance, and that instance is
- * the core's — which exports this registry today. What the installed npm package
+ * the core's - which exports this registry today. What the installed npm package
  * carries is only the type surface, and it is one release behind.
  *
  * So this is a declaration of an API that is live, not a shim around a missing
@@ -19,7 +19,7 @@ import type { ComponentType } from 'react'
 declare module '@kubuno/sdk' {
   /** One view a module contributes to its own admin page, and where it lives. */
   export interface ModuleAdminSection {
-    /** The contributing module — its page is `/admin/modules/<moduleId>`. */
+    /** The contributing module - its page is `/admin/modules/<moduleId>`. */
     moduleId:   string
     /** Stable, untranslated id, unique per module. Also the tab id. */
     id:         string

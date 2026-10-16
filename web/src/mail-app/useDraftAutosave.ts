@@ -7,7 +7,7 @@ import { logicalBodyText } from './composeContent'
 // The rules that keep it from becoming a mess of stray or duplicated drafts:
 //
 //  • ONE draft per compose session. The id returned by the first save is reused
-//    for every later save (PATCH, never a second POST) — this is exactly the
+//    for every later save (PATCH, never a second POST) - this is exactly the
 //    guarantee whose absence gives Gmail users "dozens of duplicate drafts".
 //  • Lazy creation: no draft is CREATED until there is REAL content that differs
 //    from the state the composer opened with. A reply opens pre-filled with the
@@ -15,13 +15,13 @@ import { logicalBodyText } from './composeContent'
 //    leave no draft behind.
 //  • A draft is NEVER auto-deleted. Once it exists, only two things remove it:
 //    an explicit discard by the user, and sending the message. Emptying the
-//    fields does not delete it — it just keeps the (now empty) draft in sync.
+//    fields does not delete it - it just keeps the (now empty) draft in sync.
 //  • Serialised saves: a promise chain runs one save at a time, so two flushes
 //    racing (a debounce firing as the window closes) cannot both POST.
 //  • Flush on close: the last edit is saved before the composer unmounts. The
 //    body is an uncontrolled contentEditable whose ref is already detached by
 //    the time the unmount cleanup runs, so we save from the snapshot captured on
-//    the last edit — never a re-read that would persist an empty body.
+//    the last edit - never a re-read that would persist an empty body.
 //  • On send: the draft id is handed to the send call (the backend deletes it),
 //    and auto-save is suspended so nothing re-creates it afterwards.
 
@@ -63,7 +63,7 @@ export interface DraftAutosave {
   /** Call on every edit (recipients, subject, body input): schedules a save. */
   touch:   () => void
   /** Call once, after the composer's initial content is in place, so "changed"
-   *  is measured against what the user was given — not against empty. */
+   *  is measured against what the user was given - not against empty. */
   captureBaseline: () => void
   /** Save now (used just before the composer closes). */
   flush:   () => Promise<string | null>
@@ -106,7 +106,7 @@ export function useDraftAutosave(getSnapshot: () => DraftSnapshot | null, initia
 
       // Create the draft only once there is real content that differs from what
       // the composer opened with. But once a draft EXISTS, keep it in sync and
-      // never delete it here — emptying the fields is not a deletion.
+      // never delete it here - emptying the fields is not a deletion.
       if (!idRef.current) {
         const changed = fingerprint(snap) !== baselineRef.current
         if (!(hasContent(snap) && changed)) return
@@ -180,7 +180,7 @@ export function useDraftAutosave(getSnapshot: () => DraftSnapshot | null, initia
     }
   }, [refreshCaches])
 
-  // Closing the composer saves the last edit — unless a send/discard already
+  // Closing the composer saves the last edit - unless a send/discard already
   // settled the draft's fate. We save from the snapshot captured on the last
   // edit: by now the body's contentEditable is detached, so a fresh read would
   // persist an empty body (and, worse, used to look like "no content").

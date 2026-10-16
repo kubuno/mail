@@ -14,7 +14,7 @@ export default function AttachmentRow({
   const isPdf = att.mime === 'application/pdf'
   // A file name is displayed AND written to disk: a U+202E in it turns
   // "facture_gpj.exe" into "facture_exe.jpg" on screen. Strip the overrides
-  // everywhere the name travels — label, tooltip, viewer title, download.
+  // everywhere the name travels - label, tooltip, viewer title, download.
   const file  = sanitizeFileName(att.name)
 
   return (

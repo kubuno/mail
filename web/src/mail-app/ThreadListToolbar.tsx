@@ -71,10 +71,10 @@ export default function ThreadListToolbar({
   )
 
   // ── Toolbar ─────────────────────────────────────────────────────────────
-  // Mobile: slim bar — refresh + pagination when browsing; X + count +
+  // Mobile: slim bar - refresh + pagination when browsing; X + count +
   // 3 primary bulk actions + "⋮" while selecting (avatar tap selects).
   // Desktop: full Gmail-style bar, unchanged.
-  // MOBILE: no toolbar at all while nothing is selected — reloading is the
+  // MOBILE: no toolbar at all while nothing is selected - reloading is the
   // pull-to-refresh gesture and paging is the infinite scroll, so the bar had
   // only two buttons left that duplicated them. It comes back as the selection
   // action bar as soon as a conversation is ticked.
@@ -191,7 +191,7 @@ export default function ThreadListToolbar({
       </>
     )}
 
-    {/* Bulk actions — same set and order as Gmail:
+    {/* Bulk actions - same set and order as Gmail:
         Archive · Spam · Delete | Mark read | Move to | More */}
     {checkedIds.size > 0 && (
       <>
@@ -272,7 +272,7 @@ export default function ThreadListToolbar({
         <ChevronRight size={20} />
       </button>
 
-      {/* Display density (comfortable / compact) — desktop only */}
+      {/* Display density (comfortable / compact) - desktop only */}
       <button
         onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
         title={t('density_toggle', { defaultValue: density === 'compact' ? 'Affichage normal' : 'Affichage compact' })}
@@ -280,7 +280,7 @@ export default function ThreadListToolbar({
         <AlignJustify size={16} />
       </button>
 
-      {/* Split-pane mode — hidden on mobile (no room for panes) */}
+      {/* Split-pane mode - hidden on mobile (no room for panes) */}
       <div className="ml-1 hidden lg:block">
         <button onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setSplitMenuPos(p => p ? null : { top: r.bottom + 4, left: r.right - 224 }) }}
           title={t('split_toggle', { defaultValue: 'Mode Volet Double' })}

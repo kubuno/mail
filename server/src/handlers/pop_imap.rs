@@ -1,7 +1,7 @@
 //! POP / IMAP access-policy endpoints: read and save the current user's
 //! per-protocol settings (enable/disable, POP fetch behaviour, IMAP expunge and
 //! folder rules). The instance's own IMAP/POP3 server reads these at login and
-//! honours them — see `crate::services::pop_imap` and `crate::server`.
+//! honours them - see `crate::services::pop_imap` and `crate::server`.
 //!
 //! The wire shape is the POP/IMAP subset of the client's forwarding preferences
 //! (camelCase, `popState` / `popOnFetch` / `imapExpunge` …), so the settings tab
@@ -55,7 +55,7 @@ impl PopImapDto {
     }
 }
 
-/// GET /pop-imap — the current user's policy, or the compatibility defaults.
+/// GET /pop-imap - the current user's policy, or the compatibility defaults.
 pub async fn get_pop_imap(
     State(state): State<AppState>,
     user: AuthUser,
@@ -64,7 +64,7 @@ pub async fn get_pop_imap(
     Ok(Json(PopImapDto::from_settings(&settings)))
 }
 
-/// PUT /pop-imap — validate and replace the current user's policy.
+/// PUT /pop-imap - validate and replace the current user's policy.
 pub async fn put_pop_imap(
     State(state): State<AppState>,
     user: AuthUser,

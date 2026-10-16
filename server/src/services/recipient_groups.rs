@@ -1,4 +1,4 @@
-//! Personal recipient groups — private, per-user distribution lists.
+//! Personal recipient groups - private, per-user distribution lists.
 //!
 //! A user names a set of recipients ("Family", "Team") and addresses the whole
 //! group at once when composing. These are NOT shared server aliases: they are a
@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::services::send_as::{is_valid_email, normalize_email};
 
-/// Longest accepted group name — matches the `VARCHAR(255)` column.
+/// Longest accepted group name - matches the `VARCHAR(255)` column.
 pub const NAME_MAX_LEN: usize = 255;
 
 /// A single member of a group. `name` is optional (empty display name is stored
@@ -134,7 +134,7 @@ pub async fn list(db: &DbPool, user_id: Uuid) -> Result<Vec<RecipientGroup>> {
 }
 
 /// Does this user already have a group with this name (case-insensitive)?
-/// `exclude_id`, when set, is skipped — used on rename so a row does not clash
+/// `exclude_id`, when set, is skipped - used on rename so a row does not clash
 /// with itself.
 pub async fn name_taken(
     db: &DbPool,

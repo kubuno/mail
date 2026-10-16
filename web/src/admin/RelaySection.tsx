@@ -1,17 +1,17 @@
 /**
- * Outbound relay (smarthost) — where an administrator points outgoing mail at a
+ * Outbound relay (smarthost) - where an administrator points outgoing mail at a
  * single SMTP host instead of letting the queue reach each recipient's MX.
  *
  * ── Why this screen exists ───────────────────────────────────────────────────
  * By default the outbound worker delivers direct-to-MX, which is right for a
  * server with a public IP. It cannot work behind a residential line (port 25
- * blocked outbound) whose only route out is a trusted host — a VPS's Postfix
+ * blocked outbound) whose only route out is a trusted host - a VPS's Postfix
  * over a private tunnel. Turning this on makes every remote message go through
  * that host, which then reaches the world from a public IP with a good
  * reputation.
  *
  * ── The password is write-only ───────────────────────────────────────────────
- * The API never returns it — only whether one is set. So the field starts empty
+ * The API never returns it - only whether one is set. So the field starts empty
  * with a "●●● défini" placeholder when a password exists; typing sets a new one,
  * leaving it blank keeps the stored one, and an explicit checkbox wipes it.
  */
@@ -65,7 +65,7 @@ export default function RelaySection() {
   const [saved, setSaved] = useState(false)
 
   // Seed the form once the config arrives, and re-seed after a save returns the
-  // fresh state — so `has_password` and the "●●● défini" placeholder stay honest.
+  // fresh state - so `has_password` and the "●●● défini" placeholder stay honest.
   useEffect(() => {
     if (config) setForm(fromConfig(config))
   }, [config])
@@ -77,7 +77,7 @@ export default function RelaySection() {
       port:           f.port,
       security:       f.security,
       username:       f.username.trim(),
-      // Only send a password when one was typed — an empty field keeps the
+      // Only send a password when one was typed - an empty field keeps the
       // stored one; the checkbox is the only way to remove it.
       password:       f.password ? f.password : undefined,
       clear_password: f.clearPassword || undefined,
@@ -107,7 +107,7 @@ export default function RelaySection() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(prev => (prev ? { ...prev, [key]: value } : prev))
 
-  // The two client-side mirrors of the server's rules — shown inline so a save
+  // The two client-side mirrors of the server's rules - shown inline so a save
   // that would be refused is disabled before it is attempted.
   const hostMissing = form.enabled && form.host.trim() === ''
   const clearAuthNoTls = form.security === 'none' && form.username.trim() !== '' && !form.clearPassword
@@ -143,13 +143,13 @@ export default function RelaySection() {
       title={t('relay_title', { defaultValue: 'Relais sortant' })}
       description={t('relay_intro', {
         defaultValue:
-          'Par défaut, chaque message part directement vers le serveur (MX) de son destinataire. Activez un relais si votre ligne bloque le port 25 sortant — le cas d’une connexion résidentielle : tout le courrier distant est alors remis à un unique serveur SMTP, qui le livre à votre place.',
+          'Par défaut, chaque message part directement vers le serveur (MX) de son destinataire. Activez un relais si votre ligne bloque le port 25 sortant - le cas d’une connexion résidentielle : tout le courrier distant est alors remis à un unique serveur SMTP, qui le livre à votre place.',
       })}
     >
       <Callout variant="info" title={t('relay_help_title', { defaultValue: 'Quand configurer un relais ?' })}>
         {t('relay_help_body', {
           defaultValue:
-            'Sur une ligne résidentielle, le port 25 sortant est presque toujours bloqué : la livraison directe au MX est impossible, et un relais (le Postfix de votre VPS) est le seul chemin vers internet. Sur un tunnel privé de confiance, « Aucun chiffrement » sans authentification suffit — l’hôte et le port sont tout ce qu’il faut. Pour un relais public, utilisez STARTTLS ou TLS avec un identifiant : sans chiffrement, le mot de passe circulerait en clair.',
+            'Sur une ligne résidentielle, le port 25 sortant est presque toujours bloqué : la livraison directe au MX est impossible, et un relais (le Postfix de votre VPS) est le seul chemin vers internet. Sur un tunnel privé de confiance, « Aucun chiffrement » sans authentification suffit - l’hôte et le port sont tout ce qu’il faut. Pour un relais public, utilisez STARTTLS ou TLS avec un identifiant : sans chiffrement, le mot de passe circulerait en clair.',
         })}
       </Callout>
 
@@ -235,7 +235,7 @@ export default function RelaySection() {
               onChange={e => set('password', e.target.value)}
               disabled={form.clearPassword}
               placeholder={config?.has_password && !form.clearPassword
-                ? t('relay_password_set', { defaultValue: '●●● défini — laisser vide pour conserver' })
+                ? t('relay_password_set', { defaultValue: '●●● défini - laisser vide pour conserver' })
                 : t('relay_password_ph', { defaultValue: 'Saisir un mot de passe' })}
               autoComplete="new-password"
             />
@@ -255,7 +255,7 @@ export default function RelaySection() {
           <Callout variant="warning">
             {t('relay_cleartext_password', {
               defaultValue:
-                'Un mot de passe ne doit pas transiter en clair — utilisez STARTTLS ou TLS, ou un relais sans authentification sur réseau de confiance.',
+                'Un mot de passe ne doit pas transiter en clair - utilisez STARTTLS ou TLS, ou un relais sans authentification sur réseau de confiance.',
             })}
           </Callout>
         )}
@@ -283,7 +283,7 @@ export default function RelaySection() {
   )
 }
 
-/** The server's own validation sentence, or the fallback — same normalisation
+/** The server's own validation sentence, or the fallback - same normalisation
  *  quirk as the DKIM section (the SDK's axios client flattens rejections). */
 function messageOf(error: unknown, fallback: string): string {
   const nested = (error as { response?: { data?: { message?: string } } })?.response?.data?.message

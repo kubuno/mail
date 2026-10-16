@@ -1,7 +1,7 @@
 //! Retention: the background purge of Spam and Trash.
 //!
 //! Junk and deleted mail are the two folders nobody empties. Left alone they
-//! grow without bound — and, worse, they keep content a user believed gone.
+//! grow without bound - and, worse, they keep content a user believed gone.
 //! Every hosted mail service therefore ages them out; this is that job.
 //!
 //! Three properties it must have, and how each is obtained:
@@ -10,7 +10,7 @@
 //!     deleted until an administrator sets a number, so upgrading the module
 //!     cannot cost anybody a message.
 //!   * **Only what this instance owns.** Messages of an EXTERNAL account are a
-//!     local copy of what still sits on the provider — deleting one would just
+//!     local copy of what still sits on the provider - deleting one would just
 //!     make the sync worker download it again on the next pass. The purge is
 //!     restricted to `mail.accounts.kind = 'local'`, the mailboxes this
 //!     instance actually hosts.
@@ -45,7 +45,7 @@ pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
     loop {
         // Same read as every other background task: the console is the single
         // source of truth, and an unreachable core simply means "do nothing this
-        // cycle" — never "delete with a guessed configuration".
+        // cycle" - never "delete with a guessed configuration".
         if let Some(cfg) = config::fetch(&http, &settings).await {
             purge_cycle(&db, &cfg, &settings.mail.attachments_dir).await;
         }
@@ -79,7 +79,7 @@ async fn purge_folder(
     attachments_dir: &str,
 ) -> anyhow::Result<usize> {
     // Guard the cast: the setting is already clamped when it is read, and this
-    // makes the invariant local — a day count that cannot be expressed must
+    // makes the invariant local - a day count that cannot be expressed must
     // delete nothing rather than wrap into something small.
     let days: i32 = match i32::try_from(days) {
         Ok(d) if d > 0 => d,
@@ -117,7 +117,7 @@ async fn purge_folder(
 
     // The rows go first, in one transaction with the thread bookkeeping: a
     // half-purged thread whose counters say otherwise is a conversation the
-    // interface renders wrong. The files come after the commit — an orphan file
+    // interface renders wrong. The files come after the commit - an orphan file
     // is a disk-space problem, an orphan row is a correctness one.
     let mut tx = db.begin().await.map_err(|e| {
         tracing::error!(error = %e, "Rétention : ouverture de la transaction de purge");
@@ -205,7 +205,7 @@ async fn purge_folder(
 /// The attachment files of one message, kept only when they really live under
 /// the module's attachments directory.
 ///
-/// The paths come from our own delivery code, so this is defence in depth — but
+/// The paths come from our own delivery code, so this is defence in depth - but
 /// it is the difference between a purge and an arbitrary file deletion, and a
 /// background task running with the module's rights is exactly where that
 /// distinction has to be enforced.

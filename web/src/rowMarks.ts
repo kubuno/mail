@@ -3,7 +3,7 @@
  * the follow star and the selection box, each in two states.
  *
  * Inlined rather than shipped as files: the module build emits only
- * entry.js/entry.css, so a separate asset would not be packaged — and an inline
+ * entry.js/entry.css, so a separate asset would not be packaged - and an inline
  * copy keeps the icon working without any request to an external host.
  */
 export const PRIORITY_MARK_OUTLINE = 'data:image/png;base64,' +

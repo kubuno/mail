@@ -10,11 +10,11 @@
 //! What this deliberately does NOT do, because each of these turns greylisting
 //! from a filter into an outage:
 //!
-//! * it never applies to a submission listener — an interactive mail client
+//! * it never applies to a submission listener - an interactive mail client
 //!   does not retry, it shows the user an error;
 //! * it never applies to an authenticated session, for the same reason;
 //! * it never applies to a sender the operator allow-listed;
-//! * it never applies to a trusted upstream relay — that relay opens a large
+//! * it never applies to a trusted upstream relay - that relay opens a large
 //!   number of legitimate connections and deferring it would stall real mail;
 //! * and a database failure lets the mail THROUGH. A filter that cannot reach
 //!   its state must not become a mail outage; the failure is logged loudly and
@@ -37,7 +37,7 @@ use crate::server::config::ServerConfig;
 use crate::server::hygiene;
 
 /// How long a triplet that PASSED stays trusted after its last use. postgrey's
-/// default; there is no admin setting for it, and there does not need to be —
+/// default; there is no admin setting for it, and there does not need to be -
 /// it only decides how often a long-silent correspondent pays the delay again.
 const TRUST_TTL_DAYS: i64 = 35;
 
@@ -185,11 +185,11 @@ pub async fn check(
     // sender may legitimately be the null return path (a DSN), which is stored
     // as the empty string.
     if !hygiene::valid_envelope_address(recipient) {
-        tracing::error!(recipient = %recipient, "Greylisting : destinataire invalide — contrôle ignoré");
+        tracing::error!(recipient = %recipient, "Greylisting : destinataire invalide - contrôle ignoré");
         return Verdict::Pass;
     }
     if !sender.is_empty() && !hygiene::valid_envelope_address(sender) {
-        tracing::error!("Greylisting : expéditeur d'enveloppe invalide — contrôle ignoré");
+        tracing::error!("Greylisting : expéditeur d'enveloppe invalide - contrôle ignoré");
         return Verdict::Pass;
     }
 
@@ -215,7 +215,7 @@ pub async fn check(
     {
         Ok(value) => value,
         Err(e) => {
-            tracing::error!(error = %e, "Greylisting : lecture impossible — message laissé passer");
+            tracing::error!(error = %e, "Greylisting : lecture impossible - message laissé passer");
             return Verdict::Pass;
         }
     };
@@ -256,14 +256,14 @@ pub async fn check(
     {
         // The state was not updated. Deferring anyway would mean deferring the
         // same triplet forever, since the retry would find nothing recorded.
-        tracing::error!(error = %e, "Greylisting : écriture impossible — message laissé passer");
+        tracing::error!(error = %e, "Greylisting : écriture impossible - message laissé passer");
         return Verdict::Pass;
     }
 
     match outcome {
         Outcome::FirstContact | Outcome::Expired => tracing::info!(
             client = %network, recipient = %recipient,
-            "Greylisting : premier contact du triplet — ajourné"
+            "Greylisting : premier contact du triplet - ajourné"
         ),
         Outcome::TooSoon => tracing::debug!(client = %network, "Greylisting : nouvelle tentative trop tôt"),
         Outcome::Promote => tracing::info!(
@@ -358,7 +358,7 @@ mod tests {
         assert!(!applies(true, true, true, false, false));
     }
 
-    /// The allow-list buys a bypass of greylisting and of the block lists —
+    /// The allow-list buys a bypass of greylisting and of the block lists -
     /// and of nothing else. DMARC is decided later, on the message itself.
     #[test]
     fn an_allowlisted_sender_is_exempt() {
@@ -366,7 +366,7 @@ mod tests {
     }
 
     /// A trusted upstream relay forwards a large volume of legitimate mail and
-    /// does not "retry" the way a foreign MTA does — deferring it stalls real
+    /// does not "retry" the way a foreign MTA does - deferring it stalls real
     /// mail, so it is exempt.
     #[test]
     fn a_trusted_upstream_is_exempt() {

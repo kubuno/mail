@@ -6,7 +6,7 @@
 //
 // Only http/https pass: they cannot execute script in the page, whereas
 // `javascript:` and `data:text/html` can, and an unknown scheme hands the click
-// to an arbitrary local handler. `mailto:` is not allowed either — no card
+// to an arbitrary local handler. `mailto:` is not allowed either - no card
 // renders a mail link (an organizer's address travels as plain text in its own
 // field), so allowing it would only widen the surface.
 const ALLOWED_URL_SCHEMES = ['http', 'https']

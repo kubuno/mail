@@ -3,7 +3,7 @@
 //! ── Why the count matters more than the record ──────────────────────────────
 //! RFC 7208 §4.6.4 caps at TEN the number of DNS-querying mechanisms a verifier
 //! must follow. Past that, the verdict is `permerror`, which DMARC treats as a
-//! failure — the mail is rejected exactly as if SPF said so. The ceiling is
+//! failure - the mail is rejected exactly as if SPF said so. The ceiling is
 //! crossed by *nesting*: three `include:` of providers who each `include:` two
 //! more, and a record that reads as fine is already dead. Nothing in an SPF
 //! record shows this, which is why every serious tool counts it, recursively.
@@ -25,7 +25,7 @@ const MAX_LOOKUPS: u32 = 10;
 
 /// Stop following after this many, whatever the record says: an `include:` loop
 /// (or a chain built to be one) must not turn a diagnostic into a DNS flood.
-/// Above the ceiling the exact number no longer matters — it is already wrong.
+/// Above the ceiling the exact number no longer matters - it is already wrong.
 const HARD_STOP: u32 = 20;
 
 /// How deep the `include:`/`redirect=` chain is followed.
@@ -34,7 +34,7 @@ const MAX_DEPTH: u32 = 10;
 /// Result of walking the record.
 struct Count {
     lookups: u32,
-    /// A nested record could not be fetched — the count is a lower bound.
+    /// A nested record could not be fetched - the count is a lower bound.
     partial: bool,
     /// Walking stopped at `HARD_STOP`.
     capped:  bool,
@@ -95,7 +95,7 @@ pub async fn check(resolver: &TokioResolver, domain: &str) -> Check {
             .expected(expected).found(vec![record])
     } else {
         // Published and within the ceiling. Whether it lists the right senders
-        // is not something this page can know — so: fact, not verdict.
+        // is not something this page can know - so: fact, not verdict.
         Check::new("spf", domain, Verdict::Info,
             format!("Enregistrement publié, {detail}. Vérifiez qu'il autorise bien tous vos \
                      expéditeurs et son mécanisme final (« ~all » ou « -all »)."))
@@ -136,7 +136,7 @@ fn count_lookups<'a>(
                 None => (term.to_ascii_lowercase(), None),
             };
 
-            // RFC 7208 §4.6.4: these — and only these — cost a lookup each.
+            // RFC 7208 §4.6.4: these - and only these - cost a lookup each.
             match name.as_str() {
                 "a" | "mx" | "ptr" | "exists" => *spent += 1,
                 "include" | "redirect" => {
@@ -159,7 +159,7 @@ fn count_lookups<'a>(
                 }
                 match txt(resolver, &target).await {
                     // No SPF record at the target: a verifier gets permerror
-                    // there, but the lookup was still spent — so it stays
+                    // there, but the lookup was still spent - so it stays
                     // counted and nothing else is followed.
                     Answer::Records(records) => {
                         if let Some(inner) = records.into_iter().find(|r| is_spf(r)) {
@@ -184,7 +184,7 @@ fn count_lookups<'a>(
 mod tests {
     use super::*;
 
-    /// Counts the terms of one record without touching the network — the part
+    /// Counts the terms of one record without touching the network - the part
     /// that is easy to get wrong (qualifiers, `ip4:` costing nothing).
     fn local_terms(record: &str) -> u32 {
         let mut spent = 0u32;

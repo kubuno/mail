@@ -4,8 +4,8 @@
 //!
 //! When a primary domain is verified, every account that has no mailbox on it
 //! should receive one, built from an administrator's rule; every new account
-//! after that should be served the same way. The obvious wiring — react to a
-//! `domain.mail_ready` event and to `UserCreated` — is not the one used here,
+//! after that should be served the same way. The obvious wiring - react to a
+//! `domain.mail_ready` event and to `UserCreated` - is not the one used here,
 //! for a plain reason: this module does not ingest core events (it has no
 //! `/ipc/events` route), and even a module that did would miss the ones that
 //! arrived while it was down. So the mechanism is a **reconcile**: read the
@@ -13,13 +13,13 @@
 //!
 //! [`reconcile`] is therefore idempotent by construction. It runs on a timer
 //! (the scheduler worker), so a new account gets its address within one tick,
-//! and a domain that becomes ready is back-filled on the next pass — no event,
+//! and a domain that becomes ready is back-filled on the next pass - no event,
 //! no delivery to miss.
 //!
 //! ## What it never does
 //!
 //! It never overwrites. An account that already holds a mailbox on the domain is
-//! skipped whole — a manually chosen address, or one from a previous run, is
+//! skipped whole - a manually chosen address, or one from a previous run, is
 //! left untouched. That is enforced in
 //! [`crate::handlers::addresses::mailboxes::provision_mailbox`], not here.
 
@@ -41,7 +41,7 @@ struct ProvList {
 }
 
 /// Reads the world and provisions what is missing. Cheap and silent when there
-/// is nothing to do — off by setting, or no verified primary domain.
+/// is nothing to do - off by setting, or no verified primary domain.
 pub async fn reconcile(state: &AppState) {
     let http = reqwest::Client::new();
 
@@ -90,7 +90,7 @@ pub async fn reconcile(state: &AppState) {
     for u in &list.users {
         let base = local_part(&cfg.address_format, u);
         if base.is_empty() {
-            continue; // nothing usable, not even a username — skip rather than guess.
+            continue; // nothing usable, not even a username - skip rather than guess.
         }
         match crate::handlers::addresses::mailboxes::provision_mailbox(
             state,
@@ -105,7 +105,7 @@ pub async fn reconcile(state: &AppState) {
                 created += 1;
                 tracing::info!(user_id = %u.id, %address, "provisioning : adresse attribuée");
             }
-            Ok(None) => {} // already served, or no free address — nothing to say each tick.
+            Ok(None) => {} // already served, or no free address - nothing to say each tick.
             Err(e) => tracing::warn!(user_id = %u.id, error = %e, "provisioning : échec"),
         }
     }
@@ -144,7 +144,7 @@ fn local_part(format: &str, u: &ProvUser) -> String {
 /// Reduces free text to a valid mailbox local part.
 ///
 /// Lower-cased, accents folded to ASCII, anything not `[a-z0-9._-]` turned into a
-/// dot, runs of dots collapsed, and no leading or trailing dot — the shape an
+/// dot, runs of dots collapsed, and no leading or trailing dot - the shape an
 /// address parser will accept without a fight, and the one a human reads as a
 /// name rather than as an escape sequence.
 fn sanitize(raw: &str) -> String {
@@ -182,7 +182,7 @@ fn sanitize(raw: &str) -> String {
 }
 
 /// Folds the Latin accents that turn up in real names to their ASCII base, or
-/// `None` when the character is not one this table knows — the caller then keeps
+/// `None` when the character is not one this table knows - the caller then keeps
 /// the character if it is allowed and turns it into a dot otherwise. Not a full
 /// Unicode transliteration: a name in a script with no ASCII form collapses to
 /// dots and the rule falls back to the username, which is the honest outcome.

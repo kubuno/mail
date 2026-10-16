@@ -7,7 +7,7 @@ import {
 // Conversation row chrome, measured on Gmail itself: read rows carry the
 // blue-grey tint while unread ones stay white, the separator is an inset
 // shadow (so it vanishes when the row lifts), and hovering swaps it for a
-// two-layer elevation plus 1px side borders — the background stays put.
+// two-layer elevation plus 1px side borders - the background stays put.
 export const ROW_READ_BG      = '#f2f6fc'
 export const ROW_CHECKED_BG   = '#c2dbff'
 export const ROW_HIGHLIGHT_BG = '#e8f0fe'
@@ -17,12 +17,12 @@ export const ROW_HOVER_SHADOW =
   '0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15)'
 
 /**
- * Gutter marks are dimmed until the row is hovered — an inactive mark sits at
+ * Gutter marks are dimmed until the row is hovered - an inactive mark sits at
  * 0.32, an active one at 0.7, and hovering restores full strength.
  *
  * Measured on screen: idle the glyphs read luminance ~195 on a white row
  * (0.32 x 68 + 0.68 x 255), hovered they read 70. ⚠️ Verify this with a plain
- * viewport screenshot — `captureBeyondViewport` re-renders the page and loses
+ * viewport screenshot - `captureBeyondViewport` re-renders the page and loses
  * the hover state, which makes the dimming look like it does not exist.
  */
 export function markOpacity(active: boolean, hovered: boolean) {
@@ -36,7 +36,7 @@ export function markOpacity(active: boolean, hovered: boolean) {
  */
 export function SelectBox({ checked, partial = false, onClick, label, opacity = 1 }: {
   checked: boolean
-  /** Some but not all items selected — draws the dash, like Gmail. */
+  /** Some but not all items selected - draws the dash, like Gmail. */
   partial?: boolean
   onClick: (e: React.MouseEvent) => void
   label: string
@@ -117,7 +117,7 @@ export function RowAction({ onClick, title, children }: {
 
 // Gmail-style importance marker (the yellow chevron): filled amber when the
 // conversation is important, thin grey outline otherwise.
-// List star — Material `star`/`star_border` outline (sharp points, uniform
+// List star - Material `star`/`star_border` outline (sharp points, uniform
 // thin edge). Lucide's Star has rounded joins and reads noticeably heavier.
 export function ListStar({ active, size = 20, opacity = 1 }: {
   active: boolean; size?: number; opacity?: number

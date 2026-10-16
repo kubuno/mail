@@ -1,9 +1,9 @@
-//! Delivery Status Notifications (RFC 3464) — the bounce/delay reports sent back
+//! Delivery Status Notifications (RFC 3464) - the bounce/delay reports sent back
 //! to a message's sender when a recipient permanently fails or is delayed.
 //!
 //! The shape follows Postfix's `bounce_notify_util.c` exactly: a
-//! `multipart/report; report-type=delivery-status` with three parts — a human
-//! text, a machine `message/delivery-status`, and the returned headers — and,
+//! `multipart/report; report-type=delivery-status` with three parts - a human
+//! text, a machine `message/delivery-status`, and the returned headers - and,
 //! critically, an empty envelope sender so a DSN that itself fails cannot
 //! generate another DSN.
 
@@ -71,7 +71,7 @@ pub fn build(
     ));
     out.push_str("\r\n");
 
-    // Part 1 — human-readable.
+    // Part 1 - human-readable.
     push(&mut out, &format!("--{boundary}"));
     push(&mut out, "Content-Type: text/plain; charset=utf-8");
     out.push_str("\r\n");
@@ -85,7 +85,7 @@ pub fn build(
     }
     out.push_str("\r\n");
 
-    // Part 2 — machine-readable delivery-status.
+    // Part 2 - machine-readable delivery-status.
     push(&mut out, &format!("--{boundary}"));
     push(&mut out, "Content-Type: message/delivery-status");
     out.push_str("\r\n");
@@ -102,7 +102,7 @@ pub fn build(
     }
     out.push_str("\r\n");
 
-    // Part 3 — the returned headers of the original message.
+    // Part 3 - the returned headers of the original message.
     push(&mut out, &format!("--{boundary}"));
     push(&mut out, "Content-Type: text/rfc822-headers");
     out.push_str("\r\n");
@@ -118,7 +118,7 @@ fn push(out: &mut String, line: &str) {
     out.push_str("\r\n");
 }
 
-/// A header value can never carry a bare CR/LF — that is how a crafted address
+/// A header value can never carry a bare CR/LF - that is how a crafted address
 /// would inject extra headers into the report.
 fn sanitize(value: &str) -> String {
     value.chars().map(|c| if c == '\r' || c == '\n' { ' ' } else { c }).take(500).collect()

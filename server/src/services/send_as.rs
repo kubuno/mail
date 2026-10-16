@@ -1,4 +1,4 @@
-//! "Send mail as" identities — the ownership-verified sender addresses.
+//! "Send mail as" identities - the ownership-verified sender addresses.
 //!
 //! A user may add an address they want to send mail as; before it can be used
 //! the instance mails a confirmation code TO that address and the user enters it
@@ -17,24 +17,24 @@ use rand::Rng;
 use kubuno_db::DbPool;
 use uuid::Uuid;
 
-/// Length of a confirmation code — long enough not to be guessable in the resend
+/// Length of a confirmation code - long enough not to be guessable in the resend
 /// window, short enough to retype from another mailbox.
 pub const CODE_LEN: usize = 8;
 
 /// How long a freshly issued code stays valid.
 pub const CODE_TTL_HOURS: i64 = 24;
 
-/// A code may be regenerated (add / resend) at most once per this many seconds —
+/// A code may be regenerated (add / resend) at most once per this many seconds -
 /// the minimal anti-abuse guard against hammering a stranger's inbox.
 pub const RESEND_MIN_INTERVAL_SECS: i64 = 60;
 
 // ── Pure logic (unit-tested, no clock, no database) ─────────────────────────
 
-/// Generates a confirmation code from an unambiguous alphabet — no O/0, no
+/// Generates a confirmation code from an unambiguous alphabet - no O/0, no
 /// l/1/I, since the user retypes it into another mail client and a lookalike
 /// reads as a wrong code with no way to tell.
 pub fn generate_code() -> String {
-    // Unambiguous alphabet: excludes O/0, I/1 AND L (an l/1 lookalike) — the
+    // Unambiguous alphabet: excludes O/0, I/1 AND L (an l/1 lookalike) - the
     // last was present by mistake, which the shape test occasionally caught.
     const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut rng = rand::thread_rng();
@@ -50,7 +50,7 @@ pub fn normalize_email(raw: &str) -> String {
 
 /// A deliberately conservative RFC 5321-ish check: exactly one `@`, a non-empty
 /// local part, a domain that has a dot and no leading/trailing dot, no
-/// whitespace, and within the 320-char column. Not a full grammar — just enough
+/// whitespace, and within the 320-char column. Not a full grammar - just enough
 /// to refuse obvious junk before we try to mail a code to it.
 pub fn is_valid_email(email: &str) -> bool {
     let e = email.trim();
@@ -119,7 +119,7 @@ pub fn issue_code(now: DateTime<Utc>) -> IssuedCode {
 
 // ── Persisted rows ──────────────────────────────────────────────────────────
 
-/// The public view of a send-as identity — never carries the code.
+/// The public view of a send-as identity - never carries the code.
 #[derive(Debug, Clone)]
 pub struct SendAsAddress {
     pub id:             Uuid,
@@ -158,7 +158,7 @@ type SecretRow = (String, String, bool, Option<String>, Option<DateTime<Utc>>, D
 
 // ── Database access (always scoped by user_id) ──────────────────────────────
 
-/// Every send-as identity of `user_id`, newest first. Public columns only — the
+/// Every send-as identity of `user_id`, newest first. Public columns only - the
 /// code never leaves the database.
 pub async fn list(db: &DbPool, user_id: Uuid) -> Result<Vec<SendAsAddress>> {
     let rows: Vec<PublicRow> = crate::db::query_as(

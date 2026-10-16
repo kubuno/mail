@@ -17,7 +17,7 @@ pub struct AddressSuggestion {
 }
 
 /// Recipient autocompletion: search the per-user address index (kept up to date
-/// by the sync worker and outgoing sends — no scan of mail.messages).
+/// by the sync worker and outgoing sends - no scan of mail.messages).
 pub async fn suggest_addresses(
     State(state): State<AppState>,
     user: AuthUser,

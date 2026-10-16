@@ -1,5 +1,5 @@
 //! The outbound queue worker: claims due recipients, attempts delivery, and
-//! advances their state — with bounces turned into DSNs.
+//! advances their state - with bounces turned into DSNs.
 //!
 //! It ties together `queue` (state), `outbound` (one delivery attempt) and
 //! `dsn` (failure reports). The reliability contract is queue's; this loop just
@@ -30,7 +30,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(15);
 /// being delivered becomes claimable and a second worker sends the message
 /// again. The worst case is connect + command + the wait for the reply to the
 /// final `.` (the remote may fsync the whole message first): 30 + 120 + 600 s.
-/// A 120 s lease — the previous value — was shorter than that single 600 s wait,
+/// A 120 s lease - the previous value - was shorter than that single 600 s wait,
 /// so a slow-but-healthy destination could produce duplicates. The margin below
 /// keeps the lease safely above the sum.
 const LEASE: Duration = Duration::from_secs(900);
@@ -50,7 +50,7 @@ pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
     let crypto = match MailCrypto::new(&settings.mail.encryption_key) {
         Ok(c) => Some(c),
         Err(e) => {
-            tracing::error!(error = %e, "File sortante : clé de chiffrement invalide — signature DKIM indisponible");
+            tracing::error!(error = %e, "File sortante : clé de chiffrement invalide - signature DKIM indisponible");
             None
         }
     };
@@ -60,7 +60,7 @@ pub async fn run(db: DbPool, settings: Settings, http: reqwest::Client) {
         if let Some(cfg) = config::fetch(&http, &settings).await {
             if cfg.outbound_enabled {
                 // Read the relay configuration once per cycle, exactly like the
-                // rest of the config — not once per message. `None` means no
+                // rest of the config - not once per message. `None` means no
                 // relay: deliver direct-to-MX as before. When a relay is set,
                 // EVERY remote recipient below goes through it instead of the MX.
                 let relay = relay::fetch(&db, crypto.as_ref()).await;
@@ -88,7 +88,7 @@ async fn process_cycle(
 }
 
 /// One recipient: attempt delivery and record the outcome. An expired message
-/// is bounced even on a temporary failure — we do not retry forever.
+/// is bounced even on a temporary failure - we do not retry forever.
 async fn deliver_one(
     db: &DbPool,
     cfg: &ServerConfig,
@@ -113,7 +113,7 @@ async fn deliver_one(
 
     // A configured relay takes over every remote delivery: connect to its
     // host:port instead of resolving the recipient's MX. `to_send` is the SAME
-    // DKIM-signed payload either way — the relay does not re-sign.
+    // DKIM-signed payload either way - the relay does not re-sign.
     let outcome = if let Some(relay) = relay {
         outbound::deliver_via_relay(&c.recipient, &c.envelope_from, &to_send, relay, &cfg.hostname).await
     } else {
@@ -148,7 +148,7 @@ async fn deliver_one(
 /// Produces the bytes to transmit, applying the two DKIM settings.
 ///
 /// `Err(reason)` means the administrator requires a signature (
-/// `dkim_require_signature`) that cannot be produced — the message must wait,
+/// `dkim_require_signature`) that cannot be produced - the message must wait,
 /// not leave unsigned, since unsigned mail is refused outright by the large
 /// providers past a few thousand messages a day.
 async fn prepare(
@@ -216,7 +216,7 @@ async fn defer_or_bounce(
     .await
 }
 
-/// Marks the recipient bounced and queues a DSN back to the sender — unless the
+/// Marks the recipient bounced and queues a DSN back to the sender - unless the
 /// failed message is itself a DSN or has the null return path, in which case the
 /// notice is dropped (RFC 3464: no DSN of a DSN, no infinite bounce loop).
 async fn bounce(db: &DbPool, cfg: &ServerConfig, c: &Claimed, code: u16, reason: &str) -> anyhow::Result<()> {

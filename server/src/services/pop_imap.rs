@@ -1,18 +1,18 @@
-//! POP / IMAP access policy — the server-side half of the "Forwarding and
+//! POP / IMAP access policy - the server-side half of the "Forwarding and
 //! POP/IMAP" settings tab.
 //!
 //! This instance IS the IMAP/POP3 server (`crate::server`), so a user's choices
 //! there are not hints to some upstream provider: they are the rules this
 //! server enforces on its own sockets. This module persists those choices and
 //! exposes the pure decisions the protocol handlers make on every login and
-//! every fetch — kept free of I/O so they can be unit-tested without a database.
+//! every fetch - kept free of I/O so they can be unit-tested without a database.
 //!
 //! ── The defaults are compatibility, not preference ──────────────────────────
 //! The live instance already answered IMAP and POP logins for any credential,
 //! with no per-user gate. A user who never opened this tab has NO row, and
 //! [`PopImapSettings::default`] must therefore reproduce that exact behaviour or
 //! a running mail client breaks at its next poll. Every default below is chosen
-//! to match what the server did before this table existed — see the migration
+//! to match what the server did before this table existed - see the migration
 //! `000037` header for the field-by-field rationale.
 
 use anyhow::{Context, Result};
@@ -208,7 +208,7 @@ type SettingsRow = (bool, String, String, i32, bool, String, i64, String);
 /// Reads a user's policy, or the compatibility default when they never saved
 /// one. A malformed stored enum (only reachable by a hand-edited row, since the
 /// writer validates) falls back to that field's default rather than failing the
-/// login — a mail client must not be locked out by a bad settings row.
+/// login - a mail client must not be locked out by a bad settings row.
 pub async fn load(db: &DbPool, user_id: Uuid) -> Result<PopImapSettings> {
     let row: Option<SettingsRow> = crate::db::query_as(
         "SELECT imap_enabled, imap_expunge_mode, imap_purge_mode, imap_folder_limit,
@@ -293,7 +293,7 @@ pub async fn upsert(db: &DbPool, user_id: Uuid, s: &PopImapSettings) -> Result<(
 
 /// The current top of a user's inbox: the greatest `local_uid` among their
 /// messages. This is the cursor snapped when a user switches POP to "from now
-/// on" — everything at or below it is considered already-arrived and hidden.
+/// on" - everything at or below it is considered already-arrived and hidden.
 /// A user with no mail yet gets 0, so the very next message is visible.
 pub async fn current_inbox_cursor(db: &DbPool, user_id: Uuid) -> Result<i64> {
     let cursor: Option<i64> = crate::db::query_scalar(
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn default_preserves_current_server_behaviour() {
         let d = PopImapSettings::default();
-        // Access is open on both protocols — the compatibility imperative.
+        // Access is open on both protocols - the compatibility imperative.
         assert!(d.imap_enabled);
         assert!(d.pop_enabled);
         // Every inbox message is visible, RETR marks read, standard expunge to

@@ -5,7 +5,7 @@
  * The panel used to be one page: state, diagnostic, keys, then forty-eight
  * settings in ten folds. It is now split into the five pages this module
  * declares in `module.toml` (`[[setting_groups]]`), each a menu entry and an
- * address of its own — so these two views have to say which page they belong to,
+ * address of its own - so these two views have to say which page they belong to,
  * in the module's OWN vocabulary. The core places them from that and knows
  * nothing else about mail.
  *
@@ -14,8 +14,8 @@
  *    page whose only job is "is anything broken" is the right place for it, and
  *    a tab would be one click between the operator and the answer.
  *  • The DKIM keys go to `authentication`, WITH a tab, beside the categories of
- *    that page. Signing keys are not a setting — nothing is typed, a key is
- *    generated, published, then rotated — so they earn their own tab rather
+ *    that page. Signing keys are not a setting - nothing is typed, a key is
+ *    generated, published, then rotated - so they earn their own tab rather
  *    than being wedged above someone else's form.
  *
  * Both are split out of the module's main bundle: this is admin-only, and the
@@ -70,7 +70,7 @@ export function registerMailAdmin() {
     Component: deferred(DiagnosticsSection),
   })
 
-  // The `addresses` page declares no setting — it manages OBJECTS. So the
+  // The `addresses` page declares no setting - it manages OBJECTS. So the
   // section is registered WITHOUT a label: it is not one tab beside others, it
   // is the whole page, and it brings its own four tabs (boxes, aliases, lists,
   // domains) because those four are one question asked four ways.
@@ -93,7 +93,7 @@ export function registerMailAdmin() {
     Component: deferred(DkimSection),
   })
 
-  // The outbound relay goes to `authentication` too — every outbound setting
+  // The outbound relay goes to `authentication` too - every outbound setting
   // (`outbound_enabled`, DKIM signing, TLS level) and the DKIM keys already live
   // on that page, so "how is remote mail sent" is answered in one place. Its own
   // tab: it is not a settings form declared in `module.toml` but a small object

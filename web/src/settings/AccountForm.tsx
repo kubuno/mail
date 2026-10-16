@@ -36,7 +36,7 @@ export function AccountForm({ onClose, existing }: {
   })
   const isOauthAccount = !!existing?.auth_kind && existing.auth_kind.startsWith('oauth')
   // A local mailbox is hosted by the instance: no external transport, no
-  // password, no provider — editing exposes only the display name and default.
+  // password, no provider - editing exposes only the display name and default.
   const isLocal = existing?.kind === 'local'
   const [oauthLoading, setOauthLoading] = useState(false)
   // Manual (server/password) block folded away when the OAuth path is active;
@@ -135,7 +135,7 @@ export function AccountForm({ onClose, existing }: {
     setTesting(true)
     setTestResult(null)
     const params = {
-      incoming_protocol: protocol,        // 'imap' | 'pop3' — tells the backend which test to run
+      incoming_protocol: protocol,        // 'imap' | 'pop3' - tells the backend which test to run
       imap_host:         form.imap_host,
       imap_port:         form.imap_port,
       imap_security:     form.imap_security,
@@ -168,7 +168,7 @@ export function AccountForm({ onClose, existing }: {
 
   // App-password providers (Gmail, Yahoo, iCloud…) DISPLAY the 16-char password in
   // space-separated groups ("xxxx xxxx xxxx xxxx") but REJECT it on IMAP/SMTP when
-  // the spaces are pasted along. Strip whitespace for those providers ONLY — never
+  // the spaces are pasted along. Strip whitespace for those providers ONLY - never
   // silently alter a password for other providers, where spaces may be legitimate.
   const normalizePassword = (v: string) =>
     activeProvider?.app_password ? v.replace(/\s+/g, '') : v
@@ -280,7 +280,7 @@ export function AccountForm({ onClose, existing }: {
             )
           )}
 
-          {/* Manual configuration (servers + passwords) — hidden while the
+          {/* Manual configuration (servers + passwords) - hidden while the
               OAuth path is active, and always for OAuth-managed accounts */}
           {manualVisible && (<>
           {/* Incoming mail section (IMAP or POP3) */}

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Mail · Thread reader — converted from ThreadReaderScreen.kt. Action bar (back + reply/archive/delete/unread),
+  Mail · Thread reader - converted from ThreadReaderScreen.kt. Action bar (back + reply/archive/delete/unread),
   the subject, then a stack of message cards (sender avatar + name/email + body + attachment chip). Shared
   vocabulary, light theme, logical px. Screen root is a Panel.
 -->

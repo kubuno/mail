@@ -5,8 +5,8 @@
 //! they take a plaintext password in the body and copy mail into an arbitrary
 //! user's mailbox, so no user session may ever reach them.
 //!
-//! They answer 200 with `ok: false` for anything the operator can act on — a
-//! wrong password, an unreachable host, a destination with no mailbox — because
+//! They answer 200 with `ok: false` for anything the operator can act on - a
+//! wrong password, an unreachable host, a destination with no mailbox - because
 //! the core relays the message to an admin screen. Only a malformed request is
 //! a 4xx.
 
@@ -56,7 +56,7 @@ const MAX_EXCLUDE_LEN:     usize = 500;
 /// RFC 1035 caps a domain name at 255 octets.
 const MAX_HOST_LEN:        usize = 255;
 
-/// POST /internal/migration/probe — what the source mailbox contains.
+/// POST /internal/migration/probe - what the source mailbox contains.
 pub async fn probe(Json(body): Json<Value>) -> Response {
     // Deserialised by hand so a malformed body gets OUR error shape. The serde
     // message itself is never echoed: a mistyped `password` field would come
@@ -80,7 +80,7 @@ pub async fn probe(Json(body): Json<Value>) -> Response {
     }
 }
 
-/// POST /internal/migration/run — copy one bounded chunk, then report progress.
+/// POST /internal/migration/run - copy one bounded chunk, then report progress.
 pub async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let req: RunRequest = match serde_json::from_value(body) {
         Ok(r)  => r,
@@ -151,7 +151,7 @@ pub async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Resp
 }
 
 /// Checks the source before a single byte goes over the wire. The password is
-/// only ever tested for emptiness — never measured, logged or echoed.
+/// only ever tested for emptiness - never measured, logged or echoed.
 fn validate_source(dto: SourceDto) -> Result<SourceSpec, String> {
     let host = dto.host.trim().to_string();
     if host.is_empty() {

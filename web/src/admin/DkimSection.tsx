@@ -1,13 +1,13 @@
 /**
- * DKIM signing keys — the section an administrator opens to publish a DNS
+ * DKIM signing keys - the section an administrator opens to publish a DNS
  * record, and comes back to a year later to rotate it.
  *
  * ── What this screen is really for ───────────────────────────────────────────
  * Generating a key is one click and nobody needs help with it. The hard part is
  * the record: `<selector>._domainkey.<domain> IN TXT "v=DKIM1; k=rsa; p=…"`,
  * some four hundred characters that must be pasted into a zone file EXACTLY.
- * So the record is shown whole — never truncated, never behind a "show" toggle
- * — with a copy button, for every key, active or not.
+ * So the record is shown whole - never truncated, never behind a "show" toggle
+ * - with a copy button, for every key, active or not.
  *
  * ── Rotation, and why the selector is a field ────────────────────────────────
  * A signing key is replaced, not edited: DNS propagates over hours and
@@ -168,7 +168,7 @@ export default function DkimSection() {
       <p className="mb-4 text-xs text-text-tertiary">
         {t('dkim_selector_hint', {
           defaultValue:
-            'Le sélecteur devient une étiquette DNS (lettres, chiffres, tirets). Laissé vide, il vaut « kubuno ». Une date — 2026a — rend la prochaine rotation évidente. Ed25519 donne un enregistrement court, mais certains vérificateurs anciens ne le connaissent pas : RSA 2048 reste le choix sûr.',
+            'Le sélecteur devient une étiquette DNS (lettres, chiffres, tirets). Laissé vide, il vaut « kubuno ». Une date - 2026a - rend la prochaine rotation évidente. Ed25519 donne un enregistrement court, mais certains vérificateurs anciens ne le connaissent pas : RSA 2048 reste le choix sûr.',
         })}
       </p>
 
@@ -183,7 +183,7 @@ export default function DkimSection() {
         <p className="rounded border border-border bg-surface-1 p-3 text-sm text-text-secondary">
           {t('dkim_empty', {
             defaultValue:
-              'Aucune clé. Tant qu’un domaine n’en a pas, son courrier part non signé — et non signé, il est rejeté par Gmail, Yahoo et Microsoft au-delà de quelques milliers de messages par jour.',
+              'Aucune clé. Tant qu’un domaine n’en a pas, son courrier part non signé - et non signé, il est rejeté par Gmail, Yahoo et Microsoft au-delà de quelques milliers de messages par jour.',
           })}
         </p>
       ) : (
@@ -229,7 +229,7 @@ export default function DkimSection() {
               </div>
 
               {/* THE thing an administrator came for. Whole, copyable, both as
-                  a zone-file line and as the value alone — the two shapes DNS
+                  a zone-file line and as the value alone - the two shapes DNS
                   interfaces ask for. */}
               <RecordBlock
                 name={`${key.dns_name}.  IN  TXT`}
@@ -253,7 +253,7 @@ export default function DkimSection() {
 }
 
 /** Surfaces the server's own validation message ("Sélecteur invalide : …")
- *  rather than a generic failure — it names exactly what to fix. */
+ *  rather than a generic failure - it names exactly what to fix. */
 /**
  * The sentence the server wrote, or the fallback.
  *

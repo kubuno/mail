@@ -12,7 +12,7 @@ import { filesApi } from '@kubuno/drive'
 // resolvable at runtime via the host import map, independently of whether the
 // Drive MODULE (backend at :3101) is installed. Whether Drive is actually
 // AVAILABLE is answered by the ModuleServiceRegistry, which only carries the
-// services Drive publishes once it has registered — hence the guard below.
+// services Drive publishes once it has registered - hence the guard below.
 
 /** True when the Drive module is installed and its services are registered. */
 export function isDriveAvailable(): boolean {
@@ -23,7 +23,7 @@ export function isDriveAvailable(): boolean {
  *  The core proxies `/api/v1/drive/share/:token/download` to Drive's public
  *  handler, which streams the file with an attachment disposition. There is no
  *  standalone web preview page for a share, so the direct download link is the
- *  addressable, auth-free URL — verified by curl. */
+ *  addressable, auth-free URL - verified by curl. */
 export function shareDownloadUrl(token: string): string {
   return `${window.location.origin}/api/v1/drive/share/${token}/download`
 }

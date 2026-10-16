@@ -2,7 +2,7 @@
 //! in the console.
 //!
 //! The values live in `core.settings` (declared by `module.toml`'s `[[settings]]`
-//! blocks) and are read back through `/internal/modules/mail/settings` — the
+//! blocks) and are read back through `/internal/modules/mail/settings` - the
 //! module's own schema may not touch the core's tables, and a background listener
 //! has no user token to use the public config route. The module is named in the
 //! URL rather than left to be derived from the secret, so the read works on an
@@ -19,7 +19,7 @@
 //! *proves* them by DNS (`core.domains`); this module reads them back through
 //! `/internal/domains` and serves the **verified** ones. The `server_domains`
 //! setting survives as a **stop-gap list**, added on top, for names that can
-//! never carry a public TXT record — `kubuno.local` on a laboratory machine.
+//! never carry a public TXT record - `kubuno.local` on a laboratory machine.
 //!
 //! Two things follow, and both are deliberate:
 //!
@@ -55,7 +55,7 @@ pub struct CidrNet {
 
 impl CidrNet {
     /// Parses `1.2.3.0/24`, `2001:db8::/32`, or a bare address (treated as a
-    /// host route). `None` on anything that is not a valid network — a mistyped
+    /// host route). `None` on anything that is not a valid network - a mistyped
     /// entry must be dropped, never widened into a match-all.
     pub fn parse(raw: &str) -> Option<Self> {
         let raw = raw.trim();
@@ -148,7 +148,7 @@ impl Protocol {
 }
 
 /// One socket the server should listen on: a protocol, a port, how TLS is
-/// handled, and — for SMTP — whether it is the submission role (MSA: auth
+/// handled, and - for SMTP - whether it is the submission role (MSA: auth
 /// required) rather than the reception role (MX: no auth, accepts foreign mail).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Listener {
@@ -166,7 +166,7 @@ pub struct Listener {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PolicyAction {
     /// Deliver as if nothing happened. The `Authentication-Results` header is
-    /// still stamped — the evidence is recorded, it just is not acted on.
+    /// still stamped - the evidence is recorded, it just is not acted on.
     Ignore,
     /// Deliver, but flag the message so the interface and the user's own rules
     /// can see it.
@@ -274,7 +274,7 @@ pub enum DomainSource {
     /// Only in the stop-gap `server_domains` setting: served because an
     /// operator asked, with no proof behind it.
     Extra,
-    /// Both — verified by the instance *and* listed in the stop-gap setting.
+    /// Both - verified by the instance *and* listed in the stop-gap setting.
     /// Harmless, and worth showing: the setting entry is redundant.
     Both,
 }
@@ -297,14 +297,14 @@ pub struct ServerConfig {
     // ── Identity ────────────────────────────────────────────────────────────
     pub hostname: String,
     /// The core's base URL and internal secret, carried here so a local
-    /// delivery — reached deep in the call stack with only this config in hand —
+    /// delivery - reached deep in the call stack with only this config in hand -
     /// can publish a push-notification event to the core. Populated by
     /// [`fetch`] from the module `Settings`; empty on the compiled default,
     /// which the publisher treats as "nowhere to publish to".
     pub core_url:        String,
     pub internal_secret: String,
     /// The domains actually served: the **verified** domains of the instance,
-    /// plus the stop-gap list. Derived — never assigned from outside, see
+    /// plus the stop-gap list. Derived - never assigned from outside, see
     /// [`ServerConfig::recompute_domains`]. Every delivery path reads this one
     /// and nothing else.
     pub domains:  Vec<String>,
@@ -337,7 +337,7 @@ pub struct ServerConfig {
     /// Negative replies tolerated in one session before it is closed.
     pub max_protocol_errors: u32,
     /// Refuse a HELO/EHLO that is not a fully-qualified domain name. Cheap, and
-    /// a large share of robots fail it. Never resolve the name — plenty of
+    /// a large share of robots fail it. Never resolve the name - plenty of
     /// legitimate senders announce a name with no DNS record.
     pub require_fqdn_helo:   bool,
     /// Networks whose incoming connections are trusted internal relays, like
@@ -372,7 +372,7 @@ pub struct ServerConfig {
     pub dkim_fail_action:    PolicyAction,
     /// Apply the policy the sending domain publishes in its DMARC record
     /// (`p=`). Off means an authenticated `dmarc=fail` is delivered like any
-    /// other message — every domain, ours included, can be impersonated.
+    /// other message - every domain, ours included, can be impersonated.
     pub dmarc_honor_policy:  bool,
     /// What `p=quarantine` and `p=reject` are worth here. Lets an operator
     /// soften a sender's policy without turning DMARC off entirely.
@@ -400,7 +400,7 @@ pub struct ServerConfig {
 
     // ── Delivery restriction ────────────────────────────────────────────────
     /// When non-empty, ONLY these sender domains may deliver mail here. Our own
-    /// domains are always allowed — the restriction is about the outside world.
+    /// domains are always allowed - the restriction is about the outside world.
     pub restrict_inbound_domains:  Vec<String>,
     /// When non-empty, mail may ONLY be sent to these recipient domains. Our own
     /// domains are always allowed.
@@ -435,7 +435,7 @@ pub struct ServerConfig {
     /// alignment is exactly the phishing case.
     pub allowlist_senders:       Vec<String>,
     /// Senders (address or `@domain`) whose remote images every account displays
-    /// without asking — the instance-wide counterpart of each user's own list.
+    /// without asking - the instance-wide counterpart of each user's own list.
     pub image_allowlist:         Vec<String>,
     pub blocklist_senders:       Vec<String>,
     pub blocklist_domains:       Vec<String>,
@@ -624,7 +624,7 @@ impl ServerConfig {
         !self.tls_cert_path.trim().is_empty() && !self.tls_key_path.trim().is_empty()
     }
 
-    /// Is this address one of ours — i.e. should its mail be delivered here
+    /// Is this address one of ours - i.e. should its mail be delivered here
     /// rather than relayed?
     pub fn is_local_domain(&self, address: &str) -> bool {
         let domain = match address.rsplit_once('@') {
@@ -651,7 +651,7 @@ impl ServerConfig {
     /// An empty list (the default) allows everyone. Our own domains always
     /// pass: the restriction is about the outside world, and a rule that cut
     /// internal mail would be a foot-gun with no upside. A null return path
-    /// (a bounce) is never restricted either — refusing a delivery report would
+    /// (a bounce) is never restricted either - refusing a delivery report would
     /// hide the failures of our own outgoing mail.
     pub fn inbound_sender_allowed(&self, address: &str) -> bool {
         if self.restrict_inbound_domains.is_empty() || address.trim().is_empty() {
@@ -713,7 +713,7 @@ fn matches_list(list: &[String], address: &str) -> bool {
     })
 }
 
-/// True when `address`'s domain — or one of its parent domains — is in `list`.
+/// True when `address`'s domain - or one of its parent domains - is in `list`.
 /// The entries are already lower-cased and stripped of a leading `@` by the
 /// settings reader.
 fn domain_listed(list: &[String], address: &str) -> bool {
@@ -741,7 +741,7 @@ fn default_hostname() -> String {
 //
 // The last reading that succeeded, process-wide. A core that is restarting must
 // not empty the served set: the module would start refusing mail for its own
-// domains, and — worse — silently, since nothing about a shrunken list looks
+// domains, and - worse - silently, since nothing about a shrunken list looks
 // like a failure. Kept here rather than in `ServerConfig` so all four callers of
 // `fetch` (supervisor, outbound worker, addresses panel, diagnostics) share one
 // answer instead of drifting apart.
@@ -758,7 +758,7 @@ fn last_instance_domains() -> &'static RwLock<Vec<InstanceDomain>> {
 /// down because the core was briefly unreachable.
 ///
 /// Two calls per cycle, never more: the settings, then the domain registry.
-/// Neither is per-domain — the registry answers whole.
+/// Neither is per-domain - the registry answers whole.
 pub async fn fetch(http: &reqwest::Client, settings: &Settings) -> Option<ServerConfig> {
     let url = format!("{}/internal/modules/mail/settings", settings.core.url);
     let response = http
@@ -789,7 +789,7 @@ pub async fn fetch(http: &reqwest::Client, settings: &Settings) -> Option<Server
     Some(config)
 }
 
-/// The declared domains of the instance, or — if the core cannot be asked — the
+/// The declared domains of the instance, or - if the core cannot be asked - the
 /// last set that was read successfully.
 async fn fetch_instance_domains(http: &reqwest::Client, settings: &Settings) -> Vec<InstanceDomain> {
     match read_instance_domains(http, settings).await {
@@ -809,7 +809,7 @@ async fn fetch_instance_domains(http: &reqwest::Client, settings: &Settings) -> 
                 .unwrap_or_default();
             tracing::warn!(
                 remembered = remembered.len(),
-                "Domaines de l'instance illisibles — conservation du dernier état connu"
+                "Domaines de l'instance illisibles - conservation du dernier état connu"
             );
             remembered
         }
@@ -958,7 +958,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
             .collect()
     };
     // Free-text expressions, one per line. Unlike the address lists these are
-    // NOT split on commas — a comma is an ordinary character in a phrase — and
+    // NOT split on commas - a comma is an ordinary character in a phrase - and
     // they are lower-cased once here so the scan compares like with like.
     let expression_list_of = |key: &str| -> Vec<String> {
         str_of(key)
@@ -972,7 +972,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
     };
 
     // Trusted upstream relays: CIDR networks, one per line. An entry that does
-    // not parse is dropped with a warning rather than silently — a mistyped
+    // not parse is dropped with a warning rather than silently - a mistyped
     // network that matched nothing would quietly cancel the exemption it was
     // meant to grant. `list_of` already lowercases, which is harmless for both
     // IPv4 and (hex) IPv6 literals.
@@ -981,7 +981,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
         .filter_map(|entry| match CidrNet::parse(&entry) {
             Some(net) => Some(net),
             None => {
-                tracing::warn!(entry = %entry, "Relais de confiance : entrée CIDR invalide — ignorée");
+                tracing::warn!(entry = %entry, "Relais de confiance : entrée CIDR invalide - ignorée");
                 None
             }
         })
@@ -993,7 +993,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
 
     // Assemble the listener list from the flat settings. A TLS listener
     // (StartTls advertises STARTTLS; Implicit is TLS-from-first-byte) is only
-    // added when a certificate is configured — offering STARTTLS with no
+    // added when a certificate is configured - offering STARTTLS with no
     // certificate would just fail every handshake.
     let mut listeners: Vec<Listener> = Vec::new();
     let mut add = |enabled: bool, port_key: &str, fallback: u16,
@@ -1029,7 +1029,7 @@ pub fn from_settings(settings: &Value) -> ServerConfig {
     add(bool_of("pop3s_enabled", false), "pop3s_port", 995, Protocol::Pop3, TlsMode::Implicit, false);
 
     // The stop-gap list, on its own. The served set is only complete once the
-    // instance's verified domains are folded in — `fetch` does that, and
+    // instance's verified domains are folded in - `fetch` does that, and
     // `recompute_domains` below leaves `domains` correct in the meantime (a
     // caller that never adds instance domains serves the stop-gap list alone).
     let mut extra_domains: Vec<String> = str_of("server_domains")
@@ -1262,12 +1262,12 @@ mod tests {
         assert_eq!(cfg.instance_state("pas-encore.fr"), "pending");
         assert_eq!(cfg.instance_state("prouve.fr"), "verified");
         assert_eq!(cfg.instance_state("jamais-vu.fr"), "absent");
-        // Listed all the same — the panel must be able to show it.
+        // Listed all the same - the panel must be able to show it.
         assert_eq!(cfg.instance_domains.len(), 2);
     }
 
     /// The escape hatch, and the reason it exists: `core.domains` is empty on a
-    /// fresh instance, and without the stop-gap list nothing would be served —
+    /// fresh instance, and without the stop-gap list nothing would be served -
     /// i.e. every incoming message refused.
     #[test]
     fn an_empty_registry_still_serves_the_stop_gap_list() {
@@ -1278,7 +1278,7 @@ mod tests {
     }
 
     /// A silent core must never empty the served set. `fetch` keeps the last
-    /// reading; this checks the shape that keeps it true — re-applying the
+    /// reading; this checks the shape that keeps it true - re-applying the
     /// remembered domains reproduces the previous union exactly.
     #[test]
     fn a_silent_core_keeps_the_previously_read_domains() {
@@ -1335,7 +1335,7 @@ mod tests {
     }
 
     /// A settings payload that predates a knob must not turn its protection
-    /// off — every missing key falls back to the compiled default.
+    /// off - every missing key falls back to the compiled default.
     #[test]
     fn missing_keys_keep_the_compiled_defaults() {
         let cfg = from_settings(&json!({}));

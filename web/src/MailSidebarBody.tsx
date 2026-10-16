@@ -43,7 +43,7 @@ const MORE_FOLDERS = [
   { id: 'subscriptions', key: 'folder_subscriptions', label: 'Gérer les abonnements', icon: MailX,         path: '/mail/subscriptions' },
 ] as const
 
-// « Plus / Moins » stays where the user left it across a page refresh — a
+// « Plus / Moins » stays where the user left it across a page refresh - a
 // collapsed/expanded sidebar is a deliberate choice, not something to reset on F5.
 const MORE_KEY = 'kubuno_mail_sidebar_more'
 function initShowMore(): boolean {
@@ -101,7 +101,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
     const m: Record<string, number> = {}
     for (const th of inboxData?.threads ?? []) {
       if (th.unread_count <= 0) continue
-      // Category is stored with the message (services::categorize) — nothing to
+      // Category is stored with the message (services::categorize) - nothing to
       // classify here any more.
       m[th.category ?? 'main'] = (m[th.category ?? 'main'] ?? 0) + 1
     }
@@ -311,7 +311,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
         )}
 
         {/* The account's own provider folders, synced like the system ones.
-            Only shown when there are any — most accounts have none. */}
+            Only shown when there are any - most accounts have none. */}
         {!collapsed && customFolders.length > 0 && (
           <div className="pt-2 space-y-0.5">
             <div className="px-3 py-1 text-sm font-bold text-text-secondary">
@@ -336,7 +336,7 @@ export default function MailSidebarBody({ collapsed = false }: { collapsed?: boo
         {!collapsed && (
           <div className="pt-2 space-y-0.5">
             {/* Section title: plain 14px bold in the shell font. No small caps,
-                no letter-spacing — they read as shouting at this size. */}
+                no letter-spacing - they read as shouting at this size. */}
             <div className="flex items-center gap-2 w-full px-3 py-1 text-sm font-bold text-text-secondary">
               {/* Anchors (never <button>) like the rest of the left sidebar;
                   in-page actions so href="#". */}

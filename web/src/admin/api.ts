@@ -1,6 +1,6 @@
 /** Admin-only surface of the mail module: signing keys and the deliverability
  *  report. Kept apart from `src/api.ts` (the user-facing client) because these
- *  routes answer 403 to everyone but an administrator — mixing them would put
+ *  routes answer 403 to everyone but an administrator - mixing them would put
  *  calls that always fail in the middle of the mail application. */
 import { api } from '@kubuno/sdk'
 
@@ -42,7 +42,7 @@ export interface DiagnosticCheck {
 }
 
 /** One DNS record to publish, prefilled and ready to paste. `value_alt` is set
- *  for DKIM only — the bare public key, for registrars that store it alone. */
+ *  for DKIM only - the bare public key, for registrars that store it alone. */
 export interface DnsRecord {
   domain:    string
   /** 'a' | 'mx' | 'spf' | 'dkim' | 'dmarc' */
@@ -70,7 +70,7 @@ export interface DiagnosticReport {
 }
 
 /** Outbound relay (smarthost) state, WITHOUT the password. `has_password` is the
- *  only thing said about the secret — it is never returned. */
+ *  only thing said about the secret - it is never returned. */
 export interface RelayConfig {
   enabled:      boolean
   host:         string

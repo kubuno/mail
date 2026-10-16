@@ -46,8 +46,8 @@ function cleanCss(css: string): string {
 // message stored months ago carries whatever the policy of the day allowed, and
 // only this pass stands between it and a live DOM. Kept deliberately in step
 // with services::html_sanitize on the Rust side.
-/** Exported so every path that injects e-mail HTML — the reader here, and the
- *  reply/forward quote in the composer — goes through the SAME policy. A caller
+/** Exported so every path that injects e-mail HTML - the reader here, and the
+ *  reply/forward quote in the composer - goes through the SAME policy. A caller
  *  reaching for a bare `DOMPurify.sanitize()` would silently get the library's
  *  defaults instead of ours. */
 export function sanitizeEmailHtml(html: string): string {
@@ -68,7 +68,7 @@ export function sanitizeEmailHtml(html: string): string {
 }
 
 // One hook, installed once: it is what enforces the two rules DOMPurify's
-// options cannot express — inline schemes are image sources only, and e-mail
+// options cannot express - inline schemes are image sources only, and e-mail
 // CSS is scrubbed wherever it hides.
 let hookInstalled = false
 function installSanitizeHook() {
@@ -97,7 +97,7 @@ installSanitizeHook()
 // Loading a remote image tells its host the message was opened (and leaks the
 // reader's IP), which is why Gmail asks before displaying images from a sender
 // you have not trusted yet. We neutralise every URL that would leave the
-// instance — and ONLY those: `cid:` (the message's own inline parts), `data:`
+// instance - and ONLY those: `cid:` (the message's own inline parts), `data:`
 // and same-origin URLs carry nothing outward, so blocking them would break
 // signatures and attachments for no privacy gain.
 //
@@ -175,7 +175,7 @@ function blockRemoteImagesIn(body: HTMLElement, styles: HTMLStyleElement[]): num
   return blocked
 }
 
-/** Counts what WOULD be blocked, without touching anything — so the banner can
+/** Counts what WOULD be blocked, without touching anything - so the banner can
  *  stay silent on a message that has no remote image at all. */
 function countRemoteImages(body: HTMLElement, styles: HTMLStyleElement[]): number {
   const probe = body.cloneNode(true) as HTMLElement
@@ -187,13 +187,13 @@ function countRemoteImages(body: HTMLElement, styles: HTMLStyleElement[]): numbe
 // <body> element. We return real nodes (not a string) because injecting `<body>`
 // through innerHTML would have it REMOVED by the fragment parser (html/head/body
 // are only inserted in a document context). By APPENDING the <body> element it
-// survives, so the email `body { … }` selectors — very common — really do apply.
+// survives, so the email `body { … }` selectors - very common - really do apply.
 function buildEmailNodes(html: string): { styles: HTMLStyleElement[]; body: HTMLElement } {
   const clean = sanitizeEmailHtml(html)
   const isDoc = /<html[\s>]/i.test(clean) || /^\s*<!doctype/i.test(clean)
   const doc = new DOMParser().parseFromString(isDoc ? clean : `<body>${clean}</body>`, 'text/html')
 
-  // <style> of the whole document (some clients put them in the body) — detached
+  // <style> of the whole document (some clients put them in the body) - detached
   // so they can be re-inserted at the top of the shadow (before the <body>),
   // without duplicates.
   const styles = Array.from(doc.querySelectorAll('style'))
@@ -201,8 +201,8 @@ function buildEmailNodes(html: string): { styles: HTMLStyleElement[]; body: HTML
   return { styles, body: doc.body }
 }
 
-// An attribution line — "Le … a écrit :", "On … wrote:", "-----Original
-// Message-----" — introduces a quoted reply. Matching it (rather than any
+// An attribution line - "Le … a écrit :", "On … wrote:", "-----Original
+// Message-----" - introduces a quoted reply. Matching it (rather than any
 // blockquote) tells a genuine quote trail apart from a newsletter that merely
 // styles text with <blockquote>.
 function isAttributionLine(text: string): boolean {
@@ -232,11 +232,11 @@ function blockAncestor(node: Node, body: HTMLElement): Element | null {
   return el && el !== body ? el : null
 }
 
-// The metadata HEADER of a forwarded/quoted message — the De/From, Envoyé/Date,
+// The metadata HEADER of a forwarded/quoted message - the De/From, Envoyé/Date,
 // À/To, Objet/Subject block that both Outlook ("De: … Objet:") and Gmail
 // ("---------- Forwarded message ----------/ De:/ Date:/ Subject:/ To:", inside
 // .gmail_attr) emit. Returns the node to fold AFTER, so the WHOLE header stays
-// visible and only the quoted body below it folds — what Gmail shows. Handles
+// visible and only the quoted body below it folds - what Gmail shows. Handles
 // non-breaking spaces ("De :") and headers wrapped in a .gmail_quote.
 /** What the collapsed quote is about, so a header can always be shown above the
  *  "•••" even when the quoted mail carries none (our own replies only emit a
@@ -261,7 +261,7 @@ function parseAttribution(text: string): { from: string; sent: string } | null {
 }
 
 
-// Appends `text` to `parent`, turning every e-mail address into a mailto link —
+// Appends `text` to `parent`, turning every e-mail address into a mailto link -
 // the rebuilt header must read like the ones real clients emit, where addresses
 // are clickable. Colour comes from the sheet's `a { … }` rule (theme blue).
 function appendLinkified(parent: HTMLElement, text: string) {
@@ -387,7 +387,7 @@ function findQuoteBoundary(body: HTMLElement): { node: Node; mode: 'before' | 'a
 }
 
 // Collapses the quoted history behind a Gmail-style "•••" toggle. Uses a DOM
-// Range so the cut is clean whatever the nesting — the header and the quoted
+// Range so the cut is clean whatever the nesting - the header and the quoted
 // body may sit at different depths, which top-level slicing cannot separate.
 function installQuoteToggle(body: HTMLElement, ctx?: QuoteContext) {
   const boundary = findQuoteBoundary(body)
@@ -395,7 +395,7 @@ function installQuoteToggle(body: HTMLElement, ctx?: QuoteContext) {
 
   // A quote with no header of its own (a reply: just "Le … a écrit :") gets one
   // rebuilt above the toggle, so the "•••" is ALWAYS preceded by the
-  // De/Envoyé/À/Objet block — the forwarded case already carries its own.
+  // De/Envoyé/À/Objet block - the forwarded case already carries its own.
   const attribution = boundary.mode === 'before'
     ? parseAttribution(boundary.node.textContent ?? '')
     : null
@@ -562,7 +562,7 @@ export default function EmailHtmlView({ html, quoteContext, blockRemoteImages = 
     //    survives, so the `body { … }` rules and the inline style / bgcolor apply).
     const { styles, body } = buildEmailNodes(html)
     // Remote images: neutralise (or just count) them while the body is still
-    // detached — appending it is what starts the network fetches.
+    // detached - appending it is what starts the network fetches.
     onRemoteImages?.(blockRemoteImages ? blockRemoteImagesIn(body, styles) : countRemoteImages(body, styles))
     // Fold the quoted history behind a "•••" toggle before it goes on screen, so
     // opening a reply shows the new content, not the whole thread (Gmail-style).

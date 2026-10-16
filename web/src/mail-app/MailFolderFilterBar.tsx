@@ -1,7 +1,7 @@
 // Gmail-style filter chip bar shown under the toolbar of certain folder views
 // (starred, important, sent, drafts, all mail, spam). Each chip refines a search
-// scoped to the folder: picking one builds a query — base scope operator plus the
-// active chips — and applies it, so the list becomes a filtered search. Clearing
+// scoped to the folder: picking one builds a query - base scope operator plus the
+// active chips - and applies it, so the list becomes a filtered search. Clearing
 // every chip drops back to the plain folder view. « Recherche avancée » hands the
 // current values to the header search's advanced panel.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -33,7 +33,7 @@ export const FOLDER_FILTERS: Record<FilterFolder, FolderCfg> = {
   // Drafts have no read state and no real recipients-from-others: date, attachment
   // and « À » are the ones that make sense (matches Gmail's drafts filter bar).
   drafts:    { scope: null,            chips: ['date', 'attach', 'noAgenda', 'to'] },                    // no from, no unread
-  // Search RESULTS (any committed query): Gmail's chip row — the chips APPEND
+  // Search RESULTS (any committed query): Gmail's chip row - the chips APPEND
   // to the live query (the base is whatever the user searched) instead of
   // building from a folder scope.
   search:    { scope: '',              chips: ['date', 'attach', 'to', 'noPromo', 'unread'] },
@@ -196,7 +196,7 @@ function AddressChip({ label, value, onApply }: { label: string; value: string; 
         </div>
         {value && (
           <button onClick={() => commit('')} className="w-full px-3 py-1.5 text-left text-sm text-text-tertiary hover:bg-surface-1 border-t border-border/60">
-            {label} — effacer
+            {label} - effacer
           </button>
         )}
       </Popover>

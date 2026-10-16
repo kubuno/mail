@@ -1,9 +1,9 @@
-//! POP3 (RFC 1939) — for clients that only speak it, and for "download my mail
+//! POP3 (RFC 1939) - for clients that only speak it, and for "download my mail
 //! and keep a copy" setups.
 //!
 //! POP3 is stateful in a way worth remembering: the mailbox is frozen at
 //! authentication (the "maildrop"), message numbers are 1..N over that snapshot
-//! and never change during the session, and DELE only marks — nothing is
+//! and never change during the session, and DELE only marks - nothing is
 //! actually removed until QUIT commits the session. Deviating from that is what
 //! makes clients delete the wrong message.
 //!
@@ -140,7 +140,7 @@ pub async fn handle(inc: crate::server::Incoming, stream: MailStream) -> Result<
                         maildrop.clear();
                     }
                     Err(crate::server::tls::UpgradeError::Pipelined) => {
-                        tracing::warn!(peer = %inc.peer, "STLS : données pipelinées en clair — connexion fermée");
+                        tracing::warn!(peer = %inc.peer, "STLS : données pipelinées en clair - connexion fermée");
                         return Ok(());
                     }
                     Err(crate::server::tls::UpgradeError::Handshake(e)) => {
@@ -174,7 +174,7 @@ pub async fn handle(inc: crate::server::Incoming, stream: MailStream) -> Result<
                             });
                         // POP disabled for this mailbox: refuse after a VALID
                         // login (the auth succeeded, so this is not a brute-force
-                        // signal — no tarpit). Same wording whatever the reason.
+                        // signal - no tarpit). Same wording whatever the reason.
                         if !settings.pop_enabled {
                             tracing::info!(user = %authed.username, "POP3 refusé : accès POP désactivé");
                             reader
@@ -210,7 +210,7 @@ pub async fn handle(inc: crate::server::Incoming, stream: MailStream) -> Result<
                     }
                     None => {
                         // Same answer for "no such mailbox" and "wrong
-                        // password" — telling them apart is an address oracle.
+                        // password" - telling them apart is an address oracle.
                         // The reply is held back by the growing tarpit delay to
                         // throttle brute force (Dovecot auth-penalty).
                         inc.tarpit.record_failure(inc.peer_ip());
@@ -371,7 +371,7 @@ pub async fn handle(inc: crate::server::Incoming, stream: MailStream) -> Result<
 /// Applies the configured POP post-fetch action to every message the session
 /// RETRieved, skipping any that were also DELE'd (already headed to Trash).
 /// Best-effort: each message is handled independently and a failure is logged,
-/// never surfaced — the client has already received its mail. All four actions
+/// never surfaced - the client has already received its mail. All four actions
 /// are idempotent, so re-running over the same ids changes nothing.
 async fn apply_post_fetch(
     db: &kubuno_db::DbPool,

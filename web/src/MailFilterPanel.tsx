@@ -10,9 +10,9 @@ import { AddressSuggestInput } from './AddressSuggest'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Filters {
-  /** Sources — several addresses are OR-combined (any of these senders). */
+  /** Sources - several addresses are OR-combined (any of these senders). */
   from:       string[]
-  /** Destinations — an AND/OR rule tree of `to:` conditions with nested
+  /** Destinations - an AND/OR rule tree of `to:` conditions with nested
    *  groups, edited with the same builder as « Filtres supplémentaires ». */
   to:         XGroup
   subject:    string
@@ -25,7 +25,7 @@ interface Filters {
   customDate: string | null
   searchIn:   string
   hasAttach:  boolean
-  /** Additional operator conditions as a recursive rule tree — the standard
+  /** Additional operator conditions as a recursive rule tree - the standard
    *  query-builder model (react-querybuilder): a group carries ONE combinator
    *  (AND/OR) and children that are conditions, raw expressions or nested
    *  groups. This represents any parenthesized mix, e.g.
@@ -152,7 +152,7 @@ export function simplifyNode(n: XNode): XNode | null {
   if (n.kind === 'raw') return n.text.trim() ? n : null
   if (n.kind === 'cond') return n.val.trim() ? n : null
   let kids = n.children.map(simplifyNode).filter((c): c is XNode => c != null)
-  // Same-combinator nesting carries no logic — flatten it.
+  // Same-combinator nesting carries no logic - flatten it.
   kids = kids.flatMap(k => (k.kind === 'group' && k.combinator === n.combinator ? k.children : [k]))
   // Idempotence: drop duplicate siblings (first occurrence wins).
   const seen = new Set<string>()
@@ -164,7 +164,7 @@ export function simplifyNode(n: XNode): XNode | null {
     uniq.push(k)
   }
   // Absorption: in an OR group, a sibling whose conjuncts STRICTLY include
-  // another sibling's is redundant — A OR (A AND B) = A. Dually for AND.
+  // another sibling's is redundant - A OR (A AND B) = A. Dually for AND.
   const sets = n.combinator === 'or' ? uniq.map(conjunctsOf) : uniq.map(disjunctsOf)
   const kept = uniq.filter((_, iy) => !sets.some((xs, ix) => {
     if (ix === iy || !xs.length) return false
@@ -186,8 +186,8 @@ export function simplifyGroup(g: XGroup): XGroup {
 // Opening the advanced panel with a query in the bar pre-fills the fields:
 // recognized operators land in their field (from:, to:, subject:, has:attachment,
 // larger:/smaller:, newer_than:/after:, in:/is:), a lone `-word` goes to
-// « Ne contient pas », and everything else — parenthesized groups, OR chains,
-// unknown operators — is dumped verbatim into « Contient les mots », exactly as
+// « Ne contient pas », and everything else - parenthesized groups, OR chains,
+// unknown operators - is dumped verbatim into « Contient les mots », exactly as
 // Gmail does with `(-label:spam OR label:trash)`.
 
 /** Splits a query into top-level tokens, keeping quotes and (…)/{…} groups whole. */
@@ -207,7 +207,7 @@ function topLevelTokens(q: string): string[] {
   return toks
 }
 
-/** Rebuilds the query string from the fields — the exact inverse of
+/** Rebuilds the query string from the fields - the exact inverse of
  *  `queryToFilters`, so bar ⇄ fields round-trips are stable. */
 export function buildQuery(f: Filters): string {
   const parts: string[] = []
@@ -281,7 +281,7 @@ export function queryToFilters(q: string): Partial<Filters> {
     f.to.children.push(node)
   }
   // Pre-group top-level tokens into OR chains FIRST: a token flanked by OR
-  // belongs to a chain that must stay together — consuming `from:a` into the
+  // belongs to a chain that must stay together - consuming `from:a` into the
   // "From" field out of `from:a OR from:b` would silently change the meaning.
   // The explicit AND keyword is a combinator (juxtaposition), never a word.
   const chains: string[][] = []
@@ -418,7 +418,7 @@ function LineInput({
   value:    string
   onChange: (v: string) => void
 }) {
-  // The @ui Input primitive (platform rule: primary components in search UIs) —
+  // The @ui Input primitive (platform rule: primary components in search UIs) -
   // no bottom-rule underline, uniform height/typography with every other field.
   return <Input value={value} onChange={e => onChange(e.target.value)} style={{ fontSize: 14 }} />
 }
@@ -428,7 +428,7 @@ function LineInput({
 export default function MailFilterPanel({ onClose, initial, query, onQueryChange }: {
   onClose: () => void
   initial?: AdvancedSearchSeed
-  /** Live text of the search bar — the single source of truth the fields mirror. */
+  /** Live text of the search bar - the single source of truth the fields mirror. */
   query?: string
   /** Called with the rebuilt query whenever a field is edited (two-way sync). */
   onQueryChange?: (q: string) => void
@@ -571,7 +571,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
 
   // ── Drag-and-drop reordering of the tree (grip handle per node) ─────────────
   // No translucent browser ghost (project rule): the drag image is a blank 1×1,
-  // the only feedback is a crisp accent insertion bar between siblings — the
+  // the only feedback is a crisp accent insertion bar between siblings - the
   // same doctrine as the Gantt row reordering.
   const dragPathRef = useRef<{ field: TreeField; path: number[] } | null>(null)
   const [dropMark, setDropMark] = useState<{ key: string; slot?: number } | null>(null)
@@ -755,7 +755,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
               e.dataTransfer.dropEffect = 'move'
               const r2 = e.currentTarget.getBoundingClientRect()
               // ONE boundary per sibling pair: "after row N" and "before row
-              // N+1" are the same insertion SLOT — hovering N's bottom half or
+              // N+1" are the same insertion SLOT - hovering N's bottom half or
               // N+1's top half marks the exact same bar. Only update when the
               // slot actually changes (a write per dragover event re-renders in
               // a loop and makes the whole panel shiver).
@@ -778,7 +778,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
             {/* Insertion bar as an OVERLAY: absolutely positioned so it never
                 shifts the layout under the pointer. Rendered once per slot: at
                 the top of the slot's child, or under the last child for the
-                final slot. No dragleave-clear — the mark simply moves on. */}
+                final slot. No dragleave-clear - the mark simply moves on. */}
             {dropMark?.key === `${field}:${path.join('.') || 'root'}` && dropMark.slot === i && (
               <div className="absolute -top-px left-0 right-0 h-0.5 bg-primary rounded pointer-events-none" />
             )}
@@ -808,7 +808,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
   )
 
   // The panel's two facets: the classic criteria fields, and the dynamic
-  // operator filters — kept in separate tabs (user request).
+  // operator filters - kept in separate tabs (user request).
   const [tab, setTab] = useState<'criteria' | 'extras'>('criteria')
 
   const [step, setStep] = useState<'conditions' | 'actions'>('conditions')
@@ -1053,7 +1053,7 @@ export default function MailFilterPanel({ onClose, initial, query, onQueryChange
       {/* ── Additional operator filters tab ──────────────────────────────────
           The standard recursive query-builder (react-querybuilder model): each
           group has ONE combinator (all/any) and holds conditions, raw
-          expressions and nested groups — representing any parenthesized AND/OR
+          expressions and nested groups - representing any parenthesized AND/OR
           mix, e.g. `(-in:spam AND in:trash) OR is:subscription`. Every edit
           rewrites the bar's query live. */}
       <div className={tab === 'extras' ? 'mb-5' : 'hidden'}>

@@ -2,7 +2,7 @@
 //!
 //! This is the ONLY implementation: the category is computed once, when the
 //! message is stored, then written to `mail.messages.category` and mirrored on
-//! the thread. Listings read the column back — they no longer recompute
+//! the thread. Listings read the column back - they no longer recompute
 //! anything, and the frontend no longer classifies either.
 //!
 //! Plain lowercase substring tests rather than regular expressions: the module
@@ -26,7 +26,7 @@ const PROMOTIONS: [&str; 9] = [
     "deals@", "deal@", "offers@",
 ];
 
-/// `no-reply`, `no.reply`, `no_reply`, `noreply` — the separator varies.
+/// `no-reply`, `no.reply`, `no_reply`, `noreply` - the separator varies.
 fn is_noreply(sender: &str) -> bool {
     ["noreply", "no-reply", "no.reply", "no_reply"]
         .iter()
@@ -34,7 +34,7 @@ fn is_noreply(sender: &str) -> bool {
 }
 
 /// Category for a sender address. Order matters: social wins over
-/// notifications, which wins over promotions — a LinkedIn notification belongs
+/// notifications, which wins over promotions - a LinkedIn notification belongs
 /// under "Social", not "Notifications".
 pub fn for_sender(from_email: &str) -> &'static str {
     let s = from_email.to_ascii_lowercase();
@@ -51,7 +51,7 @@ pub fn for_sender(from_email: &str) -> &'static str {
     "main"
 }
 
-/// True when the value is one of the four categories — used to validate input.
+/// True when the value is one of the four categories - used to validate input.
 pub fn is_valid(value: &str) -> bool {
     CATEGORIES.contains(&value)
 }

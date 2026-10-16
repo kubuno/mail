@@ -1,11 +1,11 @@
 /**
- * Domaines — where each served domain comes from, what it holds, and the
+ * Domaines - where each served domain comes from, what it holds, and the
  * defaults it applies to new boxes.
  *
  * ⚠️ This screen does NOT decide which domains are served. THE INSTANCE IS THE
  * AUTHORITY: the domains served are the VERIFIED ones of Instance ▸ Domaines,
  * plus this module's stand-in list for names DNS cannot prove (`kubuno.local`
- * on a lab machine). A row here only adds what a domain says about ITSELF — a
+ * on a lab machine). A row here only adds what a domain says about ITSELF - a
  * default quota, a ceiling on mailboxes, a note.
  *
  * ── The two states this page exists to make impossible to miss ───────────────
@@ -15,7 +15,7 @@
  *     domain in Instance ▸ Domaines, so the banner NAMES that cause and offers
  *     the two ways out: declare it again, or add it to the stand-in list.
  *  2. A domain served ONLY by the stand-in list. It works, and the instance
- *     does not claim the name — legitimate in a lab, a mistake in production.
+ *     does not claim the name - legitimate in a lab, a mistake in production.
  *
  * Both are said twice: as a banner above the table naming every affected
  * domain, and as a badge on the row (see `domainOrigin.tsx`).
@@ -59,16 +59,16 @@ export default function DomainsTab() {
 
   /**
    * The three groups worth a banner, computed once.
-   *  • `dropped`  — holds objects and nothing serves it any more.
-   *  • `pending`  — declared in the instance, unproved, therefore not served.
-   *  • `extra`    — served by the stand-in list alone; the instance claims nothing.
+   *  • `dropped`  - holds objects and nothing serves it any more.
+   *  • `pending`  - declared in the instance, unproved, therefore not served.
+   *  • `extra`    - served by the stand-in list alone; the instance claims nothing.
    */
   const groups = useMemo(() => ({
     dropped: rows.filter(d => domainOrigin(d) === 'dropped' && objectCount(d) > 0),
     pending: rows.filter(d => domainOrigin(d) === 'pending'),
     // Served by the stand-in list WHILE the instance's own declaration waits for
     // its proof. Split out of `extra` because the two need opposite sentences:
-    // here the instance DOES claim the name — saying it does not would be false,
+    // here the instance DOES claim the name - saying it does not would be false,
     // and it is the reading that makes an operator declare it a second time.
     unproved: rows.filter(d => domainOrigin(d) === 'extra' && hasPendingProof(d)),
     extra:    rows.filter(d => domainOrigin(d) === 'extra' && !hasPendingProof(d)),
@@ -182,7 +182,7 @@ export default function DomainsTab() {
         <span className="text-text-secondary">
           {r.has_policy
             ? quotaLabel(r.default_quota_bytes, t('addr_unlimited', { defaultValue: 'Illimité' }))
-            : '—'}
+            : '-'}
         </span>
       ),
     },
@@ -224,8 +224,8 @@ export default function DomainsTab() {
       <ErrorNote message={error} onDismiss={() => setError(null)} />
 
       {/* The failure that hides best: rows that look healthy everywhere else.
-          The cause is NAMED — this is what deleting a domain in Instance ▸
-          Domaines produces — and both ways out are offered. */}
+          The cause is NAMED - this is what deleting a domain in Instance ▸
+          Domaines produces - and both ways out are offered. */}
       {groups.dropped.length > 0 && (
         <Callout
           variant="danger"
@@ -234,14 +234,14 @@ export default function DomainsTab() {
         >
           {t('addr_inert_body_v2', {
             defaultValue:
-              '{{list}} — rien n’arrive à leurs boîtes, alias ni listes : l’instance répond « destinataire inconnu » pour tout ce domaine. Cause habituelle : le domaine a été retiré d’Instance ▸ Domaines (ou n’y a jamais été vérifié). Redéclarez-le et vérifiez-le, ajoutez-le à la liste d’appoint du module (Services), ou déplacez ses adresses vers un domaine servi.',
+              '{{list}} - rien n’arrive à leurs boîtes, alias ni listes : l’instance répond « destinataire inconnu » pour tout ce domaine. Cause habituelle : le domaine a été retiré d’Instance ▸ Domaines (ou n’y a jamais été vérifié). Redéclarez-le et vérifiez-le, ajoutez-le à la liste d’appoint du module (Services), ou déplacez ses adresses vers un domaine servi.',
             list: groups.dropped.map(d => `${d.domain} (${objectCount(d)})`).join(', '),
           })}
           <span className="ms-1"><InstanceDomainsLink /></span>
         </Callout>
       )}
 
-      {/* Declared upstream, unproved — so not served. One verification away. */}
+      {/* Declared upstream, unproved - so not served. One verification away. */}
       {groups.pending.length > 0 && (
         <Callout
           variant={pendingWithObjects.length > 0 ? 'danger' : 'warning'}
@@ -250,14 +250,14 @@ export default function DomainsTab() {
         >
           {t('addr_pending_body', {
             defaultValue:
-              '{{list}} — le domaine figure dans Instance ▸ Domaines mais sa preuve DNS n’a pas été constatée : tant qu’il n’est pas vérifié, il n’est pas servi et le courrier qui lui est adressé est refusé. Terminez la vérification.',
+              '{{list}} - le domaine figure dans Instance ▸ Domaines mais sa preuve DNS n’a pas été constatée : tant qu’il n’est pas vérifié, il n’est pas servi et le courrier qui lui est adressé est refusé. Terminez la vérification.',
             list: groups.pending.map(d => d.domain).join(', '),
           })}
           <span className="ms-1"><InstanceDomainsLink /></span>
         </Callout>
       )}
 
-      {/* Claimed by the instance, unproved, and reaching mailboxes anyway —
+      {/* Claimed by the instance, unproved, and reaching mailboxes anyway -
           through the stand-in list. The declaration upstream is doing nothing,
           and an operator who made it almost certainly believes otherwise. */}
       {groups.unproved.length > 0 && (
@@ -270,7 +270,7 @@ export default function DomainsTab() {
         >
           {t('addr_unproved_body', {
             defaultValue:
-              '{{list}} — le domaine figure bien dans Instance ▸ Domaines, mais sa preuve DNS n’a pas été constatée : ce n’est pas elle qui le fait servir, c’est la liste d’appoint du module. Terminez la vérification et l’instance redevient la seule autorité ; retirez-le de la liste d’appoint sans vérifier, et il cesse d’être servi.',
+              '{{list}} - le domaine figure bien dans Instance ▸ Domaines, mais sa preuve DNS n’a pas été constatée : ce n’est pas elle qui le fait servir, c’est la liste d’appoint du module. Terminez la vérification et l’instance redevient la seule autorité ; retirez-le de la liste d’appoint sans vérifier, et il cesse d’être servi.',
             list: groups.unproved.map(d => d.domain).join(', '),
           })}
           <span className="ms-1"><InstanceDomainsLink /></span>
@@ -278,7 +278,7 @@ export default function DomainsTab() {
       )}
 
       {/* Served without the instance claiming the name: fine in a lab, a
-          mistake in production — so it is signalled, never blocked. */}
+          mistake in production - so it is signalled, never blocked. */}
       {groups.extra.length > 0 && (
         <Callout
           variant="warning"
@@ -287,7 +287,7 @@ export default function DomainsTab() {
         >
           {t('addr_extra_body', {
             defaultValue:
-              '{{list}} — l’instance ne revendique pas ces noms : ils ne sont servis que parce que la liste d’appoint du module les contient. C’est le cas attendu pour un nom que le DNS ne peut pas prouver (kubuno.local). Pour un domaine public, déclarez-le et vérifiez-le dans Instance ▸ Domaines : l’instance redevient la seule autorité.',
+              '{{list}} - l’instance ne revendique pas ces noms : ils ne sont servis que parce que la liste d’appoint du module les contient. C’est le cas attendu pour un nom que le DNS ne peut pas prouver (kubuno.local). Pour un domaine public, déclarez-le et vérifiez-le dans Instance ▸ Domaines : l’instance redevient la seule autorité.',
             list: groups.extra.map(d => d.domain).join(', '),
           })}
           <span className="ms-1"><InstanceDomainsLink /></span>
@@ -298,7 +298,7 @@ export default function DomainsTab() {
         style={{ fontSize: 'var(--kb-text-micro, 11px)' }}>
         {t('addr_dom_scope_v2', {
           defaultValue:
-            'L’instance fait autorité : sont servis les domaines VÉRIFIÉS d’Instance ▸ Domaines, plus la liste d’appoint du module (pour les noms que le DNS ne peut pas prouver). Cette page ne modifie ni l’une ni l’autre — elle définit seulement ce qu’un domaine applique par défaut aux boîtes qu’on y crée.',
+            'L’instance fait autorité : sont servis les domaines VÉRIFIÉS d’Instance ▸ Domaines, plus la liste d’appoint du module (pour les noms que le DNS ne peut pas prouver). Cette page ne modifie ni l’une ni l’autre - elle définit seulement ce qu’un domaine applique par défaut aux boîtes qu’on y crée.',
         })}{' '}
         <InstanceDomainsLink />
       </p>
@@ -368,7 +368,7 @@ export default function DomainsTab() {
 // ── Preparing a domain before its MX points here ─────────────────────────────
 
 /**
- * A policy may be written for a domain that is not served YET — an operator
+ * A policy may be written for a domain that is not served YET - an operator
  * prepares a domain before pointing its MX at us. The server accepts it and
  * says plainly that it stays inert; the form repeats that rather than letting a
  * saved policy read as a working domain.
@@ -428,7 +428,7 @@ function PrepareDomainWindow({ onClose, onSaved }: {
           htmlFor="dom-name"
           hint={t('addr_dom_prepare_hint_v2', {
             defaultValue:
-              'Une politique peut être écrite avant que le domaine soit servi — pendant une migration MX, par exemple. Tant que l’instance ne l’a pas vérifié (ou que la liste d’appoint ne le contient pas), elle reste sans effet.',
+              'Une politique peut être écrite avant que le domaine soit servi - pendant une migration MX, par exemple. Tant que l’instance ne l’a pas vérifié (ou que la liste d’appoint ne le contient pas), elle reste sans effet.',
           })}
         >
           <Input id="dom-name" value={domain} onChange={e => setDomain(e.target.value)}
@@ -607,7 +607,7 @@ function DomainRecord({ domain, onBack, onDeletePolicy }: {
           title={t('addr_dom_catchall_title', { defaultValue: 'Ce domaine a un attrape-tout' })}>
           {t('addr_dom_catchall_body', {
             defaultValue:
-              'Toute adresse de ce domaine qui n’est ni une boîte, ni un alias, ni une liste est captée par l’attrape-tout — y compris les erreurs de frappe et les adresses collectées par les spammeurs. Il se modifie dans l’onglet Alias.',
+              'Toute adresse de ce domaine qui n’est ni une boîte, ni un alias, ni une liste est captée par l’attrape-tout - y compris les erreurs de frappe et les adresses collectées par les spammeurs. Il se modifie dans l’onglet Alias.',
           })}
         </Callout>
       )}

@@ -78,7 +78,7 @@ export function AttachmentChip({ att, onOpen, onRemove }: {
               style={{ width: `${att.progress}%` }}
             />
           </div>
-          {/* Cancel the read/upload in flight — revealed on hover, Gmail-style. */}
+          {/* Cancel the read/upload in flight - revealed on hover, Gmail-style. */}
           <button
             type="button"
             onClick={() => onRemove(att.id)}
@@ -103,8 +103,8 @@ export function AttachmentChip({ att, onOpen, onRemove }: {
 }
 
 // ── Attachment bar: full-width bands stacked + the local-blob preview surface ──
-// Clicking a blue name previews (image/pdf/text) or downloads a local file, or —
-// for a Drive-link attachment — opens its public URL in a new tab.
+// Clicking a blue name previews (image/pdf/text) or downloads a local file, or -
+// for a Drive-link attachment - opens its public URL in a new tab.
 export default function AttachmentBar({ attachments, onRemove, objectUrl }: {
   attachments: ComposeAttachment[]
   onRemove:    (id: string) => void

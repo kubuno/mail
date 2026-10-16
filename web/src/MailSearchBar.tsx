@@ -96,7 +96,7 @@ export default function MailSearchBar() {
 
   // Reflect external query changes (filter panel, "filter similar" action…)
   // without clobbering what the user is currently typing.
-  // Mirror the committed query into the box — but never over text the user is
+  // Mirror the committed query into the box - but never over text the user is
   // typing. A query CLEARED by the store is the one exception: that is a
   // navigation (a sidebar click, back/forward out of a search), never a chip
   // refinement, and the box must empty even while focused (Gmail parity).
@@ -195,7 +195,7 @@ export default function MailSearchBar() {
     setOpen(false)
     setHi(-1)
     // A view with no thread list (settings, subscriptions…) cannot show the
-    // results: open the mailbox ON the search URL — searching from anywhere
+    // results: open the mailbox ON the search URL - searching from anywhere
     // shows results (Gmail parity). MailApp re-reads «#search/…» on the
     // navigation, so the query set above survives the route change.
     if (q && NON_LIST_ROUTE.test(pathname)) navigate(searchTo(q))
@@ -211,7 +211,7 @@ export default function MailSearchBar() {
   const openThread = (th: Thread) => {
     commit(q)
     if (pathname.startsWith('/mail/settings')) {
-      // The settings route has no thread reader: go back to the mailbox first —
+      // The settings route has no thread reader: go back to the mailbox first -
       // ON the search URL, since MailApp re-reads «#search/…» on every router
       // navigation and a bare «/mail» would read as leaving the search.
       // The route-change effect in MailApp resets the selected thread, so the
@@ -434,7 +434,7 @@ export default function MailSearchBar() {
             >
               <Search size={17} className="text-text-tertiary flex-shrink-0" />
               {renderIns(s.ins)}
-              <span className="text-xs text-text-secondary truncate">— {s.desc}</span>
+              <span className="text-xs text-text-secondary truncate">- {s.desc}</span>
             </div>
           ))}
         </div>

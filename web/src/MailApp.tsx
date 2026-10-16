@@ -22,8 +22,8 @@ export type { MailCategory } from './mail-app/categories'
 // ── Main MailApp ──────────────────────────────────────────────────────────────
 
 /** The URL is the single source of truth for «in a search»: a «#search/<q>»
- *  hash puts the query in the store, ANY other hash — «#inbox», «#category/…»,
- *  a folder route's empty hash, back/forward out of a search — takes it out. */
+ *  hash puts the query in the store, ANY other hash - «#inbox», «#category/…»,
+ *  a folder route's empty hash, back/forward out of a search - takes it out. */
 function applySearchFromUrl() {
   const m = window.location.hash.match(/^#search\/(.*?)(\/[0-9a-f-]{36})?$/i)
   const q = m ? decodeURIComponent(m[1]) : ''
@@ -35,7 +35,7 @@ function applySearchFromUrl() {
 export default function MailApp() {
   const { t } = useTranslation('mail')
   const { composeOpen, setComposeOpen, setComposeInitial, setAccounts, accounts, setCurrentFolder, currentFolder, selectedThread, splitMode } = useMailStore()
-  // Mobile: always single pane (list ↔ reader via selectedThread) — a persisted
+  // Mobile: always single pane (list ↔ reader via selectedThread) - a persisted
   // split mode from desktop makes no sense on a phone.
   const isMobile = useIsMobile()
   const effSplit = isMobile ? 'none' : splitMode
@@ -88,11 +88,11 @@ export default function MailApp() {
     else                  setCurrentFolder(folderFromPath(pathname))
   }, [pathname, setCurrentFolder])
 
-  // The open conversation lives in the URL hash — «#inbox/<id>» — so a reload
+  // The open conversation lives in the URL hash - «#inbox/<id>» - so a reload
   // or a shared link lands back on the same message. The older «?thread=<id>»
   // form still works: it is what "open in a new window" used to produce.
   useEffect(() => {
-    // The thread id is always the LAST hash segment, whatever the base —
+    // The thread id is always the LAST hash segment, whatever the base -
     // «#inbox/<id>» as well as «#category/promotions/<id>».
     const fromHash  = window.location.hash.match(/\/([0-9a-f-]{36})$/i)?.[1]
     const fromQuery = new URLSearchParams(window.location.search).get('thread')
@@ -109,7 +109,7 @@ export default function MailApp() {
   // history entry; edits within a search replace it. The trailing «/<thread-id>»
   // segment is preserved either way.
   // URL → store FIRST (declaration order = effect order on mount): a deep link
-  // must be read into the store before the writer below looks at the hash —
+  // must be read into the store before the writer below looks at the hash -
   // otherwise the writer, still seeing an empty query, would strip `#search/…`
   // before it was ever applied.
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function MailApp() {
     return () => window.removeEventListener('hashchange', applySearchFromUrl)
   }, [])
   // Router navigations (`<Link>`, `navigate()`) push state WITHOUT firing
-  // `hashchange`, so re-read the URL on each of them — `routerKey` changes on
+  // `hashchange`, so re-read the URL on each of them - `routerKey` changes on
   // every one, a sidebar hash link or a re-click of the active folder included,
   // but NOT on the raw `pushState` the writer below performs. A sidebar click
   // thus leaves the search, and `navigate(searchTo(q))` enters one, whatever
@@ -196,7 +196,7 @@ export default function MailApp() {
             // Single pane: the list stays MOUNTED and the reader overlays it,
             // rather than swapping one for the other. This preserves the list's
             // selection, scroll position and loaded pages when the user opens a
-            // message and comes back — exactly as Gmail does.
+            // message and comes back - exactly as Gmail does.
             <div className="relative flex-1 min-w-0 flex flex-col overflow-hidden">
               <ThreadList />
               {selectedThread && (

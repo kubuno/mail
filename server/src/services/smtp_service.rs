@@ -40,7 +40,7 @@ pub async fn send_message(
 
 /// Assembles the RFC 5322 message (alternative text/HTML body, attachments) and
 /// returns it together with its Message-ID (without angle brackets). Kept apart
-/// from [`send_message`] so a LOCAL account — which has no external SMTP relay —
+/// from [`send_message`] so a LOCAL account - which has no external SMTP relay -
 /// can obtain the exact same bytes (`email.formatted()`) to hand to local
 /// delivery and the instance's outbound queue.
 #[allow(clippy::too_many_arguments)] // a message builder: from, body, PGP, autocrypt, delegated Sender…
@@ -83,7 +83,7 @@ pub fn build_email(
             .context("Adresse CC invalide")?);
     }
     // BCC: lettre adds these to the SMTP envelope then strips the Bcc header from
-    // the formatted message (default behaviour) — hidden recipients stay hidden.
+    // the formatted message (default behaviour) - hidden recipients stay hidden.
     for addr in dto.bcc_addresses.as_deref().unwrap_or(&[]) {
         builder = builder.bcc(mailbox(addr.name.as_deref().unwrap_or(""), &addr.email)
             .context("Adresse BCC invalide")?);
@@ -155,7 +155,7 @@ pub fn build_transport(cfg: &SmtpConfig) -> Result<AsyncSmtpTransport<Tokio1Exec
 
 /// Builds a `Mailbox` from a free-text display name and an address, letting
 /// lettre quote/encode the name (RFC 5322 / 2047) rather than interpolating it
-/// into `"name <addr>"` and re-parsing — a name carrying `@`, a comma or an
+/// into `"name <addr>"` and re-parsing - a name carrying `@`, a comma or an
 /// accent would otherwise fail the parse and take the whole send down with it
 /// (a local mailbox whose display name defaults to its own address did exactly
 /// that). A display name that is empty, or equal to the address, is dropped so a
@@ -220,7 +220,7 @@ mod tests {
         );
     }
 
-    /// A self-send (no delegation) carries NO `Sender:` header — `From:` alone.
+    /// A self-send (no delegation) carries NO `Sender:` header - `From:` alone.
     #[test]
     fn self_send_has_no_sender_header() {
         let (email, _mid) = build_email(

@@ -1,11 +1,11 @@
 /**
- * WHERE a served domain comes from — the missing link between this screen and
+ * WHERE a served domain comes from - the missing link between this screen and
  * Instance ▸ Domaines.
  *
  * ── The confusion this exists to end ─────────────────────────────────────────
  * The two screens used to be unrelated: a domain removed from Instance ▸
  * Domaines went on appearing here as "Servi", and its mailboxes went on looking
- * healthy while nothing reached them. The instance is the authority — the
+ * healthy while nothing reached them. The instance is the authority - the
  * domains served are the VERIFIED ones it claims, plus a stand-in list this
  * module keeps for names DNS cannot prove (`kubuno.local` on a lab machine).
  * So every row has to say which of the two put it there, and what the instance
@@ -14,7 +14,7 @@
  * ── Reading a row the server has not enriched ────────────────────────────────
  * `source` and `instance_state` are optional: an older mail service does not
  * send them. Then the origin is `unknown` and NOTHING is claimed about
- * provenance — an origin invented from `is_served` alone would be wrong exactly
+ * provenance - an origin invented from `is_served` alone would be wrong exactly
  * when it matters. The "holds objects but is not served" alarm still fires,
  * because that one needs no provenance to be true.
  */
@@ -23,19 +23,19 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@ui'
 import type { DomainView } from './api'
 
-/** Instance ▸ Domaines. A real address — opened in a tab, or middle-clicked. */
+/** Instance ▸ Domaines. A real address - opened in a tab, or middle-clicked. */
 export const INSTANCE_DOMAINS_URL = '/admin/domains'
 
 export type DomainOrigin =
   /** Served because the instance claims the name AND proved it by DNS. */
   | 'instance'
-  /** Served by this module's stand-in list only — the instance claims nothing. */
+  /** Served by this module's stand-in list only - the instance claims nothing. */
   | 'extra'
   /** NOT served: declared in the instance, waiting for its DNS proof. */
   | 'pending'
   /** NOT served, and holding mailboxes/aliases/lists. The silent failure. */
   | 'dropped'
-  /** NOT served and holding nothing — a policy written ahead of time. */
+  /** NOT served and holding nothing - a policy written ahead of time. */
   | 'idle'
   /** The server does not report provenance. Nothing is claimed. */
   | 'unknown'
@@ -99,7 +99,7 @@ export function useOriginSentence(): (d: DomainView) => string | null {
         return d.source === 'both'
           ? t('addr_origin_both_desc', {
               defaultValue:
-                'Déclaré et vérifié dans Instance ▸ Domaines. Il figure aussi dans la liste d’appoint, où l’entrée est redondante — et le resterait servi si vous le retiriez de l’instance.',
+                'Déclaré et vérifié dans Instance ▸ Domaines. Il figure aussi dans la liste d’appoint, où l’entrée est redondante - et le resterait servi si vous le retiriez de l’instance.',
             })
           : t('addr_origin_instance_desc', {
               defaultValue: 'Déclaré et vérifié dans Instance ▸ Domaines.',
@@ -110,7 +110,7 @@ export function useOriginSentence(): (d: DomainView) => string | null {
         })
       case 'pending':
         return t('addr_origin_pending_desc', {
-          defaultValue: 'Déclaré dans l’instance mais pas encore vérifié — donc pas encore servi.',
+          defaultValue: 'Déclaré dans l’instance mais pas encore vérifié - donc pas encore servi.',
         })
       case 'dropped':
         return t('addr_origin_dropped_desc', {
@@ -126,7 +126,7 @@ export function useOriginSentence(): (d: DomainView) => string | null {
   }
 }
 
-/** Instance ▸ Domaines, as a real link — middle-clickable, openable in a tab. */
+/** Instance ▸ Domaines, as a real link - middle-clickable, openable in a tab. */
 export function InstanceDomainsLink({ children }: { children?: ReactNode }) {
   const { t } = useTranslation('mail')
   return (

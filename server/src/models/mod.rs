@@ -11,7 +11,7 @@ pub struct EmailAccount {
     pub name:           String,
     pub email_address:  String,
     /// "external" (an IMAP/SMTP account at another provider) or "local" (a hosted
-    /// mailbox of this instance — the instance itself is the server).
+    /// mailbox of this instance - the instance itself is the server).
     pub kind:           String,
     /// The hosted mailbox this account fronts, when `kind = 'local'`; NULL for an
     /// external account or once the mailbox has been deleted.
@@ -241,7 +241,7 @@ pub struct CreateLabelDto {
     pub color:      Option<String>,
 }
 
-/// Partial update — every field is optional, only the ones sent are applied.
+/// Partial update - every field is optional, only the ones sent are applied.
 /// `color` is doubly optional so an explicit `null` can clear it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateLabelDto {

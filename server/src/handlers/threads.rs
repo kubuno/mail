@@ -20,7 +20,7 @@ type SubscriptionRow = (String, Option<String>, Option<String>, i64, DateTime<Ut
 
 /// Stored inbox category of a thread. It is written once, when the message is
 /// stored (services::categorize), so reading a tab is a plain indexed equality
-/// test — no classification happens at display time any more. COALESCE only
+/// test - no classification happens at display time any more. COALESCE only
 /// covers rows written before the column existed.
 const CATEGORY_SQL: &str = "COALESCE(t.category, 'main')";
 
@@ -195,7 +195,7 @@ pub async fn list_threads(
 
     // Total matching the filter actually used above. Every branch computes its
     // own: the client used to fall back to the sidebar counters, which count
-    // UNREAD threads per label — a label view with 3 read threads then showed
+    // UNREAD threads per label - a label view with 3 read threads then showed
     // "1–3 of 0". Only search keeps a client-side total.
     let special_total: Option<i64> = if q.search.is_some() {
         None
@@ -221,7 +221,7 @@ pub async fn list_threads(
             "t.snoozed_until > $3"
         };
         // Audited: `predicate` is one of the three literals just above, chosen by
-        // the view asked for — no caller text reaches the SQL.
+        // the view asked for - no caller text reaches the SQL.
         crate::db::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT {count} FROM mail.threads t \
              WHERE t.user_id = $1 \
@@ -513,7 +513,7 @@ pub async fn changes(
     // One keyset page over every thread that changed since `since`: for each,
     // its current HIGHESTMODSEQ (max over ALL its messages) and whether it is
     // now entirely deleted/trashed. Ordered by that modseq ascending so the
-    // client resumes from `cursor` with neither a gap nor a duplicate — modseq
+    // client resumes from `cursor` with neither a gap nor a duplicate - modseq
     // values are globally unique, so a thread's max is unique too.
     let rows: Vec<(Uuid, i64, bool)> = crate::db::query_as(
         r#"WITH changed AS (
@@ -592,7 +592,7 @@ pub async fn changes(
 ///
 /// Thread-level flag actions (star, important, mute, snooze, category, labels)
 /// write only to `mail.threads`/`mail.thread_labels`, which the delta endpoint
-/// — keyed on `mail.messages.modseq` — would otherwise miss. A no-op UPDATE on
+/// - keyed on `mail.messages.modseq` - would otherwise miss. A no-op UPDATE on
 /// the thread's messages fires the trigger that stamps a fresh modseq (a
 /// `BEFORE UPDATE` trigger on PostgreSQL and MySQL, `AFTER UPDATE` on SQLite;
 /// every matched row is stamped, changed or not), so the change surfaces in the next
@@ -663,7 +663,7 @@ pub async fn get_thread(
 
     // Reading a thread does NOT mark it read: this GET is prefetched for every
     // visible row, so the side effect marked whole pages of mail as read
-    // without anyone opening them — and silently undid "mark as unread" on the
+    // without anyone opening them - and silently undid "mark as unread" on the
     // next prefetch. The reader now says so explicitly via POST /threads/:id/read.
     Ok(Json(serde_json::json!({ "thread": thread, "messages": messages })))
 }
@@ -998,7 +998,7 @@ pub async fn counts(
     ))
     .bind(user.id).fetch_one(&state.db).await.unwrap_or(0);
 
-    // Unread threads per label — Gmail's sidebar badge counts unread, not total.
+    // Unread threads per label - Gmail's sidebar badge counts unread, not total.
     let label_rows: Vec<(Uuid, i64)> = crate::db::query_as(format!(
         r#"SELECT tl.label_id, {cnt_labels}
            FROM mail.thread_labels tl

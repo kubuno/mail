@@ -1,18 +1,18 @@
-//! Account delegation — the server-side authority behind Gmail-style "grant
+//! Account delegation - the server-side authority behind Gmail-style "grant
 //! access to your account".
 //!
 //! A GRANTOR invites a DELEGATE (another user of this instance) to read their
 //! mailbox and send on their behalf, without ever sharing a password. Access is
 //! conferred by exactly ONE thing: a delegation row whose `status = 'accepted'`.
-//! Everything else — a pending invitation, a revoked delegation, or no row at
-//! all — confers no access.
+//! Everything else - a pending invitation, a revoked delegation, or no row at
+//! all - confers no access.
 //!
 //! The acceptance decision is a pure function ([`authorize_acting_as`]) taking an
 //! already-fetched delegation, so every branch (accepted, pending, revoked,
 //! absent, self) is unit-tested without a database. The single enforcement point
 //! ([`resolve_acting_user`]) is reused by every delegated read/send route: given
 //! the authenticated user and an optional `on_behalf_of`, it returns the user id
-//! that scopes the request — the grantor when a delegation authorises it, the
+//! that scopes the request - the grantor when a delegation authorises it, the
 //! caller themselves when no `on_behalf_of` is supplied, and a generic 403
 //! otherwise.
 
@@ -65,7 +65,7 @@ pub fn authorize_acting_as(
     }
 }
 
-/// Opaque refusal — carries no reason, so no acting-as denial can leak WHY (no
+/// Opaque refusal - carries no reason, so no acting-as denial can leak WHY (no
 /// row vs. pending vs. revoked vs. wrong delegate all look identical).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActingDenied;
@@ -82,7 +82,7 @@ pub fn can_decline(status: &str) -> bool {
 }
 
 /// May a fresh grant be (re)created against an existing row for the same pair?
-/// Only a previously revoked delegation is reusable — an active or still-pending
+/// Only a previously revoked delegation is reusable - an active or still-pending
 /// one is a duplicate and must be refused.
 pub fn can_regrant(existing_status: &str) -> bool {
     existing_status == STATUS_REVOKED
@@ -156,7 +156,7 @@ pub async fn list_granted(db: &DbPool, grantor: Uuid) -> Result<Vec<Delegation>>
     Ok(rows.into_iter().map(to_delegation).collect())
 }
 
-/// Live delegations addressed to `delegate` — both PENDING invitations (which
+/// Live delegations addressed to `delegate` - both PENDING invitations (which
 /// they may accept or decline) and ACCEPTED delegations (the accounts they may
 /// act on). Revoked rows are excluded. The delegate's settings UI shows the
 /// accept/decline controls for the pending ones; a future app-switcher filters
@@ -362,13 +362,13 @@ pub async fn decline_as_delegate(db: &DbPool, delegate: Uuid, id: Uuid) -> Resul
 
 /// Resolves the user id a delegated (or ordinary) request must be scoped to.
 ///
-/// * `on_behalf_of == None` — the caller acts for themselves: returns `auth_user.id`
+/// * `on_behalf_of == None` - the caller acts for themselves: returns `auth_user.id`
 ///   unchanged, so every existing (non-delegated) route behaves exactly as before.
-/// * `on_behalf_of == Some(grantor)` — the caller claims to act as `grantor`:
+/// * `on_behalf_of == Some(grantor)` - the caller claims to act as `grantor`:
 ///   the (grantor, delegate) delegation is fetched and [`authorize_acting_as`]
 ///   decides. On success the GRANTOR's id is returned (the request scopes to the
 ///   grantor's mailbox) and the delegated access is logged; otherwise a generic
-///   `403` — never a reason a caller could probe.
+///   `403` - never a reason a caller could probe.
 pub async fn resolve_acting_user(
     db: &DbPool,
     auth_user: &AuthUser,
@@ -395,7 +395,7 @@ pub async fn resolve_acting_user(
     match authorize_acting_as(auth_user.id, grantor, found.as_ref()) {
         Ok(acting) => {
             // Sensitive action: record WHO acted as WHOM. No message content, no
-            // secret — only the two account ids.
+            // secret - only the two account ids.
             tracing::info!(
                 delegate = %auth_user.id,
                 grantor  = %grantor,
@@ -407,7 +407,7 @@ pub async fn resolve_acting_user(
     }
 }
 
-/// Returns the delegate's own email to stamp as `Sender:` on a delegated send —
+/// Returns the delegate's own email to stamp as `Sender:` on a delegated send -
 /// but only when the delegation is accepted AND `can_send` is set. `Ok(None)`
 /// means "no delegated send authority" (the caller must refuse the send), while
 /// distinguishing it from a self-send where `on_behalf_of` was absent.

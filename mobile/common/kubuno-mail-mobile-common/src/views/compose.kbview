@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Mail · Compose — converted from ComposeScreen.kt. Top bar (close + attach + send), then the recipient,
+  Mail · Compose - converted from ComposeScreen.kt. Top bar (close + attach + send), then the recipient,
   subject and body fields, with an attachment row. Shared vocabulary, light theme, logical px. Root is a Panel.
 -->
 <Panel xmlns="https://kubuno.com/views" xmlns:x="https://kubuno.com/views/x"

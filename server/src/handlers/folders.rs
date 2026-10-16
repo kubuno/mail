@@ -1,4 +1,4 @@
-//! The account's own IMAP folders — the ones that are not inbox/sent/drafts/
+//! The account's own IMAP folders - the ones that are not inbox/sent/drafts/
 //! spam/trash. They are synced like the rest; this exposes the list so the
 //! sidebar can offer them.
 
@@ -9,7 +9,7 @@ use crate::{errors::MailError, middleware::AuthUser, state::AppState};
 /// One custom folder and how much mail it holds.
 #[derive(serde::Serialize, sqlx::FromRow)]
 pub struct CustomFolder {
-    /// Name as the provider spells it — also the value to filter listings on.
+    /// Name as the provider spells it - also the value to filter listings on.
     pub name:   String,
     /// Same name, readable: IMAP encodes accents in modified UTF-7.
     #[sqlx(default)]

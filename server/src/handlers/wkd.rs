@@ -1,4 +1,4 @@
-//! Web Key Directory (WKD) — serving THIS instance's public keys.
+//! Web Key Directory (WKD) - serving THIS instance's public keys.
 //!
 //! Publishes the OpenPGP certificate of a local mailbox at the GnuPG/Sequoia
 //! well-known location so other providers can discover it and encrypt to our
@@ -10,7 +10,7 @@
 //! `/.well-known/openpgpkey/...`, which the core does NOT proxy to modules (its
 //! module proxy only forwards `/api/v1/<module>/...`). These handlers are mounted
 //! under the mail API (`/api/v1/mail/wkd/...`) and are reachable there today; to
-//! answer real clients the root path must be routed here — see the module report
+//! answer real clients the root path must be routed here - see the module report
 //! for the exact core/nginx glue. The `?d=` override lets that glue pass the
 //! queried domain explicitly when the Host header is not the domain itself.
 
@@ -26,7 +26,7 @@ use crate::state::AppState;
 
 #[derive(Deserialize)]
 pub struct WkdQuery {
-    /// The original local-part (WKD `?l=`), advisory — the hash is authoritative.
+    /// The original local-part (WKD `?l=`), advisory - the hash is authoritative.
     pub l: Option<String>,
     /// Domain override for the root-route glue / testing; falls back to Host.
     pub d: Option<String>,

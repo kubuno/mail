@@ -1,18 +1,18 @@
 /**
- * DNS setup — "here is what to publish", above the diagnostic's "here is what
+ * DNS setup - "here is what to publish", above the diagnostic's "here is what
  * is wrong".
  *
  * ── Why generate the records rather than describe them ────────────────────────
  * The diagnostic already shows an "expected" value per line, but scattered, in
  * prose, and never grouped by the zone an operator actually edits. Publishing a
- * mail domain means five records — A, MX, SPF, DKIM, DMARC — and the operator
+ * mail domain means five records - A, MX, SPF, DKIM, DMARC - and the operator
  * pastes them, one at a time, into whatever registrar they use. So this lists
  * them ready to paste, grouped by served domain, each with a copy button, its
  * live status, and one line saying what it is for.
  *
  * ── Two DKIM forms, on purpose ────────────────────────────────────────────────
- * Some registrars (OVH) take the DKIM public key alone — the base64 after `p=`
- * — and build the record themselves; others want the whole TXT value. Guessing
+ * Some registrars (OVH) take the DKIM public key alone - the base64 after `p=`
+ * - and build the record themselves; others want the whole TXT value. Guessing
  * wrong means a key that never verifies, so both are offered with their own copy
  * button and a note saying which is which.
  */
@@ -137,7 +137,7 @@ function RecordRow({ record }: { record: DnsRecord }) {
 
       <RecordBlock value={record.value} />
 
-      {/* DKIM: the full record above, and the bare key here — some hosts want
+      {/* DKIM: the full record above, and the bare key here - some hosts want
           one, some the other, and pasting the wrong shape yields a dead key. */}
       {record.value_alt != null && (
         <div className="mt-2">
@@ -165,7 +165,7 @@ function RecordRow({ record }: { record: DnsRecord }) {
   )
 }
 
-/** PTR is not a zone record — it is set at the IP's host. A row of its own so an
+/** PTR is not a zone record - it is set at the IP's host. A row of its own so an
  *  operator does not hunt for it in the zone editor, then give up. */
 function PtrInstruction({ hostname }: { hostname: string }) {
   const { t } = useTranslation('mail')

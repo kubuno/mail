@@ -1,7 +1,7 @@
 //! Outbound relay (smarthost) configuration (admin).
 //!
-//! An instance that cannot deliver direct-to-MX — a residential line blocks
-//! port 25 outbound — hands every remote message to ONE SMTP host that can
+//! An instance that cannot deliver direct-to-MX - a residential line blocks
+//! port 25 outbound - hands every remote message to ONE SMTP host that can
 //! (the VPS's Postfix over a private tunnel). This is where an administrator
 //! turns that on and points it at the host. See migration 000026 and the
 //! runtime side in `server::relay`.
@@ -160,8 +160,8 @@ pub async fn put_relay(
     }
     sql.push_str(" WHERE id = TRUE");
 
-    // Audited: `sql` is assembled from the literals just above — the branch is
-    // chosen by `change`, never by caller text — and every value is bound.
+    // Audited: `sql` is assembled from the literals just above - the branch is
+    // chosen by `change`, never by caller text - and every value is bound.
     let mut query = crate::db::query(sqlx::AssertSqlSafe(sql))
         .bind(dto.enabled)
         .bind(&host)
@@ -177,7 +177,7 @@ pub async fn put_relay(
         MailError::Database(e)
     })?;
 
-    // Echo the fresh state — never the password.
+    // Echo the fresh state - never the password.
     let view = read_relay(&state).await?;
     Ok(Json(view))
 }
@@ -185,8 +185,8 @@ pub async fn put_relay(
 /// Validates a relay configuration and returns the parsed security level.
 ///
 /// Two refusals:
-///   * enabled with no host — the relay points nowhere;
-///   * `security = none` with a username — a password would cross the wire in
+///   * enabled with no host - the relay points nowhere;
+///   * `security = none` with a username - a password would cross the wire in
 ///     the clear.
 fn validate_relay(
     enabled: bool,
@@ -202,7 +202,7 @@ fn validate_relay(
     }
     if security == RelaySecurity::None && !username.is_empty() {
         return Err(MailError::Validation(
-            "Un mot de passe ne doit pas transiter en clair — utilisez STARTTLS ou TLS, \
+            "Un mot de passe ne doit pas transiter en clair - utilisez STARTTLS ou TLS, \
              ou un relais sans authentification sur réseau de confiance."
                 .into(),
         ));

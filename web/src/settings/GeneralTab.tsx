@@ -42,7 +42,7 @@ function Section({ id, title }: { id?: string; title: string }) {
   )
 }
 
-/** A single on/off checkbox control — thin wrapper over the @ui Checkbox primitive. */
+/** A single on/off checkbox control - thin wrapper over the @ui Checkbox primitive. */
 function CheckboxControl({ checked, onChange, label }: {
   checked: boolean; onChange: (v: boolean) => void; label: string
 }) {
@@ -51,7 +51,7 @@ function CheckboxControl({ checked, onChange, label }: {
 
 /**
  * "Default text style": font family + size (FontSizeField) and a colour swatch,
- * with a live preview and a reset button — Gmail's "Default text style" control.
+ * with a live preview and a reset button - Gmail's "Default text style" control.
  */
 function DefaultTextStyle({ font, size, color, onChange, onReset }: {
   font: string; size: string; color: string
@@ -289,7 +289,7 @@ export function GeneralTab() {
       </SettingsRow>
 
       <SettingsRow
-        label={t('mail_settings_mark_read', { defaultValue: "Volet d'aperçu — marquer comme lu" })}
+        label={t('mail_settings_mark_read', { defaultValue: "Volet d'aperçu - marquer comme lu" })}
         description={t('mail_settings_mark_read_desc', { defaultValue: "Quand un message est marqué comme lu à l'ouverture dans le volet." })}
       >
         <RadioGroup
@@ -664,7 +664,7 @@ export function GeneralTab() {
                 <RichTextEditor
                   value={s.html}
                   onChange={html => updateSig(s.id, { html })}
-                  placeholder={t('mail_sig_html_ph', { defaultValue: 'Contenu — ex. votre nom, fonction, coordonnées…' })}
+                  placeholder={t('mail_sig_html_ph', { defaultValue: 'Contenu - ex. votre nom, fonction, coordonnées…' })}
                   minHeight={110}
                 />
               </li>

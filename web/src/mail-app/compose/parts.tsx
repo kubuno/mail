@@ -50,7 +50,7 @@ export function LabelChecklist({ labels, checked, onToggle, placeholder }: {
       />
       <div className="max-h-56 overflow-y-auto">
         {visible.length === 0
-          ? <div className="px-2 py-2 text-xs text-text-tertiary">—</div>
+          ? <div className="px-2 py-2 text-xs text-text-tertiary">-</div>
           : visible.map(l => (
             <label key={l.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-surface-1 cursor-pointer text-sm text-text-primary">
               <input type="checkbox" checked={checked.has(l.id)} onChange={() => onToggle(l.id)} />

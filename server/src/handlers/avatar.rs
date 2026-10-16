@@ -17,7 +17,7 @@ use crate::{errors::MailError, middleware::AuthUser, services::avatars, state::A
 
 #[derive(Deserialize)]
 pub struct AvatarQuery {
-    /// Sender address or bare domain — only the domain part is ever used.
+    /// Sender address or bare domain - only the domain part is ever used.
     pub email: String,
     /// DMARC verdict of the message being displayed. Only `pass` unlocks the
     /// brand's own logo; anything else (fail, none, absent) gets at most a

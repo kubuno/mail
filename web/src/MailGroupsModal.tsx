@@ -8,7 +8,7 @@ import { useConfirm } from '@kubuno/sdk'
 import { mailApi, apiErrorMessage, type RecipientGroup } from './api'
 import { RecipientField, type AddressSuggestion } from './AddressSuggest'
 
-// « Listes de diffusion » manager — reachable from the New menu (« Nouvelle liste
+// « Listes de diffusion » manager - reachable from the New menu (« Nouvelle liste
 // de diffusion »). Create / rename / edit members / delete recipient groups.
 // Groups then surface in every address field's autocompletion (AddressSuggest).
 interface EditorState { id: string | null; name: string; members: AddressSuggestion[] }

@@ -9,7 +9,7 @@ const MAX_CHIPS = 3
  * File-type badge: one uniform rounded square per chip, coloured by family and
  * carrying the extension.
  *
- * Type-specific glyphs were tried first and read badly — every icon had its own
+ * Type-specific glyphs were tried first and read badly - every icon had its own
  * optical weight and width, so a row of chips looked ragged. A single shape
  * with a colour and a label stays even whatever the file type.
  */
@@ -46,14 +46,14 @@ export default function ThreadAttachmentChips({
     // flush against the separator below, which made the whole list feel packed.
     // No click sink on the strip itself: it stretches across the whole subject
     // column, so swallowing clicks here made the entire attachment line of a row
-    // dead — half its height opened nothing. Each chip below stops propagation
+    // dead - half its height opened nothing. Each chip below stops propagation
     // on its own, which is what keeps "preview this file" from also opening the
     // conversation; everywhere else the click belongs to the row.
     <div className="flex items-center gap-2.5 flex-wrap pt-0.5 pb-1.5">
       {shown.map(att => {
         const badge = badgeFor(att.mime, att.name)
         // Bidi overrides in a file name would flip the whole chip row, not just
-        // the label — strip them before the name reaches the DOM.
+        // the label - strip them before the name reaches the DOM.
         const label = sanitizeDisplayText(att.name)
         return (
           <button

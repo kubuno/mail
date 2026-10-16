@@ -1,9 +1,9 @@
-//! PGP/MIME assembly (RFC 3156) — wraps a message body into `multipart/signed`
+//! PGP/MIME assembly (RFC 3156) - wraps a message body into `multipart/signed`
 //! and `multipart/encrypted`, using lettre's own MIME serializer (deterministic,
 //! CRLF) and rPGP for the crypto (`services::pgp`).
 //!
 //! The structure is mirrored on the reference implementation `emersion/go-pgpmail`
-//! (MIT) and RFC 3156 — we do NOT hand-roll the wire format:
+//! (MIT) and RFC 3156 - we do NOT hand-roll the wire format:
 //!   • signed:    `multipart/signed; protocol="application/pgp-signature";
 //!                 micalg="pgp-sha256"` = the exact signed body part + an
 //!                 `application/pgp-signature` part carrying the armored detached
@@ -12,7 +12,7 @@
 //!                 an `application/pgp-encrypted` control part (`Version: 1`) + an
 //!                 `application/octet-stream` part carrying the armored message.
 //!
-//! The signature is computed over `content.formatted()` — the SAME bytes lettre
+//! The signature is computed over `content.formatted()` - the SAME bytes lettre
 //! re-emits when it serialises `content` inside the signed multipart (same stored
 //! boundary), so a verifier extracting the first part gets an identical byte
 //! string. Bodies are forced to base64 so SMTP cannot alter them and break the
@@ -88,9 +88,9 @@ pub fn encrypt(inner_mime: &[u8], recipient_public_armored: &[String]) -> Result
 pub struct PgpParams {
     pub sign:    bool,
     pub encrypt: bool,
-    /// Sender's armored secret key — required when `sign` is true.
+    /// Sender's armored secret key - required when `sign` is true.
     pub sender_secret_armored: String,
-    /// Recipients' (and the sender's own, for the Sent copy) armored public keys —
+    /// Recipients' (and the sender's own, for the Sent copy) armored public keys -
     /// required when `encrypt` is true.
     pub recipient_public_armored: Vec<String>,
 }
@@ -158,7 +158,7 @@ pub fn looks_like_pgp(raw: &[u8]) -> bool {
 /// (possibly wrapping a `multipart/signed`), PGP/MIME `multipart/signed`, and an
 /// inline `-----BEGIN PGP MESSAGE-----` block in the body. Returns an empty
 /// `IncomingPgp` (no body, no verdict) when the message is not actually PGP or
-/// cannot be opened — the caller then keeps the stored body untouched.
+/// cannot be opened - the caller then keeps the stored body untouched.
 pub fn parse_incoming(
     raw_mime: &[u8],
     secrets: &[String],
@@ -179,7 +179,7 @@ fn parse_entity(raw: &[u8], secrets: &[String], sender_public: Option<&str>) -> 
             for secret in secrets {
                 if let Ok(plain) = pgp::decrypt(secret, &armored) {
                     // The plaintext is itself a MIME entity (PGP/MIME) or bare
-                    // text (inline PGP) — recurse so a signed-then-encrypted
+                    // text (inline PGP) - recurse so a signed-then-encrypted
                     // message still surfaces its signature verdict.
                     let mut inner = parse_entity(&plain, secrets, sender_public);
                     inner.encrypted = true;
@@ -283,7 +283,7 @@ fn boundary_of(raw: &[u8]) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
 
-/// The raw bytes of the FIRST part of a `multipart/signed` entity — the content
+/// The raw bytes of the FIRST part of a `multipart/signed` entity - the content
 /// the detached signature covers. Extracted between the first two boundary
 /// delimiters, stripping only the CRLF that ends the OPENING delimiter line. The
 /// trailing CRLF before the closing delimiter is kept: whether it is part of the
@@ -348,7 +348,7 @@ mod tests {
         assert!(out.contains("application/pgp-signature"));
         assert!(out.contains("BEGIN PGP SIGNATURE"));
 
-        // The signed body appears verbatim in the multipart (same boundary) — so a
+        // The signed body appears verbatim in the multipart (same boundary) - so a
         // verifier extracting it gets exactly the bytes we signed.
         let needle = ascii(&content_bytes);
         assert!(out.contains(&needle), "signed body not embedded verbatim");

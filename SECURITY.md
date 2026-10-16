@@ -9,10 +9,10 @@ security reports seriously and are grateful to those who disclose responsibly.
 
 Report privately through either channel:
 
-- **GitHub Security Advisories** — use the *Report a vulnerability* button under
+- **GitHub Security Advisories** - use the *Report a vulnerability* button under
   the **Security** tab of this repository (preferred: it keeps the discussion
   private and lets us credit you).
-- **Email** — `security@toiledev.com`. Encrypt with our PGP key if the details
+- **Email** - `security@toiledev.com`. Encrypt with our PGP key if the details
   are sensitive (key fingerprint published at the project website).
 
 Please include, as far as you can:

@@ -30,8 +30,8 @@ const INITIAL_POP_IMAP: PopImapSettings = {
 // at this instance and reuses the mailbox-credential flow (the "Accès client"
 // tab) for the dedicated password.
 //
-// The FORWARDING rules (destinations + keep/archive) live on the server — they
-// must, so incoming mail can be re-sent while the user is offline — and are
+// The FORWARDING rules (destinations + keep/archive) live on the server - they
+// must, so incoming mail can be re-sent while the user is offline - and are
 // loaded/saved through /mail/forwarding. The POP/IMAP fetch & deletion policies
 // still only live in localStorage (see forwardingPrefs.ts); those remain flagged
 // inline via Callout until the mail server honours them.
@@ -50,13 +50,13 @@ function Section({ title }: { title: string }) {
   )
 }
 
-/** RFC-lite address check — good enough to reject obvious typos before storing. */
+/** RFC-lite address check - good enough to reject obvious typos before storing. */
 function isEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 }
 
 /**
- * "Configure your client" — the instance's own connection facts.
+ * "Configure your client" - the instance's own connection facts.
  *
  * The administrator decides which services run and on which ports (see
  * MailboxAccessTab), so we surface the well-known defaults and the current host
@@ -79,7 +79,7 @@ function ConnectionInfo({ protocol }: { protocol: 'pop' | 'imap' }) {
     { label: t('mail_fwd_conn_username', { defaultValue: 'Identifiant' }),
       value: t('mail_fwd_conn_username_val', { defaultValue: 'Votre adresse e-mail complète' }) },
     { label: t('mail_fwd_conn_password', { defaultValue: 'Mot de passe' }),
-      value: t('mail_fwd_conn_password_val', { defaultValue: 'Un mot de passe dédié — générez-le dans l’onglet « Accès client »' }) },
+      value: t('mail_fwd_conn_password_val', { defaultValue: 'Un mot de passe dédié - générez-le dans l’onglet « Accès client »' }) },
   ]
 
   const copyHost = async () => {
@@ -156,7 +156,7 @@ export function ForwardingTab() {
           })),
           forwardKeep: cfg.forwardKeep,
         }))
-        // Absent on an older server, which means "no such policy" — allowed.
+        // Absent on an older server, which means "no such policy" - allowed.
         setForwardingAllowed(cfg.forwardingAllowed !== false)
       })
       .catch(() => { /* keep the localStorage value if the server is unreachable */ })

@@ -95,7 +95,7 @@ publishes = ["mail.received", "mail.invite_reply"]
 # ══════════════════════════════════════════════════════════════════════════════
 # A group is one entry under this module in the admin menu tree, with its own
 # address (/admin/modules/mail/<id>); the `category` of each setting becomes a
-# tab inside it. Forty-eight settings on one page is a wall nobody reads — this
+# tab inside it. Forty-eight settings on one page is a wall nobody reads - this
 # is what turns it into five places, each answering one question.
 #
 # `id` is a STABLE, UNTRANSLATED slug because it travels in the URL: an address
@@ -143,7 +143,7 @@ id       = "authentication"
 label    = "Authentification"
 icon     = "ShieldCheck"
 position = 5
-description = "Ce qui prouve qu'un message vient bien de son expéditeur — dans les deux sens."
+description = "Ce qui prouve qu'un message vient bien de son expéditeur - dans les deux sens."
 
 [[setting_groups]]
 id       = "filtering"
@@ -164,10 +164,10 @@ id       = "openpgp"
 label    = "OpenPGP (bout en bout)"
 icon     = "KeyRound"
 position = 8
-description = "Le chiffrement et la signature du CONTENU des messages avec OpenPGP/GPG — distinct du chiffrement des connexions (Chiffrement). Chaque utilisateur gère ses propres clés."
+description = "Le chiffrement et la signature du CONTENU des messages avec OpenPGP/GPG - distinct du chiffrement des connexions (Chiffrement). Chaque utilisateur gère ses propres clés."
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Mail server — instance settings
+#  Mail server - instance settings
 # ══════════════════════════════════════════════════════════════════════════════
 # Edited in the admin console (Modules → Courrier → ⚙), stored in core.settings,
 # read back by the module through /internal/modules/settings and mapped onto
@@ -179,7 +179,7 @@ description = "Le chiffrement et la signature du CONTENU des messages avec OpenP
 #
 # `category` drives the collapsible sections of the panel, in declaration order.
 # `advanced` folds a setting behind the section's "Avancé" disclosure.
-# `risk` = info | warning | danger — danger asks for a confirmation before saving.
+# `risk` = info | warning | danger - danger asks for a confirmation before saving.
 # `depends_on` hides the setting while the named boolean is off.
 #
 # Ports default ABOVE 1024 on purpose: the service runs as the unprivileged
@@ -207,7 +207,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Domaines d'appoint"
-description = "Liste d'APPOINT, en complément des domaines vérifiés déclarés dans Instance ▸ Domaines — ce sont ces derniers qui font foi. À réserver aux noms qu'aucune preuve DNS ne peut établir (« kubuno.local » en labo, un domaine interne). Une entrée par ligne. Le courrier adressé à un domaine listé ici est distribué SANS que l'instance ait prouvé qu'elle contrôle ce nom ; tout domaine public doit passer par Instance ▸ Domaines."
+description = "Liste d'APPOINT, en complément des domaines vérifiés déclarés dans Instance ▸ Domaines - ce sont ces derniers qui font foi. À réserver aux noms qu'aucune preuve DNS ne peut établir (« kubuno.local » en labo, un domaine interne). Une entrée par ligne. Le courrier adressé à un domaine listé ici est distribué SANS que l'instance ait prouvé qu'elle contrôle ce nom ; tout domaine public doit passer par Instance ▸ Domaines."
 category    = "Identité du serveur"
 group       = "services"
 multiline   = true
@@ -220,7 +220,7 @@ scope       = "global"
 type        = "string"
 default     = "127.0.0.1"
 label       = "Adresse d'écoute"
-description = "127.0.0.1 n'expose les services qu'à la machine elle-même — le choix sûr derrière un relais. 0.0.0.0 écoute sur toutes les interfaces et rend l'instance joignable depuis internet : ne le faites qu'avec un certificat valide, un pare-feu, et après avoir publié SPF, DKIM et DMARC."
+description = "127.0.0.1 n'expose les services qu'à la machine elle-même - le choix sûr derrière un relais. 0.0.0.0 écoute sur toutes les interfaces et rend l'instance joignable depuis internet : ne le faites qu'avec un certificat valide, un pare-feu, et après avoir publié SPF, DKIM et DMARC."
 category    = "Identité du serveur"
 group       = "services"
 placeholder = "127.0.0.1"
@@ -246,7 +246,7 @@ default     = 2525
 min         = 1
 max         = 65535
 label       = "Port de réception"
-description = "25 est le port des échanges entre serveurs ; sous 1024 il exige CAP_NET_BIND_SERVICE. Un port non standard n'est joignable par aucun MTA distant — il ne convient qu'à un relais qui redirige."
+description = "25 est le port des échanges entre serveurs ; sous 1024 il exige CAP_NET_BIND_SERVICE. Un port non standard n'est joignable par aucun MTA distant - il ne convient qu'à un relais qui redirige."
 category    = "Réception du courrier (MX)"
 group       = "services"
 depends_on  = "smtp_server_enabled"
@@ -324,7 +324,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Relais entrants de confiance"
-description = "Liste de réseaux CIDR (un par ligne) dont les connexions entrantes sont des relais internes — un Postfix en amont qui reçoit le courrier public et le réachemine vers cette instance. Pour ces réseaux, l'adresse IP réelle de l'expéditeur n'est pas celle de la connexion mais celle inscrite dans l'en-tête Received ajouté par le relais : c'est sur cette IP réelle que SPF et DMARC sont évalués. Ces relais sont par ailleurs exemptés du greylisting, des listes de blocage d'enveloppe et des limites de connexion par IP. N'y mettez QUE des relais que vous contrôlez : une entrée trop large ferait confiance à des tiers."
+description = "Liste de réseaux CIDR (un par ligne) dont les connexions entrantes sont des relais internes - un Postfix en amont qui reçoit le courrier public et le réachemine vers cette instance. Pour ces réseaux, l'adresse IP réelle de l'expéditeur n'est pas celle de la connexion mais celle inscrite dans l'en-tête Received ajouté par le relais : c'est sur cette IP réelle que SPF et DMARC sont évalués. Ces relais sont par ailleurs exemptés du greylisting, des listes de blocage d'enveloppe et des limites de connexion par IP. N'y mettez QUE des relais que vous contrôlez : une entrée trop large ferait confiance à des tiers."
 category    = "Réception du courrier (MX)"
 group       = "services"
 multiline   = true
@@ -498,7 +498,7 @@ scope       = "global"
 type        = "bool"
 default     = true
 label       = "Autoriser le transfert automatique"
-description = "Permet à chaque utilisateur de faire recopier automatiquement tout son courrier entrant vers une autre adresse, depuis ses réglages de messagerie. Désactiver ferme la porte dans les deux sens : l'onglet ne permet plus d'activer de règle, ET les règles déjà en place cessent de recopier quoi que ce soit — sans quoi les boîtes déjà configurées continueraient d'exporter le courrier de l'organisation. Le transfert manuel d'un message, lui, reste toujours possible."
+description = "Permet à chaque utilisateur de faire recopier automatiquement tout son courrier entrant vers une autre adresse, depuis ses réglages de messagerie. Désactiver ferme la porte dans les deux sens : l'onglet ne permet plus d'activer de règle, ET les règles déjà en place cessent de recopier quoi que ce soit - sans quoi les boîtes déjà configurées continueraient d'exporter le courrier de l'organisation. Le transfert manuel d'un message, lui, reste toujours possible."
 category    = "Accès des utilisateurs"
 group       = "services"
 risk        = "warning"
@@ -522,7 +522,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Clé privée TLS (PEM)"
-description = "Clé PKCS#8 ou RSA non chiffrée correspondante. Une clé illisible désactive TLS silencieusement — à vérifier après chaque renouvellement automatique."
+description = "Clé PKCS#8 ou RSA non chiffrée correspondante. Une clé illisible désactive TLS silencieusement - à vérifier après chaque renouvellement automatique."
 category    = "Chiffrement TLS"
 group       = "transport"
 placeholder = "/etc/letsencrypt/live/mail.example.com/privkey.pem"
@@ -532,8 +532,8 @@ key         = "tls_min_version"
 scope       = "global"
 type        = "enum"
 values      = [
-    { value = "tls1.2", label = "TLS 1.2 — compatible avec tous les serveurs" },
-    { value = "tls1.3", label = "TLS 1.3 uniquement — plus sûr, incompatible avec les MTA anciens" },
+    { value = "tls1.2", label = "TLS 1.2 - compatible avec tous les serveurs" },
+    { value = "tls1.3", label = "TLS 1.3 uniquement - plus sûr, incompatible avec les MTA anciens" },
 ]
 default     = "tls1.2"
 label       = "Version TLS minimale"
@@ -549,7 +549,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Domaines à chiffrement obligatoire"
-description = "Un domaine par ligne : le courrier qui leur est destiné n'est JAMAIS livré en clair, quel que soit le « Niveau TLS à la livraison » réglé plus bas. Un serveur distant qui refuse de négocier TLS ne reçoit rien — le message reste en file et repart plus tard, jusqu'à expiration. C'est ce qu'on réserve aux correspondants dont les échanges ne doivent pas transiter en clair (banque, santé, avocat). Les sous-domaines d'une entrée sont couverts."
+description = "Un domaine par ligne : le courrier qui leur est destiné n'est JAMAIS livré en clair, quel que soit le « Niveau TLS à la livraison » réglé plus bas. Un serveur distant qui refuse de négocier TLS ne reçoit rien - le message reste en file et repart plus tard, jusqu'à expiration. C'est ce qu'on réserve aux correspondants dont les échanges ne doivent pas transiter en clair (banque, santé, avocat). Les sous-domaines d'une entrée sont couverts."
 category    = "Chiffrement TLS"
 group       = "transport"
 multiline   = true
@@ -585,7 +585,7 @@ values      = [
 ]
 default     = "mark"
 label       = "SPF en échec léger"
-description = "Un enregistrement en ~all déclare explicitement ne pas trancher. Rejeter dessus est une erreur de configuration classique — l'option n'est donc pas proposée."
+description = "Un enregistrement en ~all déclare explicitement ne pas trancher. Rejeter dessus est une erreur de configuration classique - l'option n'est donc pas proposée."
 category    = "Authentification des messages entrants"
 group       = "authentication"
 advanced    = true
@@ -623,9 +623,9 @@ key         = "dmarc_reject_action"
 scope       = "global"
 type        = "enum"
 values      = [
-    { value = "mark",       label = "Marquer seulement — la politique de l'expéditeur est ignorée" },
-    { value = "quarantine", label = "Classer en indésirable — plus souple que ce qu'il demande" },
-    { value = "reject",     label = "Refuser — ce que l'expéditeur demande" },
+    { value = "mark",       label = "Marquer seulement - la politique de l'expéditeur est ignorée" },
+    { value = "quarantine", label = "Classer en indésirable - plus souple que ce qu'il demande" },
+    { value = "reject",     label = "Refuser - ce que l'expéditeur demande" },
 ]
 default     = "reject"
 label       = "Quand l'expéditeur publie p=reject"
@@ -640,7 +640,7 @@ scope       = "global"
 type        = "enum"
 values      = [
     { value = "mark",       label = "Marquer seulement" },
-    { value = "quarantine", label = "Classer en indésirable — ce que l'expéditeur demande" },
+    { value = "quarantine", label = "Classer en indésirable - ce que l'expéditeur demande" },
 ]
 default     = "quarantine"
 label       = "Quand l'expéditeur publie p=quarantine"
@@ -680,7 +680,7 @@ scope       = "global"
 type        = "bool"
 default     = false
 label       = "Refuser d'envoyer un message non signé"
-description = "Si aucune clé n'existe pour le domaine expéditeur, la remise est différée au lieu de partir en clair. Évite qu'un domaine ajouté après coup émette pendant des semaines du courrier non authentifié — mais si vous oubliez de générer une clé, sa file se remplit sans partir."
+description = "Si aucune clé n'existe pour le domaine expéditeur, la remise est différée au lieu de partir en clair. Évite qu'un domaine ajouté après coup émette pendant des semaines du courrier non authentifié - mais si vous oubliez de générer une clé, sa file se remplit sans partir."
 category    = "Signature et envoi sortant"
 group       = "authentication"
 depends_on  = "outbound_enabled"
@@ -692,14 +692,14 @@ key         = "outbound_tls_level"
 scope       = "global"
 type        = "enum"
 values      = [
-    { value = "none",    label = "Aucun — jamais de chiffrement (à réserver à une destination cassée)" },
-    { value = "may",     label = "Opportuniste — chiffre si possible, certificat non vérifié" },
-    { value = "encrypt", label = "Obligatoire — différer plutôt que livrer en clair" },
-    { value = "verify",  label = "Vérifié — chaîne et nom d'hôte validés (le plus strict)" },
+    { value = "none",    label = "Aucun - jamais de chiffrement (à réserver à une destination cassée)" },
+    { value = "may",     label = "Opportuniste - chiffre si possible, certificat non vérifié" },
+    { value = "encrypt", label = "Obligatoire - différer plutôt que livrer en clair" },
+    { value = "verify",  label = "Vérifié - chaîne et nom d'hôte validés (le plus strict)" },
 ]
 default     = "may"
 label       = "Niveau TLS à la livraison"
-description = "« Opportuniste » chiffre quand c'est possible sans vérifier le certificat : confidentiel face à une écoute passive, pas face à un attaquant actif. « Obligatoire » diffère plutôt que de livrer en clair. « Vérifié » valide en plus la chaîne et le nom d'hôte — le plus sûr, mais il diffère le courrier vers les nombreux serveurs qui présentent encore un certificat inadéquat."
+description = "« Opportuniste » chiffre quand c'est possible sans vérifier le certificat : confidentiel face à une écoute passive, pas face à un attaquant actif. « Obligatoire » diffère plutôt que de livrer en clair. « Vérifié » valide en plus la chaîne et le nom d'hôte - le plus sûr, mais il diffère le courrier vers les nombreux serveurs qui présentent encore un certificat inadéquat."
 category    = "Signature et envoi sortant"
 group       = "authentication"
 depends_on  = "outbound_enabled"
@@ -758,7 +758,7 @@ scope       = "global"
 type        = "bool"
 default     = false
 label       = "Activer le greylisting"
-description = "Refuse temporairement le tout premier message d'un triplet expéditeur/destinataire/adresse IP inconnu ; un vrai serveur réessaie et passe, un robot sans file d'attente abandonne. Très efficace pour un coût faible, mais il retarde tout premier échange — ce qui casse les codes de connexion à usage unique. Les sessions authentifiées et les expéditeurs autorisés en sont exemptés."
+description = "Refuse temporairement le tout premier message d'un triplet expéditeur/destinataire/adresse IP inconnu ; un vrai serveur réessaie et passe, un robot sans file d'attente abandonne. Très efficace pour un coût faible, mais il retarde tout premier échange - ce qui casse les codes de connexion à usage unique. Les sessions authentifiées et les expéditeurs autorisés en sont exemptés."
 category    = "Filtrage et anti-abus"
 group       = "filtering"
 risk        = "warning"
@@ -851,7 +851,7 @@ default     = """
 @leboncoin.fr
 """
 label       = "Images distantes toujours affichées"
-description = "Une adresse ou un @domaine par ligne. Les images externes de ces expéditeurs s'affichent sans confirmation pour TOUS les comptes, en plus des expéditeurs que chacun autorise de son côté. Une entrée n'agit que si le message passe DMARC : personne n'ayant choisi cette liste individuellement, une adresse usurpée ne doit pas pouvoir s'en servir. Livrée pré-remplie des grands émetteurs légitimes ; vider la liste fait de chaque expéditeur une demande explicite — charger une image distante révèle à son hébergeur que le message a été ouvert."
+description = "Une adresse ou un @domaine par ligne. Les images externes de ces expéditeurs s'affichent sans confirmation pour TOUS les comptes, en plus des expéditeurs que chacun autorise de son côté. Une entrée n'agit que si le message passe DMARC : personne n'ayant choisi cette liste individuellement, une adresse usurpée ne doit pas pouvoir s'en servir. Livrée pré-remplie des grands émetteurs légitimes ; vider la liste fait de chaque expéditeur une demande explicite - charger une image distante révèle à son hébergeur que le message a été ouvert."
 category    = "Filtrage et anti-abus"
 group       = "filtering"
 multiline   = true
@@ -864,7 +864,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Expéditeurs toujours acceptés"
-description = "Une adresse ou un @domaine par ligne. Court-circuite le greylisting et les listes de blocage — mais jamais DMARC : autoriser un domaine en aveugle en ferait un canal d'hameçonnage parfait."
+description = "Une adresse ou un @domaine par ligne. Court-circuite le greylisting et les listes de blocage - mais jamais DMARC : autoriser un domaine en aveugle en ferait un canal d'hameçonnage parfait."
 category    = "Filtrage et anti-abus"
 group       = "filtering"
 multiline   = true
@@ -877,7 +877,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Expéditeurs bloqués"
-description = "Une adresse par ligne, refusée à la commande MAIL FROM pour toute l'instance — les blocages des utilisateurs restent, eux, propres à chaque boîte. L'adresse d'enveloppe étant trivialement usurpable, cela n'arrête que les nuisances peu sophistiquées."
+description = "Une adresse par ligne, refusée à la commande MAIL FROM pour toute l'instance - les blocages des utilisateurs restent, eux, propres à chaque boîte. L'adresse d'enveloppe étant trivialement usurpable, cela n'arrête que les nuisances peu sophistiquées."
 category    = "Filtrage et anti-abus"
 group       = "filtering"
 multiline   = true
@@ -916,7 +916,7 @@ default     = 0
 min         = 0
 max         = 1000000
 label       = "Destinataires externes par utilisateur et par jour"
-description = "Plafond glissant sur 24 heures, compté sur ce qui part réellement vers l'extérieur (les destinataires internes ne comptent pas). Au-delà, l'envoi est REFUSÉ TEMPORAIREMENT : le message n'est pas perdu, il redevient envoyable au fil du temps. C'est la protection contre un compte compromis qui se met à émettre en masse — sans elle, la première chose que fait un mot de passe volé est de brûler la réputation de votre adresse IP. 0 = aucune limite."
+description = "Plafond glissant sur 24 heures, compté sur ce qui part réellement vers l'extérieur (les destinataires internes ne comptent pas). Au-delà, l'envoi est REFUSÉ TEMPORAIREMENT : le message n'est pas perdu, il redevient envoyable au fil du temps. C'est la protection contre un compte compromis qui se met à émettre en masse - sans elle, la première chose que fait un mot de passe volé est de brûler la réputation de votre adresse IP. 0 = aucune limite."
 category    = "Limites d'envoi"
 group       = "filtering"
 unit        = "dest./j"
@@ -948,7 +948,7 @@ group       = "transport"
 risk        = "danger"
 
 # ── 11. Conformité des pièces jointes ─────────────────────────────────────────
-# Ces règles s'appliquent DANS LES DEUX SENS — à la réception comme à l'envoi.
+# Ces règles s'appliquent DANS LES DEUX SENS - à la réception comme à l'envoi.
 # Une règle qui n'empêche qu'un fichier d'entrer n'est qu'une demi-règle : le
 # même type de fichier doit aussi ne pas pouvoir sortir.
 
@@ -984,7 +984,7 @@ scope       = "global"
 type        = "bool"
 default     = false
 label       = "Refuser les archives protégées par mot de passe"
-description = "Une archive ZIP chiffrée ne peut être ouverte par aucun analyseur — c'est précisément pour cela qu'elle sert à transporter des logiciels malveillants, avec le mot de passe donné dans le corps du message. Le contrôle lit l'indicateur de chiffrement de l'archive ; il ne couvre que la famille ZIP, les autres formats de conteneur ne sont pas reconnus."
+description = "Une archive ZIP chiffrée ne peut être ouverte par aucun analyseur - c'est précisément pour cela qu'elle sert à transporter des logiciels malveillants, avec le mot de passe donné dans le corps du message. Le contrôle lit l'indicateur de chiffrement de l'archive ; il ne couvre que la famille ZIP, les autres formats de conteneur ne sont pas reconnus."
 category    = "Conformité des pièces jointes"
 group       = "compliance"
 
@@ -993,12 +993,12 @@ key         = "attachment_action"
 scope       = "global"
 type        = "enum"
 values      = [
-    { value = "quarantine", label = "Classer en indésirable — le destinataire peut encore le récupérer" },
-    { value = "reject",     label = "Refuser le message — l'expéditeur est prévenu" },
+    { value = "quarantine", label = "Classer en indésirable - le destinataire peut encore le récupérer" },
+    { value = "reject",     label = "Refuser le message - l'expéditeur est prévenu" },
 ]
 default     = "reject"
 label       = "Que faire d'un message concerné"
-description = "« Refuser » agit pendant la session SMTP, avant que l'instance ait accepté le message : c'est le serveur d'en face qui produit l'avis de non-remise, et l'expéditeur sait tout de suite. À l'envoi, les deux valeurs reviennent au même — un message que l'utilisateur compose ne part pas et il en est averti immédiatement."
+description = "« Refuser » agit pendant la session SMTP, avant que l'instance ait accepté le message : c'est le serveur d'en face qui produit l'avis de non-remise, et l'expéditeur sait tout de suite. À l'envoi, les deux valeurs reviennent au même - un message que l'utilisateur compose ne part pas et il en est averti immédiatement."
 category    = "Conformité des pièces jointes"
 group       = "compliance"
 
@@ -1022,8 +1022,8 @@ key         = "content_action"
 scope       = "global"
 type        = "enum"
 values      = [
-    { value = "quarantine", label = "Classer en indésirable — le destinataire peut encore le récupérer" },
-    { value = "reject",     label = "Refuser le message — l'expéditeur est prévenu" },
+    { value = "quarantine", label = "Classer en indésirable - le destinataire peut encore le récupérer" },
+    { value = "reject",     label = "Refuser le message - l'expéditeur est prévenu" },
 ]
 default     = "quarantine"
 label       = "Que faire d'un message concerné"
@@ -1066,7 +1066,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Domaines destinataires autorisés"
-description = "Un domaine par ligne. Renseigné, les utilisateurs ne peuvent plus écrire QU'À ces domaines — et les alias qui réexpédient ailleurs cessent de le faire. Le refus arrive à la composition ou à la commande RCPT, donc l'expéditeur voit tout de suite quelle adresse est en cause. Vide (le défaut) = aucune restriction."
+description = "Un domaine par ligne. Renseigné, les utilisateurs ne peuvent plus écrire QU'À ces domaines - et les alias qui réexpédient ailleurs cessent de le faire. Le refus arrive à la composition ou à la commande RCPT, donc l'expéditeur voit tout de suite quelle adresse est en cause. Vide (le défaut) = aucune restriction."
 category    = "Restriction de remise"
 group       = "compliance"
 multiline   = true
@@ -1098,7 +1098,7 @@ min         = 0
 max         = 3650
 unit        = "j"
 label       = "Vider la corbeille après"
-description = "Même principe pour la corbeille. Sans délai, un message « supprimé » reste indéfiniment sur le disque de l'instance — ce que l'utilisateur qui l'a jeté ne suppose pas. La suppression est définitive et sans confirmation : c'est une tâche de fond."
+description = "Même principe pour la corbeille. Sans délai, un message « supprimé » reste indéfiniment sur le disque de l'instance - ce que l'utilisateur qui l'a jeté ne suppose pas. La suppression est définitive et sans confirmation : c'est une tâche de fond."
 category    = "Conservation des messages"
 group       = "compliance"
 risk        = "danger"
@@ -1109,7 +1109,7 @@ scope       = "global"
 type        = "string"
 default     = ""
 label       = "Adresse d'archivage de tout le courrier"
-description = "Une boîte HÉBERGÉE par cette instance qui reçoit une copie de chaque message accepté ou envoyé par les services SMTP — de quoi satisfaire une obligation de conservation même si un utilisateur vide la sienne. Ce que la copie couvre : le courrier entrant, celui qu'un logiciel de messagerie soumet, et celui rédigé dans l'interface web. Ce qu'elle ne couvre PAS : les comptes externes relevés en IMAP (ce courrier ne passe pas par nos services) et les messages automatiques de l'instance (réponses d'absence, avis de non-remise). ⚠️ Cette boîte reçoit TOUT le courrier de l'organisation : réservez-la, et n'y configurez ni transfert ni réponse d'absence. Vide = aucun archivage."
+description = "Une boîte HÉBERGÉE par cette instance qui reçoit une copie de chaque message accepté ou envoyé par les services SMTP - de quoi satisfaire une obligation de conservation même si un utilisateur vide la sienne. Ce que la copie couvre : le courrier entrant, celui qu'un logiciel de messagerie soumet, et celui rédigé dans l'interface web. Ce qu'elle ne couvre PAS : les comptes externes relevés en IMAP (ce courrier ne passe pas par nos services) et les messages automatiques de l'instance (réponses d'absence, avis de non-remise). ⚠️ Cette boîte reçoit TOUT le courrier de l'organisation : réservez-la, et n'y configurez ni transfert ni réponse d'absence. Vide = aucun archivage."
 category    = "Conservation des messages"
 group       = "compliance"
 placeholder = "archives@example.com"
@@ -1133,7 +1133,7 @@ scope       = "global"
 type        = "bool"
 default     = true
 label       = "Attribuer une adresse automatiquement"
-description = "Dès qu'un domaine primaire est vérifié (preuve DNS + MX), chaque compte qui n'a pas encore de boîte sur ce domaine en reçoit une, construite selon la règle ci-dessous ; les conflits sont résolus par un suffixe numérique. Chaque nouveau compte est servi de la même façon. Désactivé, plus aucune adresse n'est créée automatiquement — les boîtes existantes ne sont pas touchées."
+description = "Dès qu'un domaine primaire est vérifié (preuve DNS + MX), chaque compte qui n'a pas encore de boîte sur ce domaine en reçoit une, construite selon la règle ci-dessous ; les conflits sont résolus par un suffixe numérique. Chaque nouveau compte est servi de la même façon. Désactivé, plus aucune adresse n'est créée automatiquement - les boîtes existantes ne sont pas touchées."
 category    = "Attribution des adresses"
 group       = "provisioning"
 risk        = "info"

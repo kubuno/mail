@@ -1,5 +1,5 @@
 /**
- * Boîtes — the local addresses this instance files into a Kubuno account.
+ * Boîtes - the local addresses this instance files into a Kubuno account.
  *
  * ── Three things this screen refuses to do ───────────────────────────────────
  *  • Show an occupancy. `mail.messages` stores no size and no delivered-to
@@ -15,7 +15,7 @@
  *
  * ── Editing happens on the record, creation in a window ──────────────────────
  * Opening a mailbox replaces the list with its record, and every field is
- * edited in place there — an address, an owner and a quota are read together
+ * edited in place there - an address, an owner and a quota are read together
  * and changed one at a time. Only the CREATION is a modal, because it is the
  * one moment nothing exists yet to be read.
  */
@@ -142,7 +142,7 @@ export default function MailboxesTab({ servedDomains }: { servedDomains: string[
     if (!ok) return
 
     // The IMAP/SMTP login is a SEPARATE object that outlives the address unless
-    // asked otherwise — and one that may predate this table. Deleting it
+    // asked otherwise - and one that may predate this table. Deleting it
     // silently would cut off a mail client that has worked for months; keeping
     // it silently would leave a working login for an address that no longer
     // exists. Neither is a default worth guessing, so it is a second question,
@@ -592,7 +592,7 @@ function MailboxRecord({
       window.setTimeout(() => setSaved(false), 2500)
       // The fields are re-seeded from the SERVER's answer first, and only then
       // is the list refetched. Clearing them and waiting for the reload would
-      // flash the previous values back — the race this panel is not allowed to
+      // flash the previous values back - the race this panel is not allowed to
       // have while an administrator is reading what they just changed.
       const next = splitAddress(updated.address)
       setLocal(next.local); setDomain(next.domain)
