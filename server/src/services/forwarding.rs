@@ -73,8 +73,8 @@ pub async fn load(db: &DbPool, user_id: Uuid) -> Result<Vec<ForwardingRule>> {
 }
 
 /// Replaces a user's whole set of forwarding rules in one transaction: the UI
-/// edits the list as a whole and saves it as a whole, so the server mirrors that
-/// - delete what was there, insert what is there now - rather than diffing.
+/// edits the list as a whole and saves it as a whole, so the server mirrors that -
+/// delete what was there, insert what is there now - rather than diffing.
 ///
 /// `rules` is `(forward_to, enabled, keep_copy)`; addresses are lower-cased here.
 pub async fn replace(db: &DbPool, user_id: Uuid, rules: &[(String, bool, bool)]) -> Result<()> {

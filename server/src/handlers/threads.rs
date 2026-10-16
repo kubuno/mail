@@ -591,8 +591,8 @@ pub async fn changes(
 /// Advance the CONDSTORE `modseq` of every message in a thread.
 ///
 /// Thread-level flag actions (star, important, mute, snooze, category, labels)
-/// write only to `mail.threads`/`mail.thread_labels`, which the delta endpoint
-/// - keyed on `mail.messages.modseq` - would otherwise miss. A no-op UPDATE on
+/// write only to `mail.threads`/`mail.thread_labels`, which the delta endpoint -
+/// keyed on `mail.messages.modseq` - would otherwise miss. A no-op UPDATE on
 /// the thread's messages fires the trigger that stamps a fresh modseq (a
 /// `BEFORE UPDATE` trigger on PostgreSQL and MySQL, `AFTER UPDATE` on SQLite;
 /// every matched row is stamped, changed or not), so the change surfaces in the next

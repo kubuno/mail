@@ -34,8 +34,8 @@ pub struct DnsRecord {
     pub rtype:     String,
     /// The whole record value, ready to paste as one entry.
     pub value:     String,
-    /// DKIM only: the bare public key (the base64 after `p=`), for the registrars
-    /// - OVH among them - that take the key alone rather than the full TXT.
+    /// DKIM only: the bare public key (the base64 after `p=`), for the registrars -
+    /// OVH among them - that take the key alone rather than the full TXT.
     pub value_alt: Option<String>,
     /// MX only: the preference (10).
     pub priority:  Option<u16>,

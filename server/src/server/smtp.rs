@@ -1719,8 +1719,8 @@ fn policy_marker(message: &[u8], action: PolicyAction, verdict: &AuthVerdict) ->
 /// Whether this header line's field name is exactly `name`.
 ///
 /// The name must END where it ends: matching on the prefix alone would drop
-/// `Authentication-Results-Original:` along with `Authentication-Results:`, and
-/// - the other way round - let `X-Kubuno-Auth-Policy-Note:` masquerade as ours.
+/// `Authentication-Results-Original:` along with `Authentication-Results:`, and -
+/// the other way round - let `X-Kubuno-Auth-Policy-Note:` masquerade as ours.
 fn header_name_is(line: &str, name: &str) -> bool {
     match line.get(..name.len()) {
         Some(candidate) if candidate.eq_ignore_ascii_case(name) => {
