@@ -6,8 +6,8 @@
  * Generating a key is one click and nobody needs help with it. The hard part is
  * the record: `<selector>._domainkey.<domain> IN TXT "v=DKIM1; k=rsa; p=…"`,
  * some four hundred characters that must be pasted into a zone file EXACTLY.
- * So the record is shown whole - never truncated, never behind a "show" toggle
- * - with a copy button, for every key, active or not.
+ * So the record is shown whole - never truncated, never behind a "show" toggle -
+ * with a copy button, for every key, active or not.
  *
  * ── Rotation, and why the selector is a field ────────────────────────────────
  * A signing key is replaced, not edited: DNS propagates over hours and

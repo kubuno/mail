@@ -230,8 +230,8 @@ mod attachment_mime_tests {
 
     /// Anything that can execute or carry markup loses its Content-Type, so the
     /// browser downloads opaque bytes instead of rendering a document in our
-    /// origin. The two-part trick - an HTML part plus a JS part passing nosniff
-    /// - is what defeats `script-src 'self'`, so `application/javascript` must
+    /// origin. The two-part trick - an HTML part plus a JS part passing nosniff -
+    /// is what defeats `script-src 'self'`, so `application/javascript` must
     /// never be echoed back either.
     #[test]
     fn active_types_are_never_echoed() {

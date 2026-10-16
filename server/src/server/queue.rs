@@ -197,8 +197,8 @@ pub async fn enqueue_with_lifetime(
 ///
 /// Counted on the QUEUE rather than on the Sent folder: what an allowance has to
 /// bound is what actually leaves the instance towards the internet, and a Sent
-/// copy exists for local-only mail too. Delivery reports (`is_dsn`) are excluded
-/// - a bounce is the instance writing, not the user.
+/// copy exists for local-only mail too. Delivery reports (`is_dsn`) are excluded -
+/// a bounce is the instance writing, not the user.
 pub async fn recipients_queued_last_24h(db: &DbPool, user_id: Uuid) -> Result<i64> {
     let count: i64 = crate::db::query_scalar(format!(
         r#"SELECT {}

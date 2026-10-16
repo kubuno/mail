@@ -104,8 +104,8 @@ pub async fn archive(
             // A journal copy is filed in the inbox whatever the original's fate:
             // a message quarantined for a user is exactly the one an auditor
             // will look for, and burying it in the archive's spam folder would
-            // hide it. Authentication verdicts are left out for the same reason
-            // - this copy is evidence, not correspondence to be judged again.
+            // hide it. Authentication verdicts are left out for the same reason -
+            // this copy is evidence, not correspondence to be judged again.
             Disposition::Inbox,
             None,
             None,

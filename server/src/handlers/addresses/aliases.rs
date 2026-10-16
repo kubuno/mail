@@ -1,7 +1,7 @@
 //! `/admin/aliases` - an address that is not a place but a redirection.
 //!
-//! `address` is either a whole address (`contact@example.com`) or `@example.com`
-//! - the catch-all, which matches anything in that domain that nothing else
+//! `address` is either a whole address (`contact@example.com`) or `@example.com` -
+//! the catch-all, which matches anything in that domain that nothing else
 //! matched. The database allows at most one catch-all per domain (a partial
 //! unique index); two would make delivery depend on the order rows come back in.
 //!

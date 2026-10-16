@@ -1029,8 +1029,8 @@ impl Session {
 
         // Auto-expunge (Gmail): when the policy commits `\Deleted` immediately
         // rather than waiting for the client's EXPUNGE, and this STORE just added
-        // the flag, remove those messages now - routed to the purge destination
-        // - emitting the untagged EXPUNGE responses the client needs to resync.
+        // the flag, remove those messages now - routed to the purge destination -
+        // emitting the untagged EXPUNGE responses the client needs to resync.
         if self.settings.imap_expunge_mode == ImapExpungeMode::Auto
             && mode.apply(deleted) == Some(true)
             && !applied.is_empty()

@@ -646,8 +646,8 @@ pub fn fetch_response(
 }
 
 /// A `LABEL {n}\r\n<bytes>` item, honouring a `<origin.count>` partial fetch.
-/// Slicing is done on bytes so the announced length is the length actually sent
-/// - a mismatch there desynchronises the client for the rest of the session.
+/// Slicing is done on bytes so the announced length is the length actually sent -
+/// a mismatch there desynchronises the client for the rest of the session.
 pub fn literal_part(label: &str, data: &[u8], partial: Option<(usize, usize)>) -> Vec<u8> {
     let (slice, suffix) = match partial {
         Some((start, count)) => {

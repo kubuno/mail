@@ -108,8 +108,8 @@ pub struct MailboxPage {
     pub usage_note: &'static str,
 }
 
-/// A freshly issued IMAP/SMTP login. The password appears here and nowhere else
-/// - it is not stored (only its Argon2 hash and SCRAM secret are) and it is
+/// A freshly issued IMAP/SMTP login. The password appears here and nowhere else -
+/// it is not stored (only its Argon2 hash and SCRAM secret are) and it is
 /// never logged.
 #[derive(Debug, Serialize)]
 pub struct CreatedCredential {

@@ -213,8 +213,8 @@ pub(crate) fn parse_destination(raw: &str) -> Result<String, MailError> {
 /// owning address itself.
 ///
 /// A destination equal to its own alias is the loop somebody WILL configure, and
-/// it costs a rejected recipient at best. Refusing it here is the cheapest place
-/// - the resolver's depth limit is the backstop, not the answer. De-duplication
+/// it costs a rejected recipient at best. Refusing it here is the cheapest place -
+/// the resolver's depth limit is the backstop, not the answer. De-duplication
 /// is not cosmetic either: a duplicated destination is a duplicated delivery.
 pub(crate) fn parse_destinations(raw: &[String], own: &str) -> Result<Vec<String>, MailError> {
     if raw.len() > MAX_DESTINATIONS {

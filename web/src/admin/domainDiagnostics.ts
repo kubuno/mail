@@ -15,8 +15,8 @@
  *
  * ⚠️ The contract (key + shapes) is DECLARED IN THE CORE, in
  * `core/frontend/src/core/registry/domainDiagnostics.ts`, and exported by
- * `@kubuno/sdk`. It is mirrored here - same convention as `calendar.view-option`
- * - because a module builds against the PUBLISHED `@kubuno/sdk`, which only
+ * `@kubuno/sdk`. It is mirrored here - same convention as `calendar.view-option` -
+ * because a module builds against the PUBLISHED `@kubuno/sdk`, which only
  * carries the contract from its next release. Once published, replace the local
  * types with an import from `@kubuno/sdk` and delete this block. The key string
  * is the real coupling and must never drift.

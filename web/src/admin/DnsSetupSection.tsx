@@ -11,8 +11,8 @@
  * live status, and one line saying what it is for.
  *
  * ── Two DKIM forms, on purpose ────────────────────────────────────────────────
- * Some registrars (OVH) take the DKIM public key alone - the base64 after `p=`
- * - and build the record themselves; others want the whole TXT value. Guessing
+ * Some registrars (OVH) take the DKIM public key alone - the base64 after `p=` -
+ * and build the record themselves; others want the whole TXT value. Guessing
  * wrong means a key that never verifies, so both are offered with their own copy
  * button and a note saying which is which.
  */

@@ -36,8 +36,8 @@ function ReplyPill({ onClick, icon, label }: {
 }
 
 /** One-line preview for a collapsed row: the NEW content only, with the quoted
- *  history stripped (attribution line, "> " quotes, forwarded "De:/From:" header)
- *  - like Gmail, which never shows the quote in the snippet. */
+ *  history stripped (attribution line, "> " quotes, forwarded "De:/From:" header) -
+ *  like Gmail, which never shows the quote in the snippet. */
 function previewSnippet(text: string | null | undefined): string {
   if (!text) return ''
   const kept: string[] = []
